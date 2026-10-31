@@ -1,0 +1,75 @@
+<div class="modal-overlay" id="paymentModal">
+  <div class="modal-drawer">
+    <div class="modal-header">
+      <h3 style="font-size:1.1rem;font-weight:800">Registrar Pago / Abono</h3>
+      <button class="modal-close-btn" id="btnCerrarModal" type="button" aria-label="Cerrar">&times;</button>
+    </div>
+
+    <!-- Formulario -->
+    <div id="pagoForm" style="display:flex;flex-direction:column;flex:1">
+      <div class="field"><span class="lbl">Alumno seleccionado</span>
+        <div id="modalStudentName" style="font-size:1.05rem;font-weight:800"></div></div>
+      <div class="field"><span class="lbl">Saldo pendiente actual</span>
+        <div id="modalStudentBalance" style="font-size:1.2rem;font-weight:800;color:var(--accent-red)"></div></div>
+
+      <div class="field"><label class="lbl" for="pagoConcepto">Concepto</label>
+        <input class="input-clean" id="pagoConcepto" maxlength="200"></div>
+
+      <div class="field"><label class="lbl" for="selectPaymentMethod">Método de pago</label>
+        <select class="input-clean" id="selectPaymentMethod" style="font-weight:600">
+          <option value="Efectivo">Efectivo</option>
+          <option value="Nequi">Nequi</option>
+          <option value="Daviplata">Daviplata</option>
+          <option value="Transferencia">Transferencia bancaria</option>
+          <option value="Sistecredit">Sistecredit</option>
+          <option value="Otro">Otro</option>
+        </select></div>
+
+      <div class="field">
+        <label class="lbl" for="inputAmount">Valor a abonar a la deuda ($)</label>
+        <input class="input-clean" id="inputAmount" inputmode="numeric" autocomplete="off" style="font-size:1.1rem;font-weight:700">
+        <div class="hint" id="inputAmountFmt"></div>
+        <button type="button" class="link-toggle-change" id="toggleChangeBtn">
+          <i class="ri-coins-line"></i> ¿El cliente paga con un billete mayor y requiere devuelta?
+        </button>
+      </div>
+
+      <div class="calc-box" id="cashCalculatorBox">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:.78rem;font-weight:800;color:var(--accent-gold);text-transform:uppercase">Cálculo de devuelta</span>
+          <button type="button" id="btnCerrarCalc" class="link-toggle-change" style="margin:0;color:var(--text-muted)">Cerrar ✕</button>
+        </div>
+        <label class="lbl" for="inputReceived">Efectivo entregado por el cliente</label>
+        <input class="input-clean" id="inputReceived" inputmode="numeric" placeholder="Ej: 200000" autocomplete="off">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-weight:800;border-top:1px dashed var(--border-color);padding-top:8px;margin-top:10px">
+          <span>Devuelta a entregar:</span><strong id="lblChange" style="color:var(--accent-green)">$ 0</strong>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:1rem"><label class="lbl" for="pagoAcompanante">Acompañante (opcional)</label>
+        <input class="input-clean" id="pagoAcompanante" maxlength="100" placeholder="Dejar vacío si el alumno asiste"></div>
+      <div class="field"><label class="lbl" for="pagoNotas">Notas (opcional)</label>
+        <input class="input-clean" id="pagoNotas" maxlength="300"></div>
+
+      <div class="alerta error" id="pagoError" style="display:none"></div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-action" id="btnCancelarPago">Cancelar</button>
+        <button type="button" class="btn-action green" id="btnGuardarPago"><i class="ri-save-line"></i> Guardar pago</button>
+      </div>
+    </div>
+
+    <!-- Éxito -->
+    <div id="pagoExito" style="display:none;flex-direction:column;flex:1;gap:1rem">
+      <div class="alerta ok">✓ Pago registrado correctamente.</div>
+      <div><span class="lbl">Recibo N°</span><strong id="exitoRecibo"></strong></div>
+      <div><span class="lbl">Saldo restante</span><strong id="exitoSaldo"></strong></div>
+      <div id="exitoCambioFila" style="display:none"><span class="lbl">Devuelta a entregar</span>
+        <strong id="exitoCambio" style="font-size:1.4rem;color:var(--accent-green)"></strong></div>
+      <div class="modal-footer">
+        <button type="button" class="btn-action" id="btnTerminar">Terminar</button>
+        <a class="btn-action green" id="btnImprimir" target="_blank" rel="noopener"><i class="ri-printer-line"></i> Imprimir recibo</a>
+      </div>
+    </div>
+  </div>
+</div>

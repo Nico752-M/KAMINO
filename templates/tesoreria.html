@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set nav = 'caja' %}
+{% block titulo %}Caja y Tesorería — CEA Practicar{% endblock %}
+{% block contenido %}
+<div class="section-header">
+  <div>
+    <h2 class="section-title">Caja y Tesorería</h2>
+    <p class="section-desc">Auditoría de ingresos y salidas del día.</p>
+  </div>
+  <form method="get" style="display:flex;gap:8px;align-items:center">
+    <input class="input-clean" type="date" name="fecha" value="{{ dia.isoformat() }}" style="width:auto">
+    <button class="btn-action" type="submit">Ver</button>
+  </form>
+</div>
+
+{% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+
+<div class="grid-stats">
+  <div class="stat-card green"><div class="stat-label">Efectivo de alumnos</div><div class="stat-value">{{ t.efectivo|cop }}</div></div>
+  <div class="stat-card"><div class="stat-label">Otros métodos</div><div class="stat-value">{{ t.otros|cop }}</div></div>
+  <div class="stat-card green"><div class="stat-label">Ingresos manuales</div><div class="stat-value">{{ t.ingresos|cop }}</div></div>
+  <div class="stat-card red"><div class="stat-label">Salidas</div><div class="stat-value" style="color:var(--accent-red)">{{ t.salidas|cop }}</div></div>
+  <div class="stat-card gold"><div class="stat-label">Efectivo esperado en caja</div><div class="stat-value" style="color:var(--accent-gold)">{{ t.en_caja|cop }}</div></div>
+</div>
+
+<div class="card-bento">
+  {% if movs %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Hora</th><th>Recibo</th><th>Tipo</th><th>Detalle</th><th>Método</th><th>Valor</th></tr></thead>
+    <tbody>
+    {% for m in movs %}
+      <tr>
+        <td>{{ m.momento.strftime('%H:%M') }}</td>
+        <td><small>{{ m.recibo }}</small></td>
+        <td>{% if m.tipo == 'salida' %}<span class="badge-status urgent">↓ Salida</span>
+            {% elif m.tipo == 'ingreso' %}<span class="badge-status active">↑ Ingreso</span>
+            {% else %}<span class="badge-status paid">Pago alumno</span>{% endif %}</td>
+        <td>{{ m.detalle }}</td>
+        <td>{{ m.metodo }}</td>
+        <td><strong style="color:{{ 'var(--accent-red)' if m.valor < 0 else 'var(--accent-green)' }}">{{ m.valor|cop }}</strong></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="vacio">Sin movimientos en esta fecha.</div>{% endif %}
+</div>
+<p class="hint">Registrar salidas/ingresos manuales, conteo de billetes y PDF/Excel del cierre: próximas fases.</p>
+{% endblock %}

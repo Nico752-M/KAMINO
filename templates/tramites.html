@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set nav = 'tramites' %}
+{% block titulo %}Trámites — CEA Practicar{% endblock %}
+
+{% macro grupo(titulo, desc, filas, clase) %}
+  {% if filas %}
+  <div class="card-bento">
+    <div class="grupo-titulo"><span class="badge-status {{ clase }}">{{ filas|length }}</span> {{ titulo }}</div>
+    <p class="hint" style="margin:-.5rem 0 1rem">{{ desc }}</p>
+    <div class="table-wrap"><table class="table-clean">
+      <thead><tr><th>Alumno</th><th>Documento</th><th>Categoría</th><th>Registro</th><th>Días</th><th>Acción</th></tr></thead>
+      <tbody>
+      {% for f in filas %}
+        <tr>
+          <td><strong>{{ f.nombres }} {{ f.apellidos }}</strong></td>
+          <td>{{ f.numero_documento }}</td>
+          <td>{{ f.categoria }}</td>
+          <td>{{ f.fecha_registro.strftime('%d/%m/%Y') if f.fecha_registro else '—' }}</td>
+          <td><span class="badge-status {{ clase }}">{{ f.dias }} días</span></td>
+          <td>{% if session.rol in ('admin','secretaria') %}
+            <button class="btn-action sm js-runt" type="button" data-id="{{ f.id }}" data-nombre="{{ f.nombres }} {{ f.apellidos }}"><i class="ri-check-line"></i> Registrado en RUNT</button>
+            {% else %}<small>—</small>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% block contenido %}
+<div class="section-header">
+  <div>
+    <h2 class="section-title">Trámites y Archivo</h2>
+    <p class="section-desc">Recordatorios de registro en el RUNT. Pendientes: <strong>{{ total }}</strong></p>
+  </div>
+</div>
+
+{% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+
+{{ grupo('Urgente — 2 meses o más sin RUNT', 'Cerca de vencer el plazo de 3 meses. Acción inmediata.', g.urgentes, 'urgent') }}
+{{ grupo('Próximos a vencer — 1 a 2 meses', 'Deben registrarse esta semana para evitar retrasos.', g.proximos, 'pending') }}
+{{ grupo('Pendientes — menos de 1 mes', 'Registro reciente, dentro del tiempo óptimo.', g.recientes, 'active') }}
+
+{% if total == 0 and not error %}<div class="card-bento"><div class="vacio">✅ No hay recordatorios pendientes.</div></div>{% endif %}
+
+<div class="card-bento"><div class="grupo-titulo"><i class="ri-folder-line"></i> Expedientes digitales</div>
+  <p class="hint">Subir, ver y eliminar el PDF escaneado de cada alumno: próxima fase.</p></div>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/tramites.js', v=asset_v) }}"></script>{% endblock %}

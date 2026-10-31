@@ -1,62 +1,49 @@
-```markdown
-```markdown
-# 🚗 Sistema CEA PRACTICAR
-Sistema de gestión de escritorio para Centros de Enseñanza Automovilística (CEA).
-## 📋 Descripción
-Aplicación de escritorio desarrollada en Python + PyQt6 para automatizar la gestión de escuelas de conducción en Colombia. Reemplaza el registro manual en cuadernos y carpetas físicas por un sistema digital completo.
-## 🏗️ Arquitectura
-```
-CEA_Practicar_System/
-├── main.py                    # Punto de entrada
-├── requirements.txt           # Dependencias
-├── database/
-│   ├── schema.sql             # Schema completo de la BD
-│   └── cea_practicar.db       # Base de datos SQLite (auto-generada)
-├── src/
-│   ├── models/
-│   │   └── database.py        # Gestor de base de datos (CRUD completo)
-│   ├── views/
-│   │   ├── main_window.py     # Ventana principal con sidebar
-│   │   ├── dashboard_view.py  # Dashboard con estadísticas
-│   │   ├── alumnos_view.py    # Gestión de alumnos
-│   │   ├── pagos_view.py      # Control de pagos
-│   │   ├── clases_view.py     # Registro de clases
-│   │   ├── evaluaciones_view.py # Evaluaciones teóricas/prácticas
-│   │   ├── documentos_view.py # Documentos y trámites
-│   │   ├── reportes_view.py   # Reportes y estadísticas
-│   │   └── historico_view.py  # Archivo histórico
-│   ├── controllers/           # Controladores (futuro)
-│   └── utils/                 # Utilidades (OCR, PDF, etc.)
-├── exports/                   # PDFs generados por el sistema
-└── temp/                      # Archivos temporales
-```
-## 🚀 Instalación
-1. Clonar o descargar el proyecto
-2. Instalar dependencias:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Ejecutar:
-   ```bash
-   python main.py
-   ```
-## 🎯 Módulos Implementados
-| Módulo | Estado | Descripción |
-|--------|--------|-------------|
-| Dashboard | ✅ Funcional | Estadísticas en tiempo real, alumnos recientes, clases del día |
-| Alumnos | ✅ Funcional | Registro con formulario completo, búsqueda, tabla con acciones |
-| Pagos | 🚧 Placeholder | Recibos, cuotas, estados de cuenta |
-| Clases | 🚧 Placeholder | Asistencia, firmas, control de horas |
-| Evaluaciones | 🚧 Placeholder | FOR 06 (teórica) y FOR 04 (práctica) |
-| Documentos | 🚧 Placeholder | Autorización, contrato, firmas digitales |
-| Reportes | 🚧 Placeholder | Estadísticas, exportación PDF |
-| Histórico | 🚧 Placeholder | PDFs escaneados, búsqueda unificada |
-## 📝 Credenciales por Defecto
-- **Usuario:** admin
-- **Contraseña:** admin123
-## 🔧 Stack Tecnológico
-- **Frontend:** PyQt6 (Python)
-- **Base de Datos:** SQLite3 (archivo local)
-- **OCR:** Tesseract + OpenCV
-- **PDFs:** ReportLab + PyPDF2
-- **Estilo:** CSS-like con QSS (Qt Style Sheets)
+# CEA Practicar — versión web (Flask + MySQL + PWA)
+
+## Cómo correrlo en tu PC
+1. Python 3.11 o superior.
+2. `python -m venv venv` y activarlo (`venv\Scripts\activate` en Windows).
+3. `pip install -r requirements.txt`
+4. Copia `.env.example` a `.env` y llena los datos de tu MySQL (la misma base `cea_p`).
+5. Crea tu usuario con contraseña segura:
+   `python crear_usuario.py admin --nombre "Administrador" --rol admin`
+6. `flask --app app run --debug` y abre http://127.0.0.1:5000
+
+## Revisa tu base de datos (el código asume esto)
+Los .sql que me pasaste no coinciden con el código del escritorio. Verifica en tu MySQL real:
+- `pagos` tiene: `id_matricula, concepto, valor, metodo_pago, numero_recibo, usuario_id, observaciones, acompanante, fecha_pago`
+- `pagos.metodo_pago` incluye `Sistecredit` (si es ENUM sin ese valor, hay que ampliarlo con ALTER TABLE)
+- `matriculas` tiene: `numero_orden, anio, categoria, estado, precio_total, fecha_registro, runt_registrado`
+- Existen `ingresos_caja` (`fecha_ingreso`) y `salidas_caja` (`fecha_salida`, `numero_recibo`) y `usuarios` con `activo`, `rol`, `ultimo_acceso`
+Si algo falta, la pantalla correspondiente muestra un aviso (no se cae todo) y el detalle sale en la consola.
+
+## Estructura
+- `app.py` arranque, seguridad (CSRF, cabeceras) y rutas PWA
+- `config.py` / `.env` configuración y claves (nada sensible en el código)
+- `db.py` pool de conexiones MySQL y transacciones
+- `auth.py` login, sesiones, roles
+- `rutas/` una pantalla por archivo (dashboard, alumnos, pagos, caja, tramites)
+- `servicios/recibos.py` ticket PDF de 80 mm
+- `templates/` HTML (base.html = menú + barra superior)
+- `public/static/` CSS, JS, iconos, `manifest.json`, `sw.js`
+
+## Publicar
+- Procfile listo: `gunicorn wsgi:app`
+- Variables en el servidor: `APP_ENV=production`, `SECRET_KEY`, `DB_*`, `TRUST_PROXY=1`
+- Debe servirse por HTTPS (sin HTTPS no se puede instalar como PWA).
+- Cuando cambies CSS/JS sube `ASSET_V` en `config.py` y `VERSION` en `public/static/sw.js`.
+
+### Publicar en Vercel
+- Para la etapa visual, Vercel sirve `public/index.html` como entrada y las páginas
+  `public/dashboard.html`, `public/alumnos.html`, `public/tesoreria.html` y `public/tramites.html`
+  como prototipo estático. El formulario simula el ingreso y no valida credenciales ni guarda datos.
+- Las plantillas Jinja originales siguen en `templates/` para cuando se conecte el backend Flask.
+  `index.py` exporta esa aplicación; sus rutas y el prototipo estático son superficies separadas.
+- La vista estática no requiere variables de base de datos. Para activar el backend después,
+  configura `APP_ENV=production`, `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
+  `DB_PASSWORD` y `TRUST_PROXY=1`. La base MySQL debe permitir conexiones desde Vercel;
+  no uses `127.0.0.1` como `DB_HOST`.
+
+## Pendiente (siguientes fases)
+Nueva matrícula/editar/ver/eliminar, alumno histórico, precios, renovaciones (alumno externo),
+registrar salidas/ingresos de caja, cierre de caja (conteo, PDF, Excel), expedientes, ficha y evaluaciones.

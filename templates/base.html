@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#b48a3d">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>{% block titulo %}CEA Practicar{% endblock %}</title>
+  <link rel="manifest" href="{{ url_for('manifest') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=asset_v) }}">
+  <script>
+    /* Aplica el tema guardado antes de pintar, para evitar el "parpadeo" */
+    (function(){try{var t=localStorage.getItem('tema');if(t==='night'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();
+  </script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <aside class="preview-sidebar" id="sidebar">
+    <div class="preview-brand"><div class="preview-brand-badge"></div> CEA PRACTICAR</div>
+    <nav class="preview-menu">
+      <div class="sidebar-category">Principal</div>
+      <a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if nav == 'dashboard' }}"><i class="ri-dashboard-3-line"></i> Dashboard</a>
+
+      <div class="sidebar-category">Operación</div>
+      <a href="{{ url_for('alumnos.lista') }}" class="{{ 'active' if nav == 'alumnos' }}"><i class="ri-team-line"></i> Alumnos y Matriculados</a>
+      <a href="{{ url_for('caja.resumen') }}" class="{{ 'active' if nav == 'caja' }}"><i class="ri-safe-2-line"></i> Caja y Tesorería</a>
+
+      <div class="sidebar-category">Gestión y Archivo</div>
+      <a href="{{ url_for('tramites.lista') }}" class="{{ 'active' if nav == 'tramites' }}"><i class="ri-folder-history-line"></i> Trámites y Archivo
+        {% if runt_pendientes %}<span class="nav-badge">{{ runt_pendientes if runt_pendientes < 100 else '99+' }}</span>{% endif %}
+      </a>
+    </nav>
+    <div class="sidebar-user">
+      <strong>{{ session.nombre }}</strong>{{ session.rol|capitalize }}
+      <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:.6rem">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn-action sm" type="submit"><i class="ri-logout-box-r-line"></i> Cerrar sesión</button>
+      </form>
+    </div>
+  </aside>
+
+  <main class="preview-content">
+    <div class="top-bar-options">
+      <div class="top-left">
+        <button class="menu-btn" id="menu-btn" type="button" aria-label="Abrir menú"><i class="ri-menu-line"></i></button>
+        <form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
+          <i class="ri-search-line"></i>
+          <input type="search" name="q" value="{{ q|default('') }}" placeholder="Buscar alumno, cédula o categoría..." autocomplete="off">
+        </form>
+      </div>
+      <div class="top-right">
+        <div class="fecha-hoy"><i class="ri-calendar-line"></i> {{ fecha_hoy }}</div>
+        <button class="theme-toggle-btn" id="theme-btn" type="button"><i class="ri-moon-line"></i> <span>Modo Noche (Azul)</span></button>
+      </div>
+    </div>
+
+    {% with mensajes = get_flashed_messages(with_categories=true) %}
+      {% for categoria, texto in mensajes %}<div class="alerta {{ categoria }}">{{ texto }}</div>{% endfor %}
+    {% endwith %}
+
+    {% block contenido %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js', v=asset_v) }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
