@@ -40,6 +40,8 @@ def _get_pool():
             max=Config.DB_POOL_SIZE,
             increment=1,
             timeout=300,
+            tcp_connect_timeout=15,
+            retry_count=0,
             getmode=oracledb.POOL_GETMODE_WAIT,
         )
     return _pool
