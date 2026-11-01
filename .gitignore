@@ -6,5 +6,3 @@ venv/
 Wallet/
 Wallet_*/
 *.zip
-Wallet/
-.env
