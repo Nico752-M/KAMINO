@@ -26,13 +26,14 @@ class Config:
     SESSION_COOKIE_SECURE = EN_PRODUCCION      # solo por HTTPS en producción
     SESSION_HOURS = 12
 
-    # Base de datos
-    DB_HOST = os.environ.get("DB_HOST", "127.0.0.1")
-    DB_PORT = int(os.environ.get("DB_PORT", "3306"))
-    DB_NAME = os.environ.get("DB_NAME", "cea_p")
+    # Base de datos (Oracle Autonomous)
     DB_USER = os.environ.get("DB_USER", "")
     DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+    DB_DSN = os.environ.get("DB_DSN", "kamino_low")
+    DB_SCHEMA = os.environ.get("DB_SCHEMA", "CEA_APP")
     DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
+    WALLET_DIR = os.environ.get("WALLET_DIR", "./wallet")
+    WALLET_PASSWORD = os.environ.get("WALLET_PASSWORD", "")
 
     # Colombia (UTC-5, sin horario de verano). El servidor en la nube suele estar en UTC.
     ZONA_HORARIA = "America/Bogota"

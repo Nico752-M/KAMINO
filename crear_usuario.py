@@ -1,14 +1,16 @@
 """Crea o resetea un usuario con contraseña segura.
 
     python crear_usuario.py admin --nombre "Administrador" --rol admin
+
+Se conecta como el dueño de las tablas (cea_app), porque la app web (cea_web)
+no tiene permiso de crear usuarios ni cambiar contraseñas.
 """
 import argparse
 import getpass
+import os
 import sys
 
 from werkzeug.security import generate_password_hash
-
-import db
 
 ROLES = ("admin", "cajera", "secretaria", "contadora")
 
@@ -19,11 +21,18 @@ p.add_argument("--rol", choices=ROLES, default="cajera")
 a = p.parse_args()
 
 usuario = a.usuario.strip().lower()
-clave = getpass.getpass("Contraseña (mínimo 8 caracteres): ")
+clave = getpass.getpass("Contraseña del nuevo usuario (mínimo 8 caracteres): ")
 if len(clave) < 8:
     sys.exit("La contraseña es muy corta.")
 if clave != getpass.getpass("Repite la contraseña: "):
     sys.exit("No coinciden.")
+
+# Conexión como dueño (antes de importar db/config)
+os.environ["DB_USER"] = os.environ.get("DB_OWNER_USER", "cea_app")
+os.environ["DB_PASSWORD"] = os.environ.get("DB_OWNER_PASSWORD") or getpass.getpass("Contraseña de cea_app (Oracle): ")
+os.environ["DB_SCHEMA"] = ""
+
+import db  # noqa: E402
 
 hash_ = generate_password_hash(clave)
 existe = db.fetchone("SELECT id FROM usuarios WHERE usuario = %s", (usuario,))

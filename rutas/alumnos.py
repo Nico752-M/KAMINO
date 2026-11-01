@@ -23,23 +23,29 @@ def _like(texto: str) -> str:
 @login_required
 def lista():
     q = request.args.get("q", "").strip()[:60]
-    like = _like(q)
     error = None
     filas = []
+
+    filtro, params = "", ()
+    if q:
+        like = _like(q)
+        filtro = r"""WHERE (a.numero_documento LIKE %s ESCAPE '\' OR a.nombres LIKE %s ESCAPE '\'
+                   OR a.apellidos LIKE %s ESCAPE '\' OR m.categoria LIKE %s ESCAPE '\'
+                   OR (m.numero_orden || '-' || SUBSTR(TO_CHAR(m.anio), -2)) LIKE %s ESCAPE '\')"""
+        params = (like,) * 5
+
     try:
-        filas = db.fetchall("""
+        filas = db.fetchall(f"""
             SELECT m.id AS matricula_id, m.numero_orden, m.anio, m.categoria, m.estado,
                    COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
                    a.numero_documento, a.nombres, a.apellidos,
                    COALESCE((SELECT SUM(p.valor) FROM pagos p WHERE p.id_matricula = m.id), 0) AS pagado
             FROM matriculas m
             JOIN alumnos a ON a.numero_documento = m.numero_documento
-            WHERE (%s = '' OR a.numero_documento LIKE %s OR a.nombres LIKE %s
-                   OR a.apellidos LIKE %s OR m.categoria LIKE %s
-                   OR CONCAT(m.numero_orden, '-', RIGHT(m.anio, 2)) LIKE %s)
+            {filtro}
             ORDER BY m.fecha_registro DESC
-            LIMIT 200
-        """, (q, like, like, like, like, like))
+            FETCH FIRST 200 ROWS ONLY
+        """, params)
     except Exception as e:
         error = "No se pudo consultar la lista de alumnos."
         print(f"[alumnos] {e}")

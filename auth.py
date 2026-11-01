@@ -102,7 +102,7 @@ def login():
             session["rol"] = fila["rol"]
             token_csrf()
             try:
-                db.execute("UPDATE usuarios SET ultimo_acceso = NOW() WHERE id = %s", (fila["id"],))
+                db.execute("UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = %s", (fila["id"],))
             except Exception:
                 pass
             return redirect(_destino_seguro(destino))

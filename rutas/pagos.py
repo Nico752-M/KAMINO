@@ -2,8 +2,8 @@
 import re
 import uuid
 
+import oracledb
 from flask import Blueprint, Response, current_app, jsonify, request, session, url_for
-from mysql.connector import errors as mysql_errors
 
 import db
 from auth import login_required
@@ -33,6 +33,12 @@ def _estado_nuevo(estado_actual: str, precio: int, total_pagado: float) -> str:
     if precio > 0 and total_pagado >= precio:
         return "Cancelado"
     return "Pendiente Pago" if total_pagado > 0 else "Activo"
+
+
+def _es_duplicado(e: Exception) -> bool:
+    # ORA-00001: restricción única violada (número de recibo repetido)
+    err = e.args[0] if e.args else None
+    return getattr(err, "code", None) == 1
 
 
 @bp.route("/pagos/registrar", methods=["POST"])
@@ -85,8 +91,8 @@ def registrar():
                           session["uid"], observaciones, acompanante))
                     numero = candidato
                     break
-                except mysql_errors.IntegrityError as e:
-                    if e.errno != 1062:
+                except oracledb.IntegrityError as e:
+                    if not _es_duplicado(e):
                         raise
             if not numero:
                 raise PagoInvalido("No se pudo generar el número de recibo. Intenta de nuevo.")

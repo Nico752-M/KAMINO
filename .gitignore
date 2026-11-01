@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 venv/
 .venv/
+Wallet/
+Wallet_*/
+*.zip
+Wallet/
+.env

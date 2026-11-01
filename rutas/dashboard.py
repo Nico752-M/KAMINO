@@ -39,8 +39,8 @@ def index():
             LEFT JOIN pagos p ON p.id_matricula = m.id
             WHERE m.estado NOT IN ('Cancelado', 'Histórico')
             GROUP BY m.id, a.nombres, a.apellidos, a.numero_documento, m.categoria, m.precio_total
-            HAVING precio_total > pagado
-            ORDER BY (precio_total - pagado) DESC
+            HAVING COALESCE(m.precio_total, 0) > COALESCE(SUM(p.valor), 0)
+            ORDER BY (COALESCE(m.precio_total, 0) - COALESCE(SUM(p.valor), 0)) DESC
         """)
         deudores = [{**f, "saldo": float(f["precio_total"]) - float(f["pagado"])} for f in filas]
         datos["pendiente_total"] = sum(d["saldo"] for d in deudores)

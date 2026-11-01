@@ -1,5 +1,5 @@
 """Caja y Tesorería: resumen del día (solo lectura por ahora)."""
-from datetime import date
+from datetime import date, timedelta
 
 from flask import Blueprint, render_template, request
 
@@ -21,25 +21,27 @@ def _fecha_param() -> date:
 @login_required
 def resumen():
     dia = _fecha_param()
+    sig = dia + timedelta(days=1)
     error = None
     movs, totales = [], {"efectivo": 0.0, "otros": 0.0, "ingresos": 0.0, "salidas": 0.0}
     try:
         pagos = db.fetchall("""
             SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.fecha_pago AS momento,
-                   CONCAT(a.nombres, ' ', a.apellidos) AS detalle
+                   TRIM(a.nombres || ' ' || a.apellidos) AS detalle
             FROM pagos p
             LEFT JOIN matriculas m ON m.id = p.id_matricula
             LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
-            WHERE DATE(p.fecha_pago) = %s AND p.concepto <> 'Abono histórico previo'
-        """, (dia,))
+            WHERE p.fecha_pago >= %s AND p.fecha_pago < %s
+              AND p.concepto <> 'Abono histórico previo'
+        """, (dia, sig))
         ingresos = db.fetchall("""
             SELECT numero_recibo, concepto, valor, fecha_ingreso AS momento
-            FROM ingresos_caja WHERE DATE(fecha_ingreso) = %s
-        """, (dia,))
+            FROM ingresos_caja WHERE fecha_ingreso >= %s AND fecha_ingreso < %s
+        """, (dia, sig))
         salidas = db.fetchall("""
             SELECT numero_recibo, concepto, valor, fecha_salida AS momento
-            FROM salidas_caja WHERE DATE(fecha_salida) = %s
-        """, (dia,))
+            FROM salidas_caja WHERE fecha_salida >= %s AND fecha_salida < %s
+        """, (dia, sig))
 
         for p in pagos:
             v = float(p["valor"])
