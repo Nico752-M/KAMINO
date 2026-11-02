@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import unicodedata
 from datetime import date
 
 import oracledb
@@ -33,6 +34,12 @@ def _like(texto: str) -> str:
     return f"%{texto}%"
 
 
+def _normalizar_busqueda(texto: str) -> str:
+    descompuesto = unicodedata.normalize("NFD", texto.upper())
+    return "".join(caracter for caracter in descompuesto
+                   if unicodedata.category(caracter) != "Mn")
+
+
 def _pesos(texto: str) -> int | None:
     if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto):
         return None
@@ -62,10 +69,16 @@ def lista():
 
     filtro, params = "", ()
     if q:
-        like = _like(q)
-        filtro = r"""WHERE (a.numero_documento LIKE %s ESCAPE '\' OR a.nombres LIKE %s ESCAPE '\'
-                   OR a.apellidos LIKE %s ESCAPE '\' OR m.categoria LIKE %s ESCAPE '\'
-                   OR (m.numero_orden || '-' || SUBSTR(TO_CHAR(m.anio), -2)) LIKE %s ESCAPE '\')"""
+        like = _like(_normalizar_busqueda(q))
+        normalizar = (
+            "TRANSLATE(UPPER({}), 'ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝÁÉÍÓÚÜ', "
+            "'AAAAAACEEEEIIIINOOOOOUUUUYAEIOUU')"
+        )
+        filtro = rf"""WHERE ({normalizar.format('a.numero_documento')} LIKE %s ESCAPE '\'
+                   OR {normalizar.format('a.nombres')} LIKE %s ESCAPE '\'
+                   OR {normalizar.format('a.apellidos')} LIKE %s ESCAPE '\'
+                   OR {normalizar.format('m.categoria')} LIKE %s ESCAPE '\'
+                   OR {normalizar.format("(m.numero_orden || '-' || SUBSTR(TO_CHAR(m.anio), -2))")} LIKE %s ESCAPE '\')"""
         params = (like,) * 5
 
     try:

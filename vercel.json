@@ -3,7 +3,7 @@
   "regions": ["gru1"],
   "functions": {
     "index.py": {
-      "maxDuration": 300
+      "maxDuration": 30
     }
   }
 }

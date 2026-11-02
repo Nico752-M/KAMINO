@@ -1,8 +1,9 @@
 """Punto de entrada. Desarrollo:  flask --app app run --debug"""
 from datetime import timedelta
 from pathlib import Path
+from time import perf_counter
 
-from flask import Flask, abort, render_template, request, send_from_directory, session
+from flask import Flask, abort, g, render_template, request, send_from_directory, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
@@ -45,12 +46,25 @@ def create_app() -> Flask:
 
     # ── Seguridad ──
     @app.before_request
+    def iniciar_medicion():
+        g.request_started = perf_counter()
+        g.db_query_count = 0
+        g.db_query_ms = 0.0
+
+    @app.before_request
     def proteger_post():
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             auth.verificar_csrf()
 
     @app.after_request
     def cabeceras(resp):
+        if hasattr(g, "request_started"):
+            total_ms = (perf_counter() - g.request_started) * 1000
+            db_ms = getattr(g, "db_query_ms", 0.0)
+            db_count = getattr(g, "db_query_count", 0)
+            resp.headers["Server-Timing"] = (
+                f"app;dur={total_ms:.1f}, db;dur={db_ms:.1f};desc=\"{db_count} queries\""
+            )
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "same-origin"

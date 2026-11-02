@@ -8,9 +8,11 @@ import base64
 import os
 import pathlib
 import re
+import time
 from contextlib import contextmanager
 
 import oracledb
+from flask import g, has_request_context
 
 from config import Config
 
@@ -50,9 +52,6 @@ def _init_sesion(cnx, requested_tag):
         if Config.DB_SCHEMA:
             c.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {Config.DB_SCHEMA}")
         c.execute(f"ALTER SESSION SET TIME_ZONE = '{Config.DB_TIMEZONE}'")
-        # Búsquedas sin distinguir mayúsculas ni tildes.
-        c.execute("ALTER SESSION SET NLS_COMP = LINGUISTIC")
-        c.execute("ALTER SESSION SET NLS_SORT = BINARY_AI")
 
 
 def _get_pool():
@@ -68,8 +67,8 @@ def _get_pool():
             config_dir=carpeta,
             wallet_location=carpeta,
             wallet_password=Config.WALLET_PASSWORD,
-            min=2,
-            max=Config.DB_POOL_SIZE,
+            min=1,
+            max=min(Config.DB_POOL_SIZE, 3),
             increment=1,
             timeout=300,
             tcp_connect_timeout=60,
@@ -85,6 +84,16 @@ def _conectar():
     return _get_pool().acquire()
 
 
+def _registrar_medicion(inicio: float, consulta: bool = False) -> None:
+    if not has_request_context():
+        return
+    if consulta:
+        g.db_query_count = getattr(g, "db_query_count", 0) + 1
+    g.db_query_ms = getattr(g, "db_query_ms", 0.0) + (
+        time.perf_counter() - inicio
+    ) * 1000
+
+
 class _Cursor:
     """Envuelve el cursor para recibir %s y devolver dicts."""
 
@@ -92,17 +101,29 @@ class _Cursor:
         self._c = cur
 
     def execute(self, sql: str, params: tuple = ()):
-        self._c.execute(_pos(sql), list(params))
+        started = time.perf_counter()
+        try:
+            self._c.execute(_pos(sql), list(params))
+        finally:
+            _registrar_medicion(started, consulta=True)
         if self._c.description:
             cols = [d[0].lower() for d in self._c.description]
             self._c.rowfactory = lambda *v: dict(zip(cols, v))
         return self
 
     def fetchone(self):
-        return self._c.fetchone()
+        started = time.perf_counter()
+        try:
+            return self._c.fetchone()
+        finally:
+            _registrar_medicion(started)
 
     def fetchall(self):
-        return self._c.fetchall()
+        started = time.perf_counter()
+        try:
+            return self._c.fetchall()
+        finally:
+            _registrar_medicion(started)
 
     @property
     def rowcount(self):

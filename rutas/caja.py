@@ -58,10 +58,22 @@ def resumen():
                "apertura": 0.0, "esperado": 0.0, "contado": 0.0, "diferencia": 0.0}
     try:
         filtro_pago = " AND p.usuario_id = %s" if filtro_usuario is not None else ""
-        params_pago = (dia, sig, filtro_usuario) if filtro_usuario is not None else (dia, sig)
-        pagos = db.fetchall(f"""
-            SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.fecha_pago AS momento,
-                   TRIM(a.nombres || ' ' || a.apellidos) AS detalle, u.nombre AS cajero,
+        filtro_ingreso = " AND i.usuario_id = %s" if filtro_usuario is not None else ""
+        filtro_salida = " AND s.usuario_id = %s" if filtro_usuario is not None else ""
+        params_movimientos = (dia, sig)
+        if filtro_usuario is not None:
+            params_movimientos += (filtro_usuario,)
+        params_movimientos += (dia, sig)
+        if filtro_usuario is not None:
+            params_movimientos += (filtro_usuario,)
+        params_movimientos += (dia, sig)
+        if filtro_usuario is not None:
+            params_movimientos += (filtro_usuario,)
+        movimientos = db.fetchall(f"""
+            SELECT 'pago' AS tipo, p.numero_recibo AS recibo, p.fecha_pago AS momento,
+                   COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
+                       || ' — ' || p.concepto AS detalle,
+                   p.metodo_pago AS metodo, p.valor, u.nombre AS cajero,
                    p.anulado, p.motivo_anulacion
             FROM pagos p
             LEFT JOIN matriculas m ON m.id = p.id_matricula
@@ -69,51 +81,36 @@ def resumen():
             LEFT JOIN usuarios u ON u.id = p.usuario_id
             WHERE p.fecha_pago >= %s AND p.fecha_pago < %s
               AND p.concepto <> 'Abono histórico previo'{filtro_pago}
-        """, params_pago)
-
-        filtro_ingreso = " AND i.usuario_id = %s" if filtro_usuario is not None else ""
-        params_ingreso = (dia, sig, filtro_usuario) if filtro_usuario is not None else (dia, sig)
-        ingresos = db.fetchall(f"""
-            SELECT i.numero_recibo, i.concepto, i.valor, i.fecha_ingreso AS momento,
-                   i.usuario_id, u.nombre AS cajero, i.anulado, i.motivo_anulacion
+            UNION ALL
+            SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
+                   'Efectivo', i.valor, u.nombre, i.anulado, i.motivo_anulacion
             FROM ingresos_caja i
             LEFT JOIN usuarios u ON u.id = i.usuario_id
-            WHERE i.fecha_ingreso >= %s AND i.fecha_ingreso < %s
-              {filtro_ingreso}
-        """, params_ingreso)
-        salidas = db.fetchall(f"""
-            SELECT s.numero_recibo, s.concepto, s.valor, s.fecha_salida AS momento,
-                   s.usuario_id, u.nombre AS cajero, s.anulado, s.motivo_anulacion
+            WHERE i.fecha_ingreso >= %s AND i.fecha_ingreso < %s{filtro_ingreso}
+            UNION ALL
+            SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
+                   'Efectivo', s.valor, u.nombre, s.anulado, s.motivo_anulacion
             FROM salidas_caja s
             LEFT JOIN usuarios u ON u.id = s.usuario_id
-            WHERE s.fecha_salida >= %s AND s.fecha_salida < %s
-              {("AND s.usuario_id = %s" if filtro_usuario is not None else "")}
-        """, params_ingreso)
+            WHERE s.fecha_salida >= %s AND s.fecha_salida < %s{filtro_salida}
+        """, params_movimientos)
 
-        for p in pagos:
-            valor = float(p["valor"])
-            if not p["anulado"]:
-                totales["efectivo" if p["metodo_pago"] == "Efectivo" else "otros"] += valor
-            movs.append({"tipo": "pago", "recibo": p["numero_recibo"], "momento": p["momento"],
-                         "detalle": f"{p['detalle'] or 'Sin alumno'} — {p['concepto']}",
-                         "metodo": p["metodo_pago"], "valor": valor, "cajero": p["cajero"] or "—",
-                         "anulado": bool(p["anulado"]), "motivo_anulacion": p["motivo_anulacion"]})
-        for ingreso in ingresos:
-            valor = float(ingreso["valor"])
-            if not ingreso["anulado"]:
-                totales["ingresos"] += valor
-            movs.append({"tipo": "ingreso", "recibo": ingreso["numero_recibo"],
-                         "momento": ingreso["momento"], "detalle": ingreso["concepto"],
-                         "metodo": "Efectivo", "valor": valor, "cajero": ingreso["cajero"] or "—",
-                         "anulado": bool(ingreso["anulado"]), "motivo_anulacion": ingreso["motivo_anulacion"]})
-        for salida in salidas:
-            valor = float(salida["valor"])
-            if not salida["anulado"]:
-                totales["salidas"] += valor
-            movs.append({"tipo": "salida", "recibo": salida["numero_recibo"],
-                         "momento": salida["momento"], "detalle": salida["concepto"],
-                         "metodo": "Efectivo", "valor": -valor, "cajero": salida["cajero"] or "—",
-                         "anulado": bool(salida["anulado"]), "motivo_anulacion": salida["motivo_anulacion"]})
+        for movimiento in movimientos:
+            tipo = movimiento["tipo"]
+            valor = float(movimiento["valor"])
+            anulado = bool(movimiento["anulado"])
+            if not anulado:
+                if tipo == "pago":
+                    totales["efectivo" if movimiento["metodo"] == "Efectivo" else "otros"] += valor
+                else:
+                    totales["ingresos" if tipo == "ingreso" else "salidas"] += valor
+            movs.append({
+                "tipo": tipo, "recibo": movimiento["recibo"], "momento": movimiento["momento"],
+                "detalle": movimiento["detalle"] or "Sin alumno", "metodo": movimiento["metodo"],
+                "valor": -valor if tipo == "salida" else valor,
+                "cajero": movimiento["cajero"] or "—", "anulado": anulado,
+                "motivo_anulacion": movimiento["motivo_anulacion"],
+            })
         movs.sort(key=lambda mov: mov["momento"])
 
         filtro_caja = " AND c.usuario_id = %s" if filtro_usuario is not None else ""

@@ -31,7 +31,7 @@ class Config:
     DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
     DB_DSN = os.environ.get("DB_DSN", "kamino_low")
     DB_SCHEMA = os.environ.get("DB_SCHEMA", "CEA_APP")
-    DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
+    DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "3"))
     WALLET_DIR = os.environ.get("WALLET_DIR", "./Wallet")
     WALLET_PASSWORD = os.environ.get("WALLET_PASSWORD", "")
 

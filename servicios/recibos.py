@@ -2,14 +2,11 @@
 from datetime import datetime
 from io import BytesIO
 
-from reportlab.lib.units import mm
-from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.pdfgen import canvas
-
 from utils import cop
 
-ANCHO = 80 * mm
-MARGEN = 5 * mm
+MM = 72 / 25.4
+ANCHO = 80 * MM
+MARGEN = 5 * MM
 NEGRO, GRIS, ROJO = (0.07, 0.09, 0.15), (0.42, 0.44, 0.50), (0.78, 0.15, 0.16)
 
 F_TITULO = ("Helvetica-Bold", 13)
@@ -33,6 +30,8 @@ def numero_recibo(cur) -> str:
 
 
 def _ajustar(texto: str, fuente: str, tam: float, ancho: float) -> str:
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
     texto = str(texto)
     if stringWidth(texto, fuente, tam) <= ancho:
         return texto
@@ -65,13 +64,15 @@ class _Ticket:
             elif c[0] == "linea":
                 h += 4
             elif c[0] == "espacio":
-                h += c[1] * mm
+                h += c[1] * MM
             else:
                 h += F_NORMAL[1] * 1.4
         return h
 
     def pdf(self) -> bytes:
-        alto = self._altura() + 10 * mm
+        from reportlab.pdfgen import canvas
+
+        alto = self._altura() + 10 * MM
         buf = BytesIO()
         c = canvas.Canvas(buf, pagesize=(ANCHO, alto))
         c.setTitle("Recibo PRACTICAR")
@@ -80,7 +81,7 @@ class _Ticket:
         for cmd in self.cmds:
             tipo = cmd[0]
             if tipo == "espacio":
-                y -= cmd[1] * mm
+                y -= cmd[1] * MM
             elif tipo == "linea":
                 y -= 2
                 c.setStrokeColorRGB(*GRIS)
@@ -103,6 +104,8 @@ class _Ticket:
                     c.drawString(MARGEN, y, t)
             else:
                 _, k, v, neg = cmd
+                from reportlab.pdfbase.pdfmetrics import stringWidth
+
                 y -= F_NORMAL[1] * 1.4
                 c.setFont(*F_NORMAL)
                 c.setFillColorRGB(*GRIS)
