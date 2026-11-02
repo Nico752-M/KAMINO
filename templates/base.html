@@ -22,16 +22,17 @@
     <div class="preview-brand"><div class="preview-brand-badge"></div> CEA PRACTICAR</div>
     <nav class="preview-menu">
       <div class="sidebar-category">Principal</div>
-      <a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if nav == 'dashboard' }}"><i class="ri-dashboard-3-line"></i> Dashboard</a>
+      {% if 'ver_dashboard' in permisos %}<a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if nav == 'dashboard' }}"><i class="ri-dashboard-3-line"></i> Dashboard</a>{% endif %}
 
       <div class="sidebar-category">Operación</div>
-      <a href="{{ url_for('alumnos.lista') }}" class="{{ 'active' if nav == 'alumnos' }}"><i class="ri-team-line"></i> Alumnos y Matriculados</a>
-      <a href="{{ url_for('caja.resumen') }}" class="{{ 'active' if nav == 'caja' }}"><i class="ri-safe-2-line"></i> Caja y Tesorería</a>
+      {% if 'ver_alumnos' in permisos %}<a href="{{ url_for('alumnos.lista') }}" class="{{ 'active' if nav == 'alumnos' }}"><i class="ri-team-line"></i> Alumnos y Matriculados</a>{% endif %}
+      {% if 'ver_caja' in permisos %}<a href="{{ url_for('caja.resumen') }}" class="{{ 'active' if nav == 'caja' }}"><i class="ri-safe-2-line"></i> Caja y Tesorería</a>{% endif %}
 
       <div class="sidebar-category">Gestión y Archivo</div>
-      <a href="{{ url_for('tramites.lista') }}" class="{{ 'active' if nav == 'tramites' }}"><i class="ri-folder-history-line"></i> Trámites y Archivo
+      {% if 'ver_tramites' in permisos %}<a href="{{ url_for('tramites.lista') }}" class="{{ 'active' if nav == 'tramites' }}"><i class="ri-folder-history-line"></i> Trámites y Archivo
         {% if runt_pendientes %}<span class="nav-badge">{{ runt_pendientes if runt_pendientes < 100 else '99+' }}</span>{% endif %}
-      </a>
+      </a>{% endif %}
+      {% if 'gestionar_usuarios' in permisos %}<a href="{{ url_for('usuarios.lista') }}" class="{{ 'active' if nav == 'usuarios' }}"><i class="ri-shield-user-line"></i> Usuarios y permisos</a>{% endif %}
     </nav>
     <div class="sidebar-user">
       <strong>{{ session.nombre }}</strong>{{ session.rol|capitalize }}
@@ -46,10 +47,10 @@
     <div class="top-bar-options">
       <div class="top-left">
         <button class="menu-btn" id="menu-btn" type="button" aria-label="Abrir menú"><i class="ri-menu-line"></i></button>
-        <form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
+        {% if 'ver_alumnos' in permisos %}<form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
           <i class="ri-search-line"></i>
           <input type="search" name="q" value="{{ q|default('') }}" placeholder="Buscar alumno, cédula o categoría..." autocomplete="off">
-        </form>
+        </form>{% endif %}
       </div>
       <div class="top-right">
         <div class="fecha-hoy"><i class="ri-calendar-line"></i> {{ fecha_hoy }}</div>

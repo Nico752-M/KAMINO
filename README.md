@@ -1,49 +1,98 @@
-# CEA Practicar — versión web (Flask + MySQL + PWA)
+# CEA Practicar
 
-## Cómo correrlo en tu PC
-1. Python 3.11 o superior.
-2. `python -m venv venv` y activarlo (`venv\Scripts\activate` en Windows).
-3. `pip install -r requirements.txt`
-4. Copia `.env.example` a `.env` y llena los datos de tu MySQL (la misma base `cea_p`).
-5. Crea tu usuario con contraseña segura:
+Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PWA.
+
+## Desarrollo local
+
+1. Requiere Python 3.11 o superior.
+2. Crea y activa un entorno virtual:
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   ```
+3. Instala dependencias: `pip install -r requirements.txt`.
+4. Copia `.env.example` a `.env` y completa las credenciales Oracle y del wallet.
+5. Si aún no se ha aplicado, ejecuta una vez la migración como `CEA_APP`:
+   `@C:\ruta\al\proyecto\migrations\001_perfiles_personales.sql`
+6. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-6. `flask --app app run --debug` y abre http://127.0.0.1:5000
+7. Ejecuta `flask --app app run --debug`.
 
-## Revisa tu base de datos (el código asume esto)
-Los .sql que me pasaste no coinciden con el código del escritorio. Verifica en tu MySQL real:
-- `pagos` tiene: `id_matricula, concepto, valor, metodo_pago, numero_recibo, usuario_id, observaciones, acompanante, fecha_pago`
-- `pagos.metodo_pago` incluye `Sistecredit` (si es ENUM sin ese valor, hay que ampliarlo con ALTER TABLE)
-- `matriculas` tiene: `numero_orden, anio, categoria, estado, precio_total, fecha_registro, runt_registrado`
-- Existen `ingresos_caja` (`fecha_ingreso`) y `salidas_caja` (`fecha_salida`, `numero_recibo`) y `usuarios` con `activo`, `rol`, `ultimo_acceso`
-Si algo falta, la pantalla correspondiente muestra un aviso (no se cae todo) y el detalle sale en la consola.
+## Oracle
 
-## Estructura
-- `app.py` arranque, seguridad (CSRF, cabeceras) y rutas PWA
-- `config.py` / `.env` configuración y claves (nada sensible en el código)
-- `db.py` pool de conexiones MySQL y transacciones
-- `auth.py` login, sesiones, roles
-- `rutas/` una pantalla por archivo (dashboard, alumnos, pagos, caja, tramites)
-- `servicios/recibos.py` ticket PDF de 80 mm
-- `templates/` HTML (base.html = menú + barra superior)
-- `public/static/` CSS, JS, iconos, `manifest.json`, `sw.js`
+La app se conecta a Oracle Autonomous Database mediante `oracledb` en modo thin.
+En local, `WALLET_DIR` apunta por defecto a `./Wallet`. No subas el wallet ni el
+archivo `.env` al repositorio.
 
-## Publicar
-- Procfile listo: `gunicorn wsgi:app`
-- Variables en el servidor: `APP_ENV=production`, `SECRET_KEY`, `DB_*`, `TRUST_PROXY=1`
-- Debe servirse por HTTPS (sin HTTPS no se puede instalar como PWA).
-- Cuando cambies CSS/JS sube `ASSET_V` en `config.py` y `VERSION` en `public/static/sw.js`.
+La migración `migrations/001_perfiles_personales.sql` se ejecuta una sola vez
+conectado como propietario `CEA_APP` en SQLcl. Crea un perfil privado por
+usuario, asigna permisos iniciales equivalentes a los roles actuales y agrega
+`NUMERO_RECIBO` a `SALIDAS_CAJA`. También otorga a `CEA_WEB` los permisos DML
+necesarios. La app no ejecuta DDL.
 
-### Publicar en Vercel
-- Para la etapa visual, Vercel sirve `public/index.html` como entrada y las páginas
-  `public/dashboard.html`, `public/alumnos.html`, `public/tesoreria.html` y `public/tramites.html`
-  como prototipo estático. El formulario simula el ingreso y no valida credenciales ni guarda datos.
-- Las plantillas Jinja originales siguen en `templates/` para cuando se conecte el backend Flask.
-  `index.py` exporta esa aplicación; sus rutas y el prototipo estático son superficies separadas.
-- La vista estática no requiere variables de base de datos. Para activar el backend después,
-  configura `APP_ENV=production`, `SECRET_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
-  `DB_PASSWORD` y `TRUST_PROXY=1`. La base MySQL debe permitir conexiones desde Vercel;
-  no uses `127.0.0.1` como `DB_HOST`.
+Cada perfil pertenece a una única persona: varios usuarios pueden tener la
+misma categoría (`admin`, `cajera`, `secretaria` o `contadora`), pero no
+comparten perfil ni permisos. El administrador puede cambiar individualmente
+los permisos de cada cuenta desde **Usuarios y permisos**. El campo `ROL` se
+mantiene por compatibilidad y como categoría; la autorización usa el perfil.
 
-## Pendiente (siguientes fases)
-Nueva matrícula/editar/ver/eliminar, alumno histórico, precios, renovaciones (alumno externo),
-registrar salidas/ingresos de caja, cierre de caja (conteo, PDF, Excel), expedientes, ficha y evaluaciones.
+El consecutivo de matrícula empieza de nuevo cada año. La restricción única
+`UQ_MAT_ORDEN (ANIO, NUMERO_ORDEN)` conserva los registros anteriores y evita
+duplicados cuando se crean matrículas concurrentemente.
+
+## Vercel
+
+Vercel sirve la app Flask desde `index.py` y los archivos estáticos desde
+`public/`. No hace falta comprar ni configurar un dominio: se puede usar el
+dominio gratuito `*.vercel.app`.
+
+En **Project → Settings → Environment Variables**, configura para Production
+(y Preview si corresponde):
+
+- `APP_ENV=production`
+- `SECRET_KEY`: valor aleatorio largo y privado.
+- `DB_USER=CEA_WEB`
+- `DB_PASSWORD`: contraseña del usuario Oracle `CEA_WEB`.
+- `DB_DSN=kamino_low`
+- `DB_SCHEMA=CEA_APP`
+- `WALLET_PASSWORD`: contraseña del wallet de Oracle.
+- `WALLET_PEM_B64`: contenido base64 del archivo `ewallet.pem`.
+- `WALLET_TNS_B64`: contenido base64 de `tnsnames.ora`.
+- `TRUST_PROXY=1`
+
+En PowerShell, desde la raíz del proyecto, puedes generar los dos valores del
+wallet localmente (no los publiques ni los pegues en el repositorio):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("Wallet\ewallet.pem"))
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("Wallet\tnsnames.ora"))
+```
+
+Vercel usa el espacio temporal `/tmp` para materializar esos dos archivos en
+cada instancia. No almacenes el wallet, contraseñas ni datos persistentes en el
+filesystem de una función. La base Oracle debe aceptar conexiones desde Vercel;
+verifica la configuración de acceso de red de Autonomous Database. No abras la
+base a internet sin comprobar antes sus restricciones y el uso de wallet.
+
+Después de configurar las variables, vuelve a desplegar. Los errores de
+conexión se consultan en **Vercel → Deployments → Functions/Logs**. El archivo
+`vercel.json` establece el límite de ejecución de la función Flask; los límites
+exactos disponibles dependen del plan de Vercel.
+
+## Funcionalidad
+
+- Inicio/cierre de sesión, CSRF y cuentas con contraseña cifrada.
+- Dashboard, búsqueda de alumnos y matrículas, registro de pagos y recibos PDF.
+- Creación de matrículas con consecutivo anual.
+- Consulta de caja y registro manual de ingresos y salidas.
+- Seguimiento RUNT.
+- Administración de cuentas y perfiles de permisos individuales.
+
+El cierre de caja con conteo de billetes y exportación PDF/Excel, expedientes y
+otras funciones no tienen todavía una interfaz implementada.
+
+## Pruebas y ejecución local
+
+- Ejecutar la aplicación: `flask --app app run --debug`
+- Comprobar salud: `http://127.0.0.1:5000/healthz`
+- Desplegar en Vercel conectando el repositorio o con Vercel CLI.

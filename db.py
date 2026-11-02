@@ -31,17 +31,23 @@ import base64, os, pathlib
 def _wallet_dir() -> str:
     pem = os.environ.get("WALLET_PEM_B64")
     tns = os.environ.get("WALLET_TNS_B64")
-    if not (pem and tns):
-        return Config.WALLET_DIR      # en tu PC sigue usando ./Wallet
+    if bool(pem) != bool(tns):
+        raise RuntimeError("WALLET_PEM_B64 y WALLET_TNS_B64 deben configurarse juntos.")
+    if not pem:
+        if not pathlib.Path(Config.WALLET_DIR).is_dir():
+            raise FileNotFoundError(f"No se encontró el wallet Oracle en {Config.WALLET_DIR}.")
+        return Config.WALLET_DIR
     d = pathlib.Path("/tmp/wallet")
     d.mkdir(exist_ok=True)
-    (d / "ewallet.pem").write_bytes(base64.b64decode(pem))
-    (d / "tnsnames.ora").write_bytes(base64.b64decode(tns))
+    (d / "ewallet.pem").write_bytes(base64.b64decode(pem, validate=True))
+    (d / "tnsnames.ora").write_bytes(base64.b64decode(tns, validate=True))
     return str(d)
 
 def _get_pool():
     global _pool
     if _pool is None:
+        if not Config.DB_USER or not Config.DB_PASSWORD or not Config.WALLET_PASSWORD:
+            raise RuntimeError("Faltan DB_USER, DB_PASSWORD o WALLET_PASSWORD.")
         carpeta = _wallet_dir()
         _pool = oracledb.create_pool(
             user=Config.DB_USER,

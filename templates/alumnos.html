@@ -15,7 +15,7 @@
         <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
         <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
         <td>
-          {% if f.saldo > 0 and f.estado != 'Histórico' and session.rol in ('admin','cajera','secretaria') %}
+          {% if f.saldo > 0 and f.estado != 'Histórico' and 'registrar_pagos' in permisos %}
           <button class="btn-action green sm js-cobrar" type="button"
                   data-matricula="{{ f.matricula_id }}"
                   data-nombre="{{ f.nombres }} {{ f.apellidos }}"
@@ -36,7 +36,7 @@
     <h2 class="section-title">Alumnos y Matriculados</h2>
     <p class="section-desc">Gestión de inscritos a cursos completos y renovaciones rápidas.</p>
   </div>
-  <button class="btn-action red" type="button" disabled title="Próxima fase"><i class="ri-user-add-line"></i> Nueva Matrícula</button>
+  {% if 'crear_matricula' in permisos %}<button class="btn-action red" id="btnNuevaMatricula" type="button"><i class="ri-user-add-line"></i> Nueva Matrícula</button>{% endif %}
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
@@ -53,6 +53,39 @@
 </div>
 
 {% include "parciales/modal_pago.html" %}
+
+{% if 'crear_matricula' in permisos %}
+<div class="modal-overlay" id="matriculaModal">
+  <div class="modal-drawer">
+    <div class="modal-header">
+      <h3 style="font-size:1.1rem;font-weight:800">Nueva matrícula</h3>
+      <button class="modal-close-btn" id="btnCerrarMatricula" type="button" aria-label="Cerrar">&times;</button>
+    </div>
+    <form method="post" action="{{ url_for('alumnos.crear_matricula') }}" style="display:flex;flex-direction:column;flex:1">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label class="lbl" for="matriculaDocumento">Documento</label>
+        <input class="input-clean" id="matriculaDocumento" name="numero_documento" maxlength="20" required></div>
+      <div class="field"><label class="lbl" for="matriculaNombres">Nombres</label>
+        <input class="input-clean" id="matriculaNombres" name="nombres" maxlength="100" required></div>
+      <div class="field"><label class="lbl" for="matriculaApellidos">Apellidos</label>
+        <input class="input-clean" id="matriculaApellidos" name="apellidos" maxlength="100" required></div>
+      <div class="field"><label class="lbl" for="matriculaCategoria">Categoría / curso</label>
+        <input class="input-clean" id="matriculaCategoria" name="categoria" maxlength="60" required></div>
+      <div class="field"><label class="lbl" for="matriculaPrecio">Precio total (COP)</label>
+        <input class="input-clean" id="matriculaPrecio" name="precio_total" type="number" min="1" max="999999999999" step="1" required></div>
+      <p class="hint">Si el alumno ya existe, usa exactamente sus nombres registrados. El número de documento permite varias matrículas.</p>
+      <p class="hint">Año {{ anio_actual }} · El consecutivo se asigna automáticamente y se reinicia cada año.</p>
+      <div class="modal-footer">
+        <button type="button" class="btn-action" id="btnCancelarMatricula">Cancelar</button>
+        <button type="submit" class="btn-action green"><i class="ri-save-line"></i> Crear matrícula</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', filename='js/pagos.js', v=asset_v) }}"></script>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pagos.js', v=asset_v) }}"></script>
+{% if 'crear_matricula' in permisos %}<script src="{{ url_for('static', filename='js/matriculas.js', v=asset_v) }}"></script>{% endif %}
+{% endblock %}

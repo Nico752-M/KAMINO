@@ -23,6 +23,33 @@
   <div class="stat-card gold"><div class="stat-label">Efectivo esperado en caja</div><div class="stat-value" style="color:var(--accent-gold)">{{ t.en_caja|cop }}</div></div>
 </div>
 
+{% if 'gestionar_caja' in permisos %}
+<div class="grid-stats">
+  <section class="card-bento">
+    <div class="grupo-titulo"><i class="ri-add-circle-line"></i> Registrar ingreso manual</div>
+    <form method="post" action="{{ url_for('caja.registrar_movimiento', tipo='ingreso') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label class="lbl" for="ingresoConcepto">Concepto</label>
+        <input class="input-clean" id="ingresoConcepto" name="concepto" maxlength="200" required></div>
+      <div class="field"><label class="lbl" for="ingresoValor">Valor (COP)</label>
+        <input class="input-clean" id="ingresoValor" name="valor" type="number" min="1" max="100000000" step="1" required></div>
+      <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar ingreso</button>
+    </form>
+  </section>
+  <section class="card-bento">
+    <div class="grupo-titulo"><i class="ri-indeterminate-circle-line"></i> Registrar salida manual</div>
+    <form method="post" action="{{ url_for('caja.registrar_movimiento', tipo='salida') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label class="lbl" for="salidaConcepto">Concepto</label>
+        <input class="input-clean" id="salidaConcepto" name="concepto" maxlength="200" required></div>
+      <div class="field"><label class="lbl" for="salidaValor">Valor (COP)</label>
+        <input class="input-clean" id="salidaValor" name="valor" type="number" min="1" max="100000000" step="1" required></div>
+      <button class="btn-action red" type="submit"><i class="ri-save-line"></i> Guardar salida</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+
 <div class="card-bento">
   {% if movs %}
   <div class="table-wrap"><table class="table-clean">
@@ -44,5 +71,5 @@
   </table></div>
   {% else %}<div class="vacio">Sin movimientos en esta fecha.</div>{% endif %}
 </div>
-<p class="hint">Registrar salidas/ingresos manuales, conteo de billetes y PDF/Excel del cierre: próximas fases.</p>
+<p class="hint">El cierre de caja con conteo de billetes y exportación PDF/Excel aún no está disponible.</p>
 {% endblock %}

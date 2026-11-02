@@ -1,11 +1,10 @@
 """Trámites: recordatorios de registro en el RUNT (y expedientes más adelante)."""
 import time
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, current_app, jsonify, render_template
 
 import db
-from auth import login_required
-from config import Config
+from auth import login_required, permiso_requerido
 from utils import a_fecha, hoy
 
 bp = Blueprint("tramites", __name__)
@@ -34,22 +33,26 @@ def contar_pendientes_cacheado() -> int:
     """Número para la insignia del menú. Se cachea 60 s para no consultar en cada página."""
     if time.time() - _cache["t"] > 60:
         try:
-            _cache["n"] = len(_pendientes())
+            pendientes = _pendientes()
         except Exception:
-            _cache["n"] = 0
-        _cache["t"] = time.time()
+            current_app.logger.exception("No se pudo actualizar el contador de pendientes RUNT")
+            _cache["t"] = time.time()
+        else:
+            _cache["n"] = len(pendientes)
+            _cache["t"] = time.time()
     return _cache["n"]
 
 
 @bp.route("/tramites")
 @login_required
+@permiso_requerido("ver_tramites")
 def lista():
     error, filas = None, []
     try:
         filas = _pendientes()
-    except Exception as e:
+    except Exception:
         error = "No se pudo consultar los pendientes de RUNT."
-        print(f"[tramites] {e}")
+        current_app.logger.exception("No se pudo consultar los pendientes de RUNT")
     grupos = {
         "urgentes": [f for f in filas if f["dias"] >= 60],
         "proximos": [f for f in filas if 30 <= f["dias"] < 60],
@@ -59,8 +62,15 @@ def lista():
 
 
 @bp.route("/tramites/runt/<int:matricula_id>", methods=["POST"])
-@login_required(roles=Config.ROLES_TRAMITES)
+@login_required
+@permiso_requerido("marcar_runt")
 def marcar_runt(matricula_id):
-    db.execute("UPDATE matriculas SET runt_registrado = 1 WHERE id = %s", (matricula_id,))
+    afectadas = db.execute(
+        "UPDATE matriculas SET runt_registrado = 1 "
+        "WHERE id = %s AND estado <> 'Histórico' AND runt_registrado = 0",
+        (matricula_id,),
+    )
+    if afectadas != 1:
+        return jsonify(ok=False, error="La matrícula no existe, es histórica o ya está registrada."), 404
     _cache["t"] = 0  # refrescar la insignia
     return jsonify(ok=True)

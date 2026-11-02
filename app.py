@@ -1,5 +1,6 @@
 """Punto de entrada. Desarrollo:  flask --app app run --debug"""
 from datetime import timedelta
+from pathlib import Path
 
 from flask import Flask, abort, render_template, request, send_from_directory, session
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -8,19 +9,25 @@ import auth
 from config import Config
 from utils import cop, fecha_larga
 
+STATIC_DIR = Path(__file__).resolve().parent / "public" / "static"
+
 
 def create_app() -> Flask:
-    app = Flask(__name__, static_folder="public/static")
+    app = Flask(__name__, static_folder=None)
     app.config.from_object(Config)
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=Config.SESSION_HOURS)
 
-    if Config.TRUST_PROXY:  # detrás de Railway / Render / Nginx
+    @app.route("/static/<path:filename>", endpoint="static")
+    def static_file(filename):
+        return send_from_directory(STATIC_DIR, filename)
+
+    if Config.TRUST_PROXY:  # detrás del proxy de Vercel, Railway, Render o Nginx
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # ── Blueprints ──
-    from rutas import alumnos, caja, dashboard, pagos, tramites
+    from rutas import alumnos, caja, dashboard, pagos, tramites, usuarios
     app.register_blueprint(auth.bp)
-    for modulo in (dashboard, alumnos, pagos, caja, tramites):
+    for modulo in (dashboard, alumnos, pagos, caja, tramites, usuarios):
         app.register_blueprint(modulo.bp)
 
     # ── Plantillas ──
@@ -29,8 +36,9 @@ def create_app() -> Flask:
     @app.context_processor
     def contexto_global():
         datos = {"csrf_token": auth.token_csrf, "asset_v": Config.ASSET_V,
-                 "fecha_hoy": fecha_larga(), "runt_pendientes": 0}
-        if "uid" in session:
+                 "fecha_hoy": fecha_larga(), "runt_pendientes": 0,
+                 "permisos": auth.permisos_actuales()}
+        if "uid" in session and "ver_tramites" in datos["permisos"]:
             from rutas.tramites import contar_pendientes_cacheado
             datos["runt_pendientes"] = contar_pendientes_cacheado()
         return datos
@@ -53,13 +61,13 @@ def create_app() -> Flask:
     # ── PWA ──
     @app.route("/manifest.json")
     def manifest():
-        return send_from_directory(app.static_folder, "manifest.json",
+        return send_from_directory(STATIC_DIR, "manifest.json",
                                    mimetype="application/manifest+json")
 
     @app.route("/sw.js")
     def service_worker():
         # Se sirve desde la raíz para que controle todo el sitio
-        resp = send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+        resp = send_from_directory(STATIC_DIR, "sw.js", mimetype="application/javascript")
         resp.headers["Service-Worker-Allowed"] = "/"
         return resp
 

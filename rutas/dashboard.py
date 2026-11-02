@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from flask import Blueprint, render_template
 
 import db
-from auth import login_required
+from auth import login_required, permiso_requerido
 from utils import hoy
 
 bp = Blueprint("dashboard", __name__)
@@ -17,6 +17,7 @@ def _rango_mes(d: date) -> tuple[date, date]:
 
 @bp.route("/")
 @login_required
+@permiso_requerido("ver_dashboard")
 def index():
     datos = {"activos": 0, "ingresos_mes": 0, "pendiente_total": 0, "deudores": []}
     error = None

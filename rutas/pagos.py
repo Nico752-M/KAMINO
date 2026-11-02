@@ -6,8 +6,7 @@ import oracledb
 from flask import Blueprint, Response, current_app, jsonify, request, session, url_for
 
 import db
-from auth import login_required
-from config import Config
+from auth import login_required, permiso_requerido
 from servicios.recibos import generar_recibo_pago_pdf
 from utils import entero
 
@@ -42,7 +41,8 @@ def _es_duplicado(e: Exception) -> bool:
 
 
 @bp.route("/pagos/registrar", methods=["POST"])
-@login_required(roles=Config.ROLES_COBRO)
+@login_required
+@permiso_requerido("registrar_pagos")
 def registrar():
     d = request.get_json(silent=True) or {}
 
@@ -59,6 +59,8 @@ def registrar():
             raise PagoInvalido("Matrícula no válida.")
         if metodo not in METODOS:
             raise PagoInvalido("Método de pago no válido.")
+        if concepto.casefold() == "abono histórico previo":
+            raise PagoInvalido("Ese concepto está reservado para pagos históricos migrados.")
         if valor <= 0 or valor > MAX_PAGO:
             raise PagoInvalido("El valor a abonar debe ser mayor a $0.")
 
@@ -68,6 +70,8 @@ def registrar():
             mat = cur.fetchone()
             if not mat:
                 raise PagoInvalido("No existe esa matrícula.")
+            if mat["estado"] == "Histórico":
+                raise PagoInvalido("No se pueden registrar pagos a una matrícula histórica.")
 
             cur.execute("SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
                         "WHERE id_matricula = %s", (mid,))
@@ -76,7 +80,7 @@ def registrar():
             saldo = max(precio - pagado, 0)
 
             # El servidor decide, no el navegador: no se aceptan abonos mayores al saldo.
-            if precio > 0 and valor > saldo:
+            if valor > saldo:
                 raise PagoInvalido(f"El abono supera el saldo pendiente (${int(saldo):,}).".replace(",", "."))
 
             numero = None
@@ -114,6 +118,7 @@ def registrar():
 
 @bp.route("/pagos/recibo/<numero>")
 @login_required
+@permiso_requerido("ver_recibos")
 def recibo(numero):
     if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
         return Response("Recibo no válido", status=404)

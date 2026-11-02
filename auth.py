@@ -4,12 +4,12 @@ import secrets
 import time
 from functools import wraps
 
-from flask import (Blueprint, abort, flash, jsonify, redirect, render_template,
-                   request, session, url_for)
+from flask import (Blueprint, abort, current_app, flash, g, jsonify, redirect,
+                   render_template, request, session, url_for)
 from werkzeug.security import check_password_hash
 
 import db
-from config import Config
+from permisos import PERMISOS
 
 bp = Blueprint("auth", __name__)
 
@@ -45,13 +45,67 @@ def login_required(f=None, *, roles=None):
                         or request.path.startswith("/tramites/runt/"):
                     return jsonify(ok=False, error="Sesión expirada. Vuelve a ingresar."), 401
                 return redirect(url_for("auth.login", next=request.full_path.rstrip("?")))
-            if roles and session.get("rol") not in roles:
+            usuario = _usuario_actual()
+            if not usuario or usuario["activo"] != 1:
+                session.clear()
+                if request.is_json:
+                    return jsonify(ok=False, error="La cuenta está inactiva. Vuelve a ingresar."), 401
+                return redirect(url_for("auth.login"))
+            if roles and usuario["rol"] not in roles:
                 if request.is_json:
                     return jsonify(ok=False, error="No tienes permiso para esta acción."), 403
                 abort(403)
             return fn(*args, **kwargs)
         return envoltura
     return decorador(f) if f else decorador
+
+
+def _usuario_actual():
+    if "usuario_actual" not in g:
+        uid = session.get("uid")
+        g.usuario_actual = db.fetchone(
+            "SELECT id, nombre, rol, activo FROM usuarios WHERE id = %s", (uid,)
+        ) if uid else None
+    return g.usuario_actual
+
+
+def permisos_actuales() -> set[str]:
+    """Carga los permisos actuales en cada petición autenticada."""
+    if "permisos_actuales" in g:
+        return g.permisos_actuales
+    usuario = _usuario_actual()
+    if not usuario:
+        g.permisos_actuales = set()
+        return g.permisos_actuales
+
+    filas = db.fetchall("""
+        SELECT pf.id AS perfil_id, pp.codigo
+        FROM perfiles pf
+        LEFT JOIN perfil_permisos pp ON pp.perfil_id = pf.id
+        WHERE pf.usuario_id = %s
+    """, (usuario["id"],))
+    if filas and filas[0]["perfil_id"] is not None:
+        g.permisos_actuales = {f["codigo"] for f in filas if f["codigo"]}
+    else:
+        g.permisos_actuales = set()
+    return g.permisos_actuales
+
+
+def permiso_requerido(codigo: str):
+    """Autoriza una acción usando el perfil individual del usuario."""
+    if codigo not in PERMISOS:
+        raise ValueError(f"Permiso desconocido: {codigo}")
+
+    def decorador(fn):
+        @wraps(fn)
+        def envoltura(*args, **kwargs):
+            if codigo not in permisos_actuales():
+                if request.is_json or request.path.startswith(("/pagos/", "/tramites/runt/")):
+                    return jsonify(ok=False, error="No tienes permiso para esta acción."), 403
+                abort(403)
+            return fn(*args, **kwargs)
+        return envoltura
+    return decorador
 
 
 # ───────────── Rutas ─────────────
@@ -64,15 +118,45 @@ def _bloqueado(clave: str) -> bool:
 
 def _destino_seguro(destino: str | None) -> str:
     # Solo rutas internas ("/algo"), nunca "//otro-sitio.com" ni "http://..."
-    if destino and destino.startswith("/") and not destino.startswith("//"):
+    if (destino and destino.startswith("/") and not destino.startswith("//")
+            and "\\" not in destino):
+        path = destino.split("?", 1)[0]
+        permisos_por_ruta = {
+            "/": "ver_dashboard",
+            "/alumnos": "ver_alumnos",
+            "/caja": "ver_caja",
+            "/tramites": "ver_tramites",
+            "/admin/usuarios": "gestionar_usuarios",
+        }
+        for prefijo, codigo in permisos_por_ruta.items():
+            if path == prefijo or (prefijo != "/" and path.startswith(prefijo + "/")):
+                return destino if codigo in permisos_actuales() else _primer_destino_permitido()
         return destino
-    return url_for("dashboard.index")
+    return _primer_destino_permitido()
+
+
+def _primer_destino_permitido() -> str:
+    permisos = permisos_actuales()
+    destinos = (
+        ("ver_dashboard", "dashboard.index"),
+        ("ver_alumnos", "alumnos.lista"),
+        ("ver_caja", "caja.resumen"),
+        ("ver_tramites", "tramites.lista"),
+        ("gestionar_usuarios", "usuarios.lista"),
+    )
+    for codigo, endpoint in destinos:
+        if codigo in permisos:
+            return url_for(endpoint)
+    return url_for("auth.sin_permisos")
 
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if "uid" in session:
-        return redirect(url_for("dashboard.index"))
+        usuario_actual = _usuario_actual()
+        if usuario_actual and usuario_actual["activo"] == 1:
+            return redirect(_primer_destino_permitido())
+        session.clear()
 
     if request.method == "POST":
         usuario = request.form.get("usuario", "").strip().lower()
@@ -104,7 +188,7 @@ def login():
             try:
                 db.execute("UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = %s", (fila["id"],))
             except Exception:
-                pass
+                current_app.logger.exception("No se pudo actualizar el último acceso")
             return redirect(_destino_seguro(destino))
 
         _intentos.setdefault(clave, []).append(time.time())
@@ -117,3 +201,9 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("auth.login"))
+
+
+@bp.route("/sin-permisos")
+@login_required
+def sin_permisos():
+    return render_template("sin_permisos.html"), 403

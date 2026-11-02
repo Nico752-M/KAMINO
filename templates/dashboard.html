@@ -7,7 +7,7 @@
     <h2 class="section-title">Dashboard General</h2>
     <p class="section-desc">Métricas operativas y de recaudación financiera en tiempo real.</p>
   </div>
-  <a class="btn-action red" href="{{ url_for('alumnos.lista') }}"><i class="ri-user-add-line"></i> Ver matriculados</a>
+  {% if 'ver_alumnos' in permisos %}<a class="btn-action red" href="{{ url_for('alumnos.lista') }}"><i class="ri-user-add-line"></i> Ver matriculados</a>{% endif %}
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}

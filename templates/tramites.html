@@ -17,7 +17,7 @@
           <td>{{ f.categoria }}</td>
           <td>{{ f.fecha_registro.strftime('%d/%m/%Y') if f.fecha_registro else '—' }}</td>
           <td><span class="badge-status {{ clase }}">{{ f.dias }} días</span></td>
-          <td>{% if session.rol in ('admin','secretaria') %}
+          <td>{% if 'marcar_runt' in permisos %}
             <button class="btn-action sm js-runt" type="button" data-id="{{ f.id }}" data-nombre="{{ f.nombres }} {{ f.apellidos }}"><i class="ri-check-line"></i> Registrado en RUNT</button>
             {% else %}<small>—</small>{% endif %}</td>
         </tr>

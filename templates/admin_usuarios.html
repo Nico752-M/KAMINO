@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set nav = 'usuarios' %}
+{% block titulo %}Usuarios y permisos — CEA Practicar{% endblock %}
+{% block contenido %}
+<div class="section-header">
+  <div>
+    <h2 class="section-title">Usuarios y permisos</h2>
+    <p class="section-desc">Cada persona tiene su propio perfil; los perfiles no se comparten.</p>
+  </div>
+</div>
+
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-user-add-line"></i> Crear usuario y perfil personal</div>
+  <form method="post" action="{{ url_for('usuarios.crear') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid-stats">
+      <div class="field"><label class="lbl" for="nuevoNombre">Nombre para mostrar</label>
+        <input class="input-clean" id="nuevoNombre" name="nombre" maxlength="100" required></div>
+      <div class="field"><label class="lbl" for="nuevoUsuario">Usuario de ingreso</label>
+        <input class="input-clean" id="nuevoUsuario" name="usuario" maxlength="50" autocapitalize="none" required></div>
+      <div class="field"><label class="lbl" for="nuevoRol">Categoría</label>
+        <select class="input-clean" id="nuevoRol" name="rol" required>
+          {% for rol in roles %}<option value="{{ rol }}">{{ rol|capitalize }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="nuevoPerfil">Nombre del perfil personal</label>
+        <input class="input-clean" id="nuevoPerfil" name="perfil" maxlength="100" placeholder="Ej. Alejandro - Cajero" required></div>
+      <div class="field"><label class="lbl" for="nuevaPassword">Contraseña inicial</label>
+        <input class="input-clean" id="nuevaPassword" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div>
+      <div class="field"><label class="lbl" for="confirmarPassword">Confirmar contraseña</label>
+        <input class="input-clean" id="confirmarPassword" name="confirmacion" type="password" minlength="8" maxlength="128" autocomplete="new-password" required></div>
+    </div>
+    <div class="lbl">Permisos de esta persona</div>
+    <p class="hint">La categoría es informativa; solo se habilitan las acciones que marques.</p>
+    <div class="grid-stats">
+      {% for codigo, etiqueta in catalogo.items() %}
+      <label class="hint"><input type="checkbox" name="permisos" value="{{ codigo }}" {% if codigo in ('ver_dashboard','ver_alumnos','ver_caja','ver_tramites') %}checked{% endif %}> {{ etiqueta }}</label>
+      {% endfor %}
+    </div>
+    <button class="btn-action red" type="submit"><i class="ri-save-line"></i> Crear cuenta y perfil</button>
+  </form>
+</section>
+
+<h3 class="section-title" style="margin:1.5rem 0 1rem">Cuentas existentes</h3>
+{% for u in usuarios %}
+<section class="card-bento">
+  <div class="grupo-titulo">
+    {{ u.nombre }} <span class="badge-status {{ 'active' if u.activo else 'muted' }}">{{ 'Activa' if u.activo else 'Inactiva' }}</span>
+  </div>
+  <p class="hint">Usuario: <strong>{{ u.usuario }}</strong> · Último acceso:
+    {{ u.ultimo_acceso.strftime('%d/%m/%Y %H:%M') if u.ultimo_acceso else 'Nunca' }}</p>
+  <form method="post" action="{{ url_for('usuarios.actualizar', user_id=u.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid-stats">
+      <div class="field"><label class="lbl" for="nombre-{{ u.id }}">Nombre</label>
+        <input class="input-clean" id="nombre-{{ u.id }}" name="nombre" maxlength="100" value="{{ u.nombre }}" required></div>
+      <div class="field"><label class="lbl" for="rol-{{ u.id }}">Categoría</label>
+        <select class="input-clean" id="rol-{{ u.id }}" name="rol">
+          {% for rol in roles %}<option value="{{ rol }}" {% if rol == u.rol %}selected{% endif %}>{{ rol|capitalize }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="perfil-{{ u.id }}">Nombre del perfil personal</label>
+        <input class="input-clean" id="perfil-{{ u.id }}" name="perfil" maxlength="100" value="{{ u.perfil or (u.nombre ~ ' - ' ~ u.rol|capitalize) }}" required></div>
+      <div class="field"><label class="lbl" for="password-{{ u.id }}">Cambiar contraseña (opcional)</label>
+        <input class="input-clean" id="password-{{ u.id }}" name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password"></div>
+    </div>
+    <label class="hint"><input type="checkbox" name="activo" value="1" {% if u.activo %}checked{% endif %}> Cuenta activa</label>
+    <div class="lbl" style="margin-top:1rem">Permisos de {{ u.nombre }}</div>
+    <div class="grid-stats">
+      {% for codigo, etiqueta in catalogo.items() %}
+      <label class="hint"><input type="checkbox" name="permisos" value="{{ codigo }}" {% if codigo in u.permisos %}checked{% endif %}> {{ etiqueta }}</label>
+      {% endfor %}
+    </div>
+    <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar cambios</button>
+  </form>
+</section>
+{% endfor %}
+{% endblock %}

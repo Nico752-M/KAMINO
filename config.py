@@ -32,7 +32,7 @@ class Config:
     DB_DSN = os.environ.get("DB_DSN", "kamino_low")
     DB_SCHEMA = os.environ.get("DB_SCHEMA", "CEA_APP")
     DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
-    WALLET_DIR = os.environ.get("WALLET_DIR", "./wallet")
+    WALLET_DIR = os.environ.get("WALLET_DIR", "./Wallet")
     WALLET_PASSWORD = os.environ.get("WALLET_PASSWORD", "")
 
     # Colombia (UTC-5, sin horario de verano). El servidor en la nube suele estar en UTC.
@@ -42,8 +42,4 @@ class Config:
     TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 
     # Súbelo cuando cambies CSS/JS para forzar recarga en los celulares
-    ASSET_V = "1"
-
-    # Roles que pueden registrar cobros
-    ROLES_COBRO = ("admin", "cajera", "secretaria")
-    ROLES_TRAMITES = ("admin", "secretaria")
+    ASSET_V = "2"
