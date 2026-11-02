@@ -15,9 +15,10 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
 5. Si aún no se ha aplicado, ejecuta una vez la migración como `CEA_APP`:
    `@C:\ruta\al\proyecto\migrations\001_perfiles_personales.sql`
 6. Después de `001`, ejecuta una vez `migrations/002_datos_alumno_y_cajas.sql` como `CEA_APP`.
-7. Si la base todavía no tiene un administrador, crea el primero:
+7. Después de `002`, ejecuta una vez `migrations/003_recibos_unificados.sql` como `CEA_APP`.
+8. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-8. Ejecuta `flask --app app run --debug`.
+9. Ejecuta `flask --app app run --debug`.
 
 ## Oracle
 
@@ -40,6 +41,13 @@ La caja calcula efectivo esperado como base inicial + pagos en efectivo +
 ingresos manuales - salidas. Los demás métodos se auditan aparte. Cada usuario
 con permiso de registrar pagos abre y cierra su propia caja; solo un usuario
 con rol `admin` consulta todas las cajas y el consolidado diario.
+
+La migración `migrations/003_recibos_unificados.sql` se ejecuta después de
+`002`, conectada como `CEA_APP`. Crea la secuencia única `SEQ_RECIBOS`,
+agrega anulaciones auditables sin borrar pagos ni movimientos, y registra los
+cambios y reimpresiones. Los recibos existentes no se renumeran. Los tres
+permisos nuevos se asignan inicialmente solo a perfiles administradores; desde
+**Usuarios y permisos** puedes revisar o cambiar los permisos de cada persona.
 
 Cada perfil pertenece a una única persona: varios usuarios pueden tener la
 misma categoría (`admin`, `cajera`, `secretaria` o `contadora`), pero no
@@ -96,13 +104,14 @@ región para funciones; `gru1` se configura como esa única región.
 ## Funcionalidad
 
 - Inicio/cierre de sesión, CSRF y cuentas con contraseña cifrada.
-- Dashboard, búsqueda de alumnos y matrículas, registro de pagos y recibos PDF.
+- Dashboard, búsqueda de alumnos y matrículas, edición/archivo con auditoría,
+  historial de pagos y recibos PDF reimprimibles.
 - Registro de alumnos y renovaciones con datos personales, responsable
   opcional, precio/descuento y abono inicial opcional.
 - Creación de matrículas con consecutivo anual.
-- Apertura/cierre individual de caja, consulta de movimientos y registro
-  autorizado de ingresos/salidas manuales.
-- Navegación principal horizontal y registro de alumnos guiado en tres pasos;
+- Apertura/cierre individual de caja, consulta/reimpresión de movimientos y
+  registro autorizado de ingresos/salidas manuales con recibos PDF.
+- Navegación principal horizontal y registro de alumnos guiado en cuatro pasos;
   acciones de caja y movimientos se muestran por contexto para reducir ruido.
 - Seguimiento RUNT.
 - Administración de cuentas y perfiles de permisos individuales.

@@ -1,15 +1,14 @@
 """Registro de pagos y recibo PDF (ticket 80 mm)."""
 import re
-import uuid
 
-import oracledb
 from flask import Blueprint, Response, current_app, jsonify, request, session, url_for
 
 import db
 from auth import login_required, permiso_requerido
 from rutas.caja import caja_abierta
-from servicios.recibos import generar_recibo_pago_pdf
-from utils import entero
+from servicios.recibos import (generar_recibo_movimiento_pdf, generar_recibo_pago_pdf,
+                               numero_recibo)
+from utils import ahora, cop, entero
 
 bp = Blueprint("pagos", __name__)
 
@@ -21,11 +20,6 @@ class PagoInvalido(Exception):
     """Error de negocio: se muestra tal cual al cajero."""
 
 
-def _numero_recibo() -> str:
-    from utils import ahora
-    return f"CEA-{ahora():%Y%m%d}-{uuid.uuid4().hex[:6].upper()}"
-
-
 def _estado_nuevo(estado_actual: str, precio: int, total_pagado: float) -> str:
     # Misma regla del sistema de escritorio. Las matrículas históricas no se tocan.
     if estado_actual == "Histórico":
@@ -33,12 +27,6 @@ def _estado_nuevo(estado_actual: str, precio: int, total_pagado: float) -> str:
     if precio > 0 and total_pagado >= precio:
         return "Cancelado"
     return "Pendiente Pago" if total_pagado > 0 else "Activo"
-
-
-def _es_duplicado(e: Exception) -> bool:
-    # ORA-00001: restricción única violada (número de recibo repetido)
-    err = e.args[0] if e.args else None
-    return getattr(err, "code", None) == 1
 
 
 @bp.route("/pagos/registrar", methods=["POST"])
@@ -66,45 +54,35 @@ def registrar():
             raise PagoInvalido("El valor a abonar debe ser mayor a $0.")
 
         with db.transaccion() as cur:
-            cur.execute("SELECT id, COALESCE(precio_total, 0) AS precio_total, estado "
+            cur.execute("SELECT id, COALESCE(precio_total, 0) AS precio_total, estado, archivado "
                         "FROM matriculas WHERE id = %s FOR UPDATE", (mid,))
             mat = cur.fetchone()
             if not mat:
                 raise PagoInvalido("No existe esa matrícula.")
-            if mat["estado"] == "Histórico":
-                raise PagoInvalido("No se pueden registrar pagos a una matrícula histórica.")
+            if mat["archivado"] or mat["estado"] == "Histórico":
+                raise PagoInvalido("No se pueden registrar pagos a una matrícula histórica o archivada.")
 
             cur.execute("SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
-                        "WHERE id_matricula = %s", (mid,))
+                        "WHERE id_matricula = %s AND anulado = 0", (mid,))
             pagado = float(cur.fetchone()["total"])
             precio = int(mat["precio_total"])
             saldo = max(precio - pagado, 0)
 
             # El servidor decide, no el navegador: no se aceptan abonos mayores al saldo.
             if valor > saldo:
-                raise PagoInvalido(f"El abono supera el saldo pendiente (${int(saldo):,}).".replace(",", "."))
+                raise PagoInvalido(f"El abono supera el saldo pendiente ({cop(saldo)}).")
 
             caja = caja_abierta(cur, session["uid"])
             if not caja:
                 raise PagoInvalido("Abre tu caja antes de registrar un pago.")
 
-            numero = None
-            for _ in range(3):  # reintento si el número de recibo se repite
-                candidato = _numero_recibo()
-                try:
-                    cur.execute("""
-                        INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago,
-                                           numero_recibo, usuario_id, observaciones, acompanante, caja_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (mid, concepto, valor, metodo, candidato,
-                          session["uid"], observaciones, acompanante, caja["id"]))
-                    numero = candidato
-                    break
-                except oracledb.IntegrityError as e:
-                    if not _es_duplicado(e):
-                        raise
-            if not numero:
-                raise PagoInvalido("No se pudo generar el número de recibo. Intenta de nuevo.")
+            numero = numero_recibo(cur)
+            cur.execute("""
+                INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago,
+                                   numero_recibo, usuario_id, observaciones, acompanante, caja_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (mid, concepto, valor, metodo, numero,
+                  session["uid"], observaciones, acompanante, caja["id"]))
 
             cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
                         (_estado_nuevo(mat["estado"], precio, pagado + valor), mid))
@@ -128,32 +106,71 @@ def recibo(numero):
     if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
         return Response("Recibo no válido", status=404)
 
+    copia = request.args.get("copia") == "1"
     fila = db.fetchone("""
         SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.observaciones,
                p.acompanante, p.fecha_pago,
                a.nombres, a.apellidos, a.numero_documento,
-               u.nombre AS cajero
+               u.nombre AS cajero, p.anulado, p.motivo_anulacion
         FROM pagos p
         JOIN matriculas m ON m.id = p.id_matricula
         JOIN alumnos a ON a.numero_documento = m.numero_documento
         LEFT JOIN usuarios u ON u.id = p.usuario_id
         WHERE p.numero_recibo = %s
     """, (numero,))
+    tipo = "PAGO"
+    if not fila:
+        fila = db.fetchone("""
+            SELECT i.numero_recibo, i.concepto, i.valor, i.fecha_ingreso AS fecha,
+                   i.usuario_id, i.anulado, i.motivo_anulacion, u.nombre AS cajero
+            FROM ingresos_caja i
+            LEFT JOIN usuarios u ON u.id = i.usuario_id
+            WHERE i.numero_recibo = %s
+        """, (numero,))
+        tipo = "INGRESO"
+    if not fila:
+        fila = db.fetchone("""
+            SELECT s.numero_recibo, s.concepto, s.valor, s.fecha_salida AS fecha,
+                   s.usuario_id, s.anulado, s.motivo_anulacion, u.nombre AS cajero
+            FROM salidas_caja s
+            LEFT JOIN usuarios u ON u.id = s.usuario_id
+            WHERE s.numero_recibo = %s
+        """, (numero,))
+        tipo = "EGRESO"
     if not fila:
         return Response("Recibo no encontrado", status=404)
 
-    pdf = generar_recibo_pago_pdf({
+    fecha_reimpresion = ahora() if copia else None
+    detalles = {
         "numero_recibo": fila["numero_recibo"],
-        "alumno_nombre": f"{fila['nombres']} {fila['apellidos']}",
-        "alumno_doc": fila["numero_documento"],
         "concepto": fila["concepto"],
         "valor": float(fila["valor"]),
-        "metodo_pago": fila["metodo_pago"],
         "cajero": fila["cajero"] or "—",
-        "acompanante": fila["acompanante"] or "",
-        "observaciones": fila["observaciones"] or "",
-        "cambio": max(entero(request.args.get("cambio")), 0),
-        "fecha": fila["fecha_pago"],
-    })
+        "fecha": fila.get("fecha_pago") or fila.get("fecha"),
+        "anulado": fila["anulado"] == 1,
+        "motivo_anulacion": fila["motivo_anulacion"],
+        "copia": copia,
+        "fecha_reimpresion": fecha_reimpresion,
+        "usuario_reimpresion": session.get("nombre", ""),
+    }
+    if tipo == "PAGO":
+        detalles.update({
+            "alumno_nombre": f"{fila['nombres']} {fila['apellidos']}",
+            "alumno_doc": fila["numero_documento"],
+            "metodo_pago": fila["metodo_pago"],
+            "acompanante": fila["acompanante"] or "",
+            "observaciones": fila["observaciones"] or "",
+            "cambio": max(entero(request.args.get("cambio")), 0),
+        })
+        pdf = generar_recibo_pago_pdf(detalles)
+    else:
+        detalles["tipo"] = tipo
+        pdf = generar_recibo_movimiento_pdf(detalles)
+    if copia:
+        db.execute(
+            "INSERT INTO reimpresiones_recibos (tipo, numero_recibo, usuario_id) "
+            "VALUES (%s, %s, %s)",
+            (tipo, numero, session["uid"]),
+        )
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{numero}.pdf"'})

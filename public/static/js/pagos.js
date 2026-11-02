@@ -6,7 +6,7 @@
   if (!modal) return;
 
   const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
-  const soloDigitos = (s) => parseInt(String(s || "").replace(/\D/g, ""), 10) || 0;
+  const soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
 
   let ctx = { matricula: 0, saldo: 0, guardando: false };
 
@@ -16,7 +16,7 @@
     $("modalStudentBalance").textContent = fmt(ctx.saldo);
     $("pagoConcepto").value = btn.dataset.concepto || "Pago curso de conducción";
     $("selectPaymentMethod").value = "Efectivo";
-    $("inputAmount").value = String(Math.round(ctx.saldo));
+    $("inputAmount").value = window.formatearMiles(Math.round(ctx.saldo));
     $("inputReceived").value = "";
     $("pagoNotas").value = "";
     $("pagoAcompanante").value = "";

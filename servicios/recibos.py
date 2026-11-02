@@ -6,6 +6,8 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
+from utils import cop
+
 ANCHO = 80 * mm
 MARGEN = 5 * mm
 NEGRO, GRIS, ROJO = (0.07, 0.09, 0.15), (0.42, 0.44, 0.50), (0.78, 0.15, 0.16)
@@ -19,7 +21,15 @@ F_VALOR = ("Helvetica-Bold", 14)
 
 
 def _cop(v) -> str:
-    return "$" + f"{int(round(float(v))):,}".replace(",", ".")
+    return cop(v)
+
+
+def numero_recibo(cur) -> str:
+    """Reserva el consecutivo compartido por todos los recibos de caja."""
+    fila = cur.execute(
+        "SELECT 'CEA-' || LPAD(SEQ_RECIBOS.NEXTVAL, 6, '0') AS numero FROM dual"
+    ).fetchone()
+    return fila["numero"]
 
 
 def _ajustar(texto: str, fuente: str, tam: float, ancho: float) -> str:
@@ -106,6 +116,24 @@ class _Ticket:
         return buf.getvalue()
 
 
+def _datos_finales(t: _Ticket, d: dict) -> None:
+    t.espacio(2); t.linea(punteada=True); t.espacio(2)
+    if d.get("copia"):
+        t.texto("COPIA", ("Helvetica-Bold", 12), "C", ROJO)
+        t.texto(f"Reimpreso: {d['fecha_reimpresion'].strftime('%d/%m/%Y %H:%M:%S')}",
+                F_PEQUE, "C", GRIS)
+        t.texto(f"Por: {d['usuario_reimpresion']}", F_PEQUE, "C", GRIS)
+    t.texto(f"Atendido por: {d['cajero']}", F_PEQUE, "C", GRIS)
+    t.texto(f"Recibo: {d['numero_recibo']}", F_PEQUE, "C", GRIS)
+    fecha = d.get("fecha") or datetime.now()
+    t.texto(fecha.strftime("%d/%m/%Y  %H:%M:%S"), F_PEQUE, "C", GRIS)
+    if d.get("anulado"):
+        t.espacio(2)
+        t.texto("ANULADO", F_SUBTIT, "C", ROJO)
+        if d.get("motivo_anulacion"):
+            t.par("Motivo:", d["motivo_anulacion"])
+
+
 def generar_recibo_pago_pdf(d: dict) -> bytes:
     """d: numero_recibo, alumno_nombre, alumno_doc, concepto, valor, metodo_pago,
     cajero, acompanante, observaciones, cambio, fecha (datetime)."""
@@ -139,13 +167,29 @@ def generar_recibo_pago_pdf(d: dict) -> bytes:
         t.par("Cambio devuelto:", _cop(d["cambio"]), negrita=True)
         t.espacio(1)
 
-    t.espacio(2); t.linea(punteada=True); t.espacio(2)
-    t.texto(f"Atendido por: {d['cajero']}", F_PEQUE, "C", GRIS)
-    t.texto(f"Recibo: {d['numero_recibo']}", F_PEQUE, "C", GRIS)
-    fecha = d.get("fecha") or datetime.now()
-    t.texto(fecha.strftime("%d/%m/%Y  %H:%M:%S"), F_PEQUE, "C", GRIS)
+    _datos_finales(t, d)
     t.espacio(2); t.linea(0.8); t.espacio(2)
     t.texto("Conserve este recibo como comprobante", F_PEQUE, "C", GRIS)
     t.texto("de su transacción.  ¡Gracias!", F_PEQUE, "C", GRIS)
+    t.espacio(5)
+    return t.pdf()
+
+
+def generar_recibo_movimiento_pdf(d: dict) -> bytes:
+    """Genera comprobantes de ingresos y egresos de caja."""
+    t = _Ticket()
+    t.espacio(3)
+    t.texto("PRACTICAR", F_TITULO, "C", ROJO)
+    t.texto("Centro de Enseñanza Automovilística", F_PEQUE, "C", GRIS)
+    t.texto("Cali, Colombia  ·  NIT: 66708630", F_PEQUE, "C", GRIS)
+    t.espacio(2); t.linea(0.8); t.espacio(2)
+    t.texto("COMPROBANTE DE INGRESO" if d["tipo"] == "INGRESO"
+            else "COMPROBANTE DE EGRESO", F_SUBTIT, "C")
+    t.espacio(2); t.linea(0.3); t.espacio(1.5)
+    t.par("Concepto:", d["concepto"])
+    t.espacio(2); t.linea(0.8); t.espacio(2)
+    t.texto("VALOR", F_ETIQ, "C", GRIS)
+    t.texto(_cop(d["valor"]), F_VALOR, "C", ROJO)
+    _datos_finales(t, d)
     t.espacio(5)
     return t.pdf()

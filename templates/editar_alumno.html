@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% set nav = 'alumnos' %}
+{% block titulo %}Editar alumno — CEA Practicar{% endblock %}
+{% block contenido %}
+<div class="section-header">
+  <div>
+    <span class="eyebrow">MATRÍCULA {{ alumno.id }}</span>
+    <h2 class="section-title">Editar alumno</h2>
+    <p class="section-desc">El precio nuevo no puede ser menor a lo ya pagado ({{ pagado|cop }}).</p>
+  </div>
+  <a class="btn-action" href="{{ url_for('alumnos.lista') }}"><i class="ri-arrow-left-line"></i> Volver</a>
+</div>
+<form class="card-bento edit-student-form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="documento_original" value="{{ alumno.documento_original }}">
+  <section class="form-section">
+    <h4>Datos del alumno</h4>
+    <div class="form-grid two">
+      <div class="field"><label class="lbl" for="editDocumento">Documento <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editDocumento" name="numero_documento" value="{{ alumno.documento_original }}" maxlength="20" required></div>
+      <div class="field"><label class="lbl" for="editTipo">Tipo <span class="required-mark">*</span></label>
+        <select class="input-clean" id="editTipo" name="tipo_documento" required>
+          {% for tipo in ('CC','CE','TI','RC','Pasaporte','PPT','Otro') %}
+          <option value="{{ tipo }}" {{ 'selected' if alumno.tipo_documento == tipo }}>{{ tipo }}</option>
+          {% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="editNombres">Nombres <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editNombres" name="nombres" value="{{ alumno.nombres }}" maxlength="100" required></div>
+      <div class="field"><label class="lbl" for="editApellidos">Apellidos <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editApellidos" name="apellidos" value="{{ alumno.apellidos }}" maxlength="100" required></div>
+      <div class="field"><label class="lbl" for="editNacimiento">Fecha de nacimiento</label>
+        <input class="input-clean" id="editNacimiento" name="fecha_nacimiento" type="date"
+               value="{{ alumno.fecha_nacimiento.strftime('%Y-%m-%d') if alumno.fecha_nacimiento else '' }}"></div>
+      <div class="field"><label class="lbl" for="editLugar">Lugar de nacimiento</label>
+        <input class="input-clean" id="editLugar" name="lugar_nacimiento" value="{{ alumno.lugar_nacimiento or '' }}" maxlength="120"></div>
+      <div class="field"><label class="lbl" for="editSexo">Sexo</label>
+        <select class="input-clean" id="editSexo" name="sexo">
+          {% for opcion in ('', 'F', 'M', 'Otro') %}<option value="{{ opcion }}" {{ 'selected' if alumno.sexo == opcion }}>{{ opcion or 'Selecciona' }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="editCivil">Estado civil</label>
+        <select class="input-clean" id="editCivil" name="estado_civil">
+          {% for opcion in ('', 'Soltero/a', 'Casado/a', 'Unión libre', 'Separado/a', 'Viudo/a') %}
+          <option value="{{ opcion }}" {{ 'selected' if alumno.estado_civil == opcion }}>{{ opcion or 'Selecciona' }}</option>
+          {% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="editGrupo">Grupo sanguíneo</label>
+        <select class="input-clean" id="editGrupo" name="grupo_sanguineo">
+          {% for opcion in ('', 'O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-') %}
+          <option value="{{ opcion }}" {{ 'selected' if alumno.grupo_sanguineo == opcion }}>{{ opcion or 'Selecciona' }}</option>
+          {% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="editOcupacion">Ocupación</label>
+        <input class="input-clean" id="editOcupacion" name="ocupacion" value="{{ alumno.ocupacion or '' }}" maxlength="120"></div>
+      <div class="field"><label class="lbl" for="editCelular">Celular</label>
+        <input class="input-clean" id="editCelular" name="celular" value="{{ alumno.celular or '' }}" maxlength="30" inputmode="tel"></div>
+      <div class="field"><label class="lbl" for="editEmail">Correo electrónico</label>
+        <input class="input-clean" id="editEmail" name="email" type="email" value="{{ alumno.email or '' }}" maxlength="254"></div>
+    </div>
+  </section>
+  <section class="form-section">
+    <h4>Matrícula y valor</h4>
+    <div class="form-grid two">
+      <div class="field"><label class="lbl" for="editCategoria">Categoría <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editCategoria" name="categoria" value="{{ alumno.categoria }}" maxlength="60" required></div>
+      <div class="field"><label class="lbl" for="editBase">Precio base (COP) <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editBase" name="precio_base" type="text" inputmode="numeric"
+               data-money-input value="{{ alumno.precio_base|int }}" required></div>
+      <div class="field"><label class="lbl" for="editDescuento">Descuento ($)</label>
+        <input class="input-clean" id="editDescuento" name="descuento_valor" type="text" inputmode="numeric"
+               data-money-input value="{{ alumno.descuento_valor|int }}"></div>
+      <div class="field"><span class="lbl">Total a pagar</span>
+        <strong id="editTotal">{{ alumno.precio_total|cop }}</strong></div>
+    </div>
+  </section>
+  <details class="form-section responsible-section">
+    <summary>Responsable <span class="optional-label">Opcional</span></summary>
+    <p class="hint">Si agregas un responsable, documento, nombres, apellidos y relación son obligatorios.</p>
+    <div class="form-grid two">
+      <div class="field"><label class="lbl" for="editRespTipo">Tipo</label>
+        <select class="input-clean" id="editRespTipo" name="responsable_tipo_documento">
+          <option value="">Selecciona</option>
+          {% for tipo in ('CC','CE','TI','RC','Pasaporte','PPT','Otro') %}
+          <option value="{{ tipo }}" {{ 'selected' if alumno.responsable_tipo_documento == tipo }}>{{ tipo }}</option>
+          {% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="editRespDoc">Documento</label>
+        <input class="input-clean" id="editRespDoc" name="responsable_documento" value="{{ alumno.responsable_documento or '' }}" maxlength="20"></div>
+      <div class="field"><label class="lbl" for="editRespNombres">Nombres</label>
+        <input class="input-clean" id="editRespNombres" name="responsable_nombres" value="{{ alumno.responsable_nombres or '' }}" maxlength="100"></div>
+      <div class="field"><label class="lbl" for="editRespApellidos">Apellidos</label>
+        <input class="input-clean" id="editRespApellidos" name="responsable_apellidos" value="{{ alumno.responsable_apellidos or '' }}" maxlength="100"></div>
+      <div class="field"><label class="lbl" for="editRespCel">Celular</label>
+        <input class="input-clean" id="editRespCel" name="responsable_celular" value="{{ alumno.responsable_celular or '' }}" maxlength="30"></div>
+      <div class="field"><label class="lbl" for="editRespEmail">Correo electrónico</label>
+        <input class="input-clean" id="editRespEmail" name="responsable_email" type="email" value="{{ alumno.responsable_email or '' }}" maxlength="254"></div>
+      <div class="field"><label class="lbl" for="editRespRelacion">Relación</label>
+        <select class="input-clean" id="editRespRelacion" name="responsable_relacion">
+          <option value="">Selecciona</option>
+          {% for relacion in ('Padre','Madre','Cónyuge','Hijo/a','Hermano/a','Acudiente','Otro') %}
+          <option value="{{ relacion }}" {{ 'selected' if alumno.responsable_relacion == relacion }}>{{ relacion }}</option>
+          {% endfor %}
+        </select></div>
+    </div>
+  </details>
+  <div class="modal-footer">
+    <a class="btn-action" href="{{ url_for('alumnos.lista') }}">Cancelar</a>
+    <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar cambios</button>
+  </div>
+</form>
+{% endblock %}

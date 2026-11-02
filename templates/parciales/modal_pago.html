@@ -27,7 +27,8 @@
 
       <div class="field">
         <label class="lbl" for="inputAmount">Valor a abonar a la deuda ($)</label>
-        <input class="input-clean" id="inputAmount" inputmode="numeric" autocomplete="off" style="font-size:1.1rem;font-weight:700">
+        <input class="input-clean" id="inputAmount" type="text" inputmode="numeric" data-money-input
+               autocomplete="off" style="font-size:1.1rem;font-weight:700">
         <div class="hint" id="inputAmountFmt"></div>
         <button type="button" class="link-toggle-change" id="toggleChangeBtn">
           <i class="ri-coins-line"></i> ¿El cliente paga con un billete mayor y requiere devuelta?
@@ -40,7 +41,8 @@
           <button type="button" id="btnCerrarCalc" class="link-toggle-change" style="margin:0;color:var(--text-muted)">Cerrar ✕</button>
         </div>
         <label class="lbl" for="inputReceived">Efectivo entregado por el cliente</label>
-        <input class="input-clean" id="inputReceived" inputmode="numeric" placeholder="Ej: 200000" autocomplete="off">
+        <input class="input-clean" id="inputReceived" type="text" inputmode="numeric" data-money-input
+               placeholder="Ej: 200.000" autocomplete="off">
         <div style="display:flex;justify-content:space-between;align-items:center;font-weight:800;border-top:1px dashed var(--border-color);padding-top:8px;margin-top:10px">
           <span>Devuelta a entregar:</span><strong id="lblChange" style="color:var(--accent-green)">$ 0</strong>
         </div>

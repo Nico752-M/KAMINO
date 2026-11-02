@@ -19,6 +19,12 @@
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+{% if recibo_nuevo and 'ver_recibos' in permisos %}
+<div class="alerta ok">Imprime el comprobante original:
+  <a class="btn-action green sm" target="_blank" rel="noopener"
+     href="{{ url_for('pagos.recibo', numero=recibo_nuevo) }}"><i class="ri-printer-line"></i> Imprimir comprobante</a>
+</div>
+{% endif %}
 
 {% if puede_cobrar %}
   {% if caja_actual %}
@@ -49,7 +55,8 @@
     <form method="post" action="{{ url_for('caja.abrir') }}" class="cash-session-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field"><label class="lbl" for="montoApertura">Base inicial en efectivo (COP)</label>
-        <input class="input-clean" id="montoApertura" name="monto_apertura" type="number" min="0" max="999999999999" step="1" value="0" required></div>
+        <input class="input-clean" id="montoApertura" name="monto_apertura" type="text" inputmode="numeric"
+               data-money-input value="0" required></div>
       <button class="btn-action green" type="submit"><i class="ri-lock-unlock-line"></i> Abrir mi caja</button>
     </form>
   </section>
@@ -103,19 +110,46 @@
 <details class="cash-details">
   <summary><i class="ri-list-check-2"></i> Movimientos {{ dia.strftime('%d/%m/%Y') }} <span class="movement-count">{{ movs|length }}</span></summary>
   <div class="cash-details-content">
+    {% if 'ver_recibos' in permisos %}
+    <form method="get" action="{{ url_for('caja.resumen') }}" class="cash-receipt-search">
+      <label class="lbl" for="buscarRecibo">Buscar recibo por número</label>
+      <div><input class="input-clean" id="buscarRecibo" name="recibo" value="{{ recibo_q }}"
+                  maxlength="50" placeholder="CEA-000123" required>
+        <button class="btn-action" type="submit"><i class="ri-search-line"></i> Buscar</button></div>
+    </form>
+    {% if recibo_q %}
+      {% if busqueda_recibos %}
+      <div class="table-wrap cash-receipt-results"><table class="table-clean">
+        <thead><tr><th>Tipo</th><th>Número</th><th>Concepto</th><th>Valor</th><th>Estado</th><th></th></tr></thead>
+        <tbody>{% for recibo in busqueda_recibos %}
+          <tr><td>{{ recibo.tipo }}</td><td>{{ recibo.numero_recibo }}</td><td>{{ recibo.concepto }}</td>
+            <td>{{ recibo.valor|cop }}</td>
+            <td>{{ 'Anulado' if recibo.anulado else 'Válido' }}</td>
+            <td><a class="btn-action sm" target="_blank" rel="noopener"
+                   href="{{ url_for('pagos.recibo', numero=recibo.numero_recibo, copia=1) }}">
+              <i class="ri-printer-line"></i> Reimprimir</a></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="hint">No se encontró el recibo {{ recibo_q }} en las cajas que puedes consultar.</p>{% endif %}
+    {% endif %}
+    {% endif %}
     {% if movs %}
     <div class="table-wrap"><table class="table-clean">
-      <thead><tr><th>Hora</th><th>Tipo</th><th>Detalle</th>{% if admin %}<th>Cajero</th>{% endif %}<th>Medio</th><th>Valor</th></tr></thead>
+      <thead><tr><th>Hora</th><th>Tipo</th><th>Detalle</th>{% if admin %}<th>Cajero</th>{% endif %}<th>Medio</th><th>Valor</th>{% if 'ver_recibos' in permisos %}<th></th>{% endif %}</tr></thead>
       <tbody>{% for m in movs %}
         <tr>
           <td>{{ m.momento.strftime('%H:%M') }}</td>
           <td>{% if m.tipo == 'salida' %}<span class="badge-status urgent">Salida</span>
               {% elif m.tipo == 'ingreso' %}<span class="badge-status active">Ingreso</span>
               {% else %}<span class="badge-status paid">Pago</span>{% endif %}</td>
-          <td>{{ m.detalle }}<br><small>{{ m.recibo }}</small></td>
+          <td>{{ m.detalle }}<br><small>{{ m.recibo }}
+            {% if m.anulado %}<span class="badge-status urgent">Anulado</span>{% endif %}
+          </small>{% if m.anulado and m.motivo_anulacion %}<br><small>Motivo: {{ m.motivo_anulacion }}</small>{% endif %}</td>
           {% if admin %}<td>{{ m.cajero or '—' }}</td>{% endif %}
           <td>{{ m.metodo }}</td>
-          <td><strong style="color:{{ 'var(--accent-red)' if m.valor < 0 else 'var(--accent-green)' }}">{{ m.valor|cop }}</strong></td>
+          <td><strong style="color:{{ 'var(--text-muted)' if m.anulado else 'var(--accent-red)' if m.valor < 0 else 'var(--accent-green)' }}">{{ m.valor|cop }}</strong></td>
+          {% if 'ver_recibos' in permisos %}<td><a class="btn-action sm" target="_blank" rel="noopener"
+               href="{{ url_for('pagos.recibo', numero=m.recibo, copia=1) }}"><i class="ri-printer-line"></i> Reimprimir</a></td>{% endif %}
         </tr>
       {% endfor %}</tbody>
     </table></div>
@@ -135,7 +169,8 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="cash-close-expected"><span>Efectivo esperado</span><strong>{{ caja_actual.efectivo_esperado|cop }}</strong></div>
       <div class="field"><label class="lbl" for="montoCierre">Efectivo contado (COP) <span class="required-mark">*</span></label>
-        <input class="input-clean" id="montoCierre" name="monto_cierre" type="number" min="0" max="999999999999" step="1" required></div>
+        <input class="input-clean" id="montoCierre" name="monto_cierre" type="text" inputmode="numeric"
+               data-money-input required></div>
       <div class="field"><label class="lbl" for="observacionesCierre">Observaciones (opcional)</label>
         <textarea class="input-clean cash-textarea" id="observacionesCierre" name="observaciones" maxlength="1000"></textarea></div>
       <div class="modal-footer">
@@ -164,7 +199,8 @@
       <div class="field"><label class="lbl" for="movimientoConcepto">Concepto <span class="required-mark">*</span></label>
         <input class="input-clean" id="movimientoConcepto" name="concepto" maxlength="200" required></div>
       <div class="field"><label class="lbl" for="movimientoValor">Valor (COP) <span class="required-mark">*</span></label>
-        <input class="input-clean" id="movimientoValor" name="valor" type="number" min="1" max="100000000" step="1" required></div>
+        <input class="input-clean" id="movimientoValor" name="valor" type="text" inputmode="numeric"
+               data-money-input required></div>
       <div class="modal-footer">
         <button class="btn-action" type="button" data-close-modal>Cancelar</button>
         <button class="btn-action green" id="guardarMovimientoCaja" type="submit"><i class="ri-save-line"></i> Guardar entrada</button>

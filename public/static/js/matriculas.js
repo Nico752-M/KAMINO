@@ -16,7 +16,7 @@
   const btnGuardar = document.getElementById("btnGuardarMatricula");
   let pasoActual = 0;
   form.noValidate = true;
-  const soloDigitos = (valor) => Number.parseInt(String(valor || "").replace(/\D/g, ""), 10) || 0;
+  const soloDigitos = (valor) => Number.parseInt(window.soloDigitos(valor), 10) || 0;
 
   function mostrarPaso(indice) {
     pasoActual = indice;
@@ -52,7 +52,7 @@
     const pesos = soloDigitos(descuentoPesos.value);
     const porcentaje = Number(descuentoPorcentaje.value) || 0;
     const descuento = pesos || Math.round(base * porcentaje / 100);
-    precioTotal.value = base ? Math.max(base - descuento, 0) : "";
+    precioTotal.value = base ? window.formatearMiles(Math.max(base - descuento, 0)) : "";
   }
 
   precioBase.addEventListener("input", calcularTotal);
@@ -67,7 +67,7 @@
   precioTotal.addEventListener("input", () => {
     const base = soloDigitos(precioBase.value);
     const total = soloDigitos(precioTotal.value);
-    descuentoPesos.value = base && total <= base ? base - total : "";
+    descuentoPesos.value = base && total <= base ? window.formatearMiles(base - total) : "";
     descuentoPorcentaje.value = "";
   });
 
@@ -76,6 +76,7 @@
     form.reset();
     descuentoPesos.value = "";
     descuentoPorcentaje.value = "";
+    form.querySelectorAll("[data-money-input]").forEach(window.formatearCampoMoneda);
     mostrarPaso(0);
     modal.classList.add("open");
     document.getElementById("matriculaDocumento").focus();

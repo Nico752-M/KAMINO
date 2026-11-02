@@ -23,12 +23,12 @@ def index():
     error = None
     try:
         r = db.fetchone("SELECT COUNT(*) AS total FROM matriculas "
-                        "WHERE estado NOT IN ('Cancelado', 'Histórico')")
+                        "WHERE archivado = 0 AND estado NOT IN ('Cancelado', 'Histórico')")
         datos["activos"] = int(r["total"]) if r else 0
 
         inicio, fin = _rango_mes(hoy())
         r = db.fetchone("SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
-                        "WHERE fecha_pago >= %s AND fecha_pago < %s", (inicio, fin))
+                        "WHERE fecha_pago >= %s AND fecha_pago < %s AND anulado = 0", (inicio, fin))
         datos["ingresos_mes"] = float(r["total"]) if r else 0
 
         filas = db.fetchall("""
@@ -37,8 +37,8 @@ def index():
                    COALESCE(SUM(p.valor), 0) AS pagado
             FROM matriculas m
             JOIN alumnos a ON a.numero_documento = m.numero_documento
-            LEFT JOIN pagos p ON p.id_matricula = m.id
-            WHERE m.estado NOT IN ('Cancelado', 'Histórico')
+            LEFT JOIN pagos p ON p.id_matricula = m.id AND p.anulado = 0
+            WHERE m.archivado = 0 AND m.estado NOT IN ('Cancelado', 'Histórico')
             GROUP BY m.id, a.nombres, a.apellidos, a.numero_documento, m.categoria, m.precio_total
             HAVING COALESCE(m.precio_total, 0) > COALESCE(SUM(p.valor), 0)
             ORDER BY (COALESCE(m.precio_total, 0) - COALESCE(SUM(p.valor), 0)) DESC

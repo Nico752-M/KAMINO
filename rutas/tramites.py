@@ -19,7 +19,7 @@ def _pendientes() -> list[dict]:
         FROM matriculas m
         JOIN alumnos a ON a.numero_documento = m.numero_documento
         WHERE (m.runt_registrado IS NULL OR m.runt_registrado = 0)
-          AND m.estado <> 'Histórico'
+          AND m.estado <> 'Histórico' AND m.archivado = 0
         ORDER BY m.fecha_registro ASC
     """)
     hoy_ = hoy()
@@ -37,7 +37,7 @@ def contar_pendientes_cacheado() -> int:
                 SELECT COUNT(*) AS n
                 FROM matriculas
                 WHERE (runt_registrado IS NULL OR runt_registrado = 0)
-                  AND estado <> 'Histórico'
+                  AND estado <> 'Histórico' AND archivado = 0
             """)
         except Exception:
             current_app.logger.exception("No se pudo actualizar el contador de pendientes RUNT")

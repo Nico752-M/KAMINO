@@ -1,13 +1,14 @@
 """Apertura, cierre y consulta de cajas individuales."""
 from datetime import date, timedelta
-import uuid
+import re
 
 import oracledb
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 
 import db
 from auth import login_required, permiso_requerido, permisos_actuales, usuario_actual
-from utils import ahora, hoy
+from servicios.recibos import numero_recibo
+from utils import cop, entero, hoy
 
 bp = Blueprint("caja", __name__)
 MAX_CAJA = 999_999_999_999
@@ -31,9 +32,9 @@ def caja_abierta(cur, usuario_id):
 
 def _entero_form(nombre: str, defecto: str = "") -> int | None:
     valor = request.form.get(nombre, defecto).strip()
-    if not valor.isascii() or not valor.isdecimal():
+    if not valor.isascii() or not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", valor):
         return None
-    return int(valor)
+    return entero(valor, -1)
 
 
 @bp.route("/caja")
@@ -50,6 +51,9 @@ def resumen():
     filtro_usuario = int(cajero_filtro) if cajero_filtro else (None if admin else uid)
     error = None
     movs, cajas = [], []
+    recibo_q = request.args.get("recibo", "").strip()[:50]
+    recibo_nuevo = request.args.get("recibo_nuevo", "").strip()[:50]
+    busqueda_recibos = []
     totales = {"efectivo": 0.0, "otros": 0.0, "ingresos": 0.0, "salidas": 0.0,
                "apertura": 0.0, "esperado": 0.0, "contado": 0.0, "diferencia": 0.0}
     try:
@@ -57,7 +61,8 @@ def resumen():
         params_pago = (dia, sig, filtro_usuario) if filtro_usuario is not None else (dia, sig)
         pagos = db.fetchall(f"""
             SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.fecha_pago AS momento,
-                   TRIM(a.nombres || ' ' || a.apellidos) AS detalle, u.nombre AS cajero
+                   TRIM(a.nombres || ' ' || a.apellidos) AS detalle, u.nombre AS cajero,
+                   p.anulado, p.motivo_anulacion
             FROM pagos p
             LEFT JOIN matriculas m ON m.id = p.id_matricula
             LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -70,7 +75,7 @@ def resumen():
         params_ingreso = (dia, sig, filtro_usuario) if filtro_usuario is not None else (dia, sig)
         ingresos = db.fetchall(f"""
             SELECT i.numero_recibo, i.concepto, i.valor, i.fecha_ingreso AS momento,
-                   i.usuario_id, u.nombre AS cajero
+                   i.usuario_id, u.nombre AS cajero, i.anulado, i.motivo_anulacion
             FROM ingresos_caja i
             LEFT JOIN usuarios u ON u.id = i.usuario_id
             WHERE i.fecha_ingreso >= %s AND i.fecha_ingreso < %s
@@ -78,7 +83,7 @@ def resumen():
         """, params_ingreso)
         salidas = db.fetchall(f"""
             SELECT s.numero_recibo, s.concepto, s.valor, s.fecha_salida AS momento,
-                   s.usuario_id, u.nombre AS cajero
+                   s.usuario_id, u.nombre AS cajero, s.anulado, s.motivo_anulacion
             FROM salidas_caja s
             LEFT JOIN usuarios u ON u.id = s.usuario_id
             WHERE s.fecha_salida >= %s AND s.fecha_salida < %s
@@ -87,22 +92,28 @@ def resumen():
 
         for p in pagos:
             valor = float(p["valor"])
-            totales["efectivo" if p["metodo_pago"] == "Efectivo" else "otros"] += valor
+            if not p["anulado"]:
+                totales["efectivo" if p["metodo_pago"] == "Efectivo" else "otros"] += valor
             movs.append({"tipo": "pago", "recibo": p["numero_recibo"], "momento": p["momento"],
                          "detalle": f"{p['detalle'] or 'Sin alumno'} — {p['concepto']}",
-                         "metodo": p["metodo_pago"], "valor": valor, "cajero": p["cajero"] or "—"})
+                         "metodo": p["metodo_pago"], "valor": valor, "cajero": p["cajero"] or "—",
+                         "anulado": bool(p["anulado"]), "motivo_anulacion": p["motivo_anulacion"]})
         for ingreso in ingresos:
             valor = float(ingreso["valor"])
-            totales["ingresos"] += valor
+            if not ingreso["anulado"]:
+                totales["ingresos"] += valor
             movs.append({"tipo": "ingreso", "recibo": ingreso["numero_recibo"],
                          "momento": ingreso["momento"], "detalle": ingreso["concepto"],
-                         "metodo": "Efectivo", "valor": valor, "cajero": ingreso["cajero"] or "—"})
+                         "metodo": "Efectivo", "valor": valor, "cajero": ingreso["cajero"] or "—",
+                         "anulado": bool(ingreso["anulado"]), "motivo_anulacion": ingreso["motivo_anulacion"]})
         for salida in salidas:
             valor = float(salida["valor"])
-            totales["salidas"] += valor
+            if not salida["anulado"]:
+                totales["salidas"] += valor
             movs.append({"tipo": "salida", "recibo": salida["numero_recibo"],
                          "momento": salida["momento"], "detalle": salida["concepto"],
-                         "metodo": "Efectivo", "valor": -valor, "cajero": salida["cajero"] or "—"})
+                         "metodo": "Efectivo", "valor": -valor, "cajero": salida["cajero"] or "—",
+                         "anulado": bool(salida["anulado"]), "motivo_anulacion": salida["motivo_anulacion"]})
         movs.sort(key=lambda mov: mov["momento"])
 
         filtro_caja = " AND c.usuario_id = %s" if filtro_usuario is not None else ""
@@ -122,12 +133,14 @@ def resumen():
                    c.efectivo_esperado, c.diferencia, c.observaciones_cierre,
                    NVL((SELECT SUM(p.valor) FROM pagos p
                         WHERE p.caja_id = c.id AND p.metodo_pago = 'Efectivo'
-                          AND p.concepto <> 'Abono histórico previo'), 0) AS pagos_efectivo,
+                          AND p.concepto <> 'Abono histórico previo' AND p.anulado = 0), 0) AS pagos_efectivo,
                    NVL((SELECT SUM(p.valor) FROM pagos p
                         WHERE p.caja_id = c.id AND p.metodo_pago <> 'Efectivo'
-                          AND p.concepto <> 'Abono histórico previo'), 0) AS pagos_otros,
-                   NVL((SELECT SUM(i.valor) FROM ingresos_caja i WHERE i.caja_id = c.id), 0) AS ingresos,
-                   NVL((SELECT SUM(s.valor) FROM salidas_caja s WHERE s.caja_id = c.id), 0) AS salidas
+                          AND p.concepto <> 'Abono histórico previo' AND p.anulado = 0), 0) AS pagos_otros,
+                   NVL((SELECT SUM(i.valor) FROM ingresos_caja i
+                        WHERE i.caja_id = c.id AND i.anulado = 0), 0) AS ingresos,
+                   NVL((SELECT SUM(s.valor) FROM salidas_caja s
+                        WHERE s.caja_id = c.id AND s.anulado = 0), 0) AS salidas
             FROM cajas c
             JOIN usuarios u ON u.id = c.usuario_id
             {filtro_cajas_estado}{filtro_caja}
@@ -149,6 +162,26 @@ def resumen():
         error = "No se pudo consultar la caja del día."
         current_app.logger.exception("No se pudo consultar la caja del día")
 
+    if recibo_q and "ver_recibos" in permisos_actuales():
+        try:
+            for tabla, tipo, fecha_col, usuario_col in (
+                ("pagos", "PAGO", "fecha_pago", "usuario_id"),
+                ("ingresos_caja", "INGRESO", "fecha_ingreso", "usuario_id"),
+                ("salidas_caja", "EGRESO", "fecha_salida", "usuario_id"),
+            ):
+                filtro_recibo = f" AND {usuario_col} = %s" if filtro_usuario is not None else ""
+                params_recibo = (recibo_q, filtro_usuario) if filtro_usuario is not None else (recibo_q,)
+                fila = db.fetchone(
+                    f"SELECT numero_recibo, concepto, valor, {fecha_col} AS momento, "
+                    f"anulado FROM {tabla} WHERE numero_recibo = %s{filtro_recibo}",
+                    params_recibo,
+                )
+                if fila:
+                    busqueda_recibos.append({**fila, "tipo": tipo})
+        except Exception:
+            current_app.logger.exception("No se pudo buscar el recibo")
+            error = error or "No se pudo buscar el recibo."
+
     totales["en_caja"] = totales["esperado"]
     admin_cajeros = []
     if admin:
@@ -168,9 +201,12 @@ def resumen():
                           c.monto_apertura
                           + NVL((SELECT SUM(p.valor) FROM pagos p
                                  WHERE p.caja_id = c.id AND p.metodo_pago = 'Efectivo'
-                                   AND p.concepto <> 'Abono histórico previo'), 0)
-                          + NVL((SELECT SUM(i.valor) FROM ingresos_caja i WHERE i.caja_id = c.id), 0)
-                          - NVL((SELECT SUM(s.valor) FROM salidas_caja s WHERE s.caja_id = c.id), 0)
+                                   AND p.concepto <> 'Abono histórico previo'
+                                   AND p.anulado = 0), 0)
+                          + NVL((SELECT SUM(i.valor) FROM ingresos_caja i
+                                 WHERE i.caja_id = c.id AND i.anulado = 0), 0)
+                          - NVL((SELECT SUM(s.valor) FROM salidas_caja s
+                                 WHERE s.caja_id = c.id AND s.anulado = 0), 0)
                           AS efectivo_esperado
                    FROM cajas c
                    WHERE c.usuario_id = %s AND c.estado = 'ABIERTA'""",
@@ -183,7 +219,8 @@ def resumen():
     return render_template("tesoreria.html", dia=dia, movs=movs, cajas=cajas,
                            t=totales, error=error, admin=admin, cajeros=admin_cajeros,
                            cajero_filtro=cajero_filtro, caja_actual=caja_actual,
-                           puede_cobrar=puede_cobrar)
+                           puede_cobrar=puede_cobrar, recibo_q=recibo_q,
+                           busqueda_recibos=busqueda_recibos, recibo_nuevo=recibo_nuevo)
 
 
 @bp.route("/caja/abrir", methods=["POST"])
@@ -240,14 +277,16 @@ def cerrar():
                 SELECT COALESCE(SUM(valor), 0) AS efectivo
                 FROM pagos
                 WHERE caja_id = %s AND metodo_pago = 'Efectivo'
-                  AND concepto <> 'Abono histórico previo'
+                  AND concepto <> 'Abono histórico previo' AND anulado = 0
             """, (caja["id"],)).fetchone()["efectivo"]
             ingresos = cur.execute(
-                "SELECT COALESCE(SUM(valor), 0) AS total FROM ingresos_caja WHERE caja_id = %s",
+                "SELECT COALESCE(SUM(valor), 0) AS total FROM ingresos_caja "
+                "WHERE caja_id = %s AND anulado = 0",
                 (caja["id"],),
             ).fetchone()["total"]
             salidas = cur.execute(
-                "SELECT COALESCE(SUM(valor), 0) AS total FROM salidas_caja WHERE caja_id = %s",
+                "SELECT COALESCE(SUM(valor), 0) AS total FROM salidas_caja "
+                "WHERE caja_id = %s AND anulado = 0",
                 (caja["id"],),
             ).fetchone()["total"]
             esperado = int(caja["monto_apertura"]) + int(pagos) + int(ingresos) - int(salidas)
@@ -264,8 +303,7 @@ def cerrar():
         flash("No se pudo cerrar la caja. Intenta de nuevo.", "error")
         return redirect(url_for("caja.resumen"))
 
-    flash(f"Caja cerrada. Efectivo esperado: ${esperado:,}; diferencia: ${diferencia:,}."
-          .replace(",", "."), "ok")
+    flash(f"Caja cerrada. Efectivo esperado: {cop(esperado)}; diferencia: {cop(diferencia)}.", "ok")
     return redirect(url_for("caja.resumen"))
 
 
@@ -288,13 +326,13 @@ def registrar_movimiento(tipo):
         return redirect(url_for("caja.resumen"))
 
     tabla, etiqueta = tablas[tipo]
-    recibo = f"CEA-{ahora():%Y%m%d}-{uuid.uuid4().hex[:16].upper()}"
     try:
         with db.transaccion() as cur:
             caja = caja_abierta(cur, session["uid"])
             if not caja:
                 flash("Abre tu caja antes de registrar un movimiento.", "error")
                 return redirect(url_for("caja.resumen"))
+            recibo = numero_recibo(cur)
             cur.execute(
                 f"INSERT INTO {tabla} (numero_recibo, concepto, valor, usuario_id, caja_id) "
                 "VALUES (%s, %s, %s, %s, %s)",
@@ -306,4 +344,4 @@ def registrar_movimiento(tipo):
         return redirect(url_for("caja.resumen"))
 
     flash(f"{etiqueta} registrada. Recibo {recibo}.", "ok")
-    return redirect(url_for("caja.resumen"))
+    return redirect(url_for("caja.resumen", recibo_nuevo=recibo))

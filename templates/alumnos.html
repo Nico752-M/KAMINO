@@ -15,13 +15,31 @@
         <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
         <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
         <td>
-          {% if f.saldo > 0 and f.estado != 'Histórico' and 'registrar_pagos' in permisos %}
+          {% if f.saldo > 0 and f.estado not in ('Histórico', 'Archivado') and 'registrar_pagos' in permisos %}
           <button class="btn-action green sm js-cobrar" type="button"
                   data-matricula="{{ f.matricula_id }}"
                   data-nombre="{{ f.nombres }} {{ f.apellidos }}"
                   data-saldo="{{ f.saldo|int }}"
                   data-concepto="{{ f.concepto }}"><i class="ri-hand-coin-line"></i> Cobrar</button>
-          {% else %}<small>—</small>{% endif %}
+          {% endif %}
+          {% if 'ver_historial_pagos' in permisos %}
+          <a class="btn-action sm" href="{{ url_for('alumnos.historial', matricula_id=f.matricula_id) }}"><i class="ri-history-line"></i> Historial</a>
+          {% endif %}
+          {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
+          <a class="btn-action sm" href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
+          {% endif %}
+          {% if 'eliminar_alumnos' in permisos and f.estado != 'Archivado' %}
+          <form method="post" action="{{ url_for('alumnos.archivar_matricula', matricula_id=f.matricula_id) }}"
+                onsubmit="return confirm('¿Archivar esta matrícula? Los pagos y recibos se conservarán.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input class="input-clean archive-reason" name="motivo" maxlength="500" required
+                   placeholder="Motivo obligatorio" aria-label="Motivo para archivar">
+            <button class="btn-action red sm" type="submit"><i class="ri-archive-line"></i> Archivar</button>
+          </form>
+          {% endif %}
+          {% if not ('registrar_pagos' in permisos and f.saldo > 0 and f.estado not in ('Histórico','Archivado'))
+                and 'ver_historial_pagos' not in permisos and 'editar_alumnos' not in permisos
+                and 'eliminar_alumnos' not in permisos %}<small>—</small>{% endif %}
         </td>
       </tr>
     {% endfor %}
@@ -40,6 +58,12 @@
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+{% if recibo_nuevo and 'ver_recibos' in permisos %}
+<div class="alerta ok">Imprime el recibo original del abono inicial:
+  <a class="btn-action green sm" target="_blank" rel="noopener"
+     href="{{ url_for('pagos.recibo', numero=recibo_nuevo) }}"><i class="ri-printer-line"></i> Imprimir recibo</a>
+</div>
+{% endif %}
 {% if q %}<div class="hint" style="margin-bottom:1rem">Resultados para «{{ q }}» — <a href="{{ url_for('alumnos.lista') }}" style="color:var(--accent-gold);font-weight:700">ver todos</a></div>{% endif %}
 {% if limite %}<div class="hint" style="margin-bottom:1rem">Se muestran los 200 más recientes. Usa el buscador para encontrar otros.</div>{% endif %}
 
@@ -65,134 +89,140 @@
     <form method="post" action="{{ url_for('alumnos.crear_matricula') }}" class="matricula-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <ol class="form-stepper" aria-label="Pasos del registro">
-        <li class="active" data-step-indicator="0"><span>1</span><div><strong>Alumno</strong><small>Identificación y datos personales</small></div></li>
-        <li data-step-indicator="1"><span>2</span><div><strong>Contacto</strong><small>Contacto y responsable</small></div></li>
-        <li data-step-indicator="2"><span>3</span><div><strong>Matrícula</strong><small>Curso y valor</small></div></li>
+        <li class="active" data-step-indicator="0"><span>1</span><div><strong>Identificación</strong></div></li>
+        <li data-step-indicator="1"><span>2</span><div><strong>Alumno</strong></div></li>
+        <li data-step-indicator="2"><span>3</span><div><strong>Contacto</strong></div></li>
+        <li data-step-indicator="3"><span>4</span><div><strong>Matrícula</strong></div></li>
       </ol>
       <div class="matricula-grid">
         <div class="form-step active" data-step-pane="0">
-        <section class="form-section">
-          <h4>Identificación</h4>
-          <div class="form-grid three">
-            <div class="field"><label class="lbl" for="matriculaDocumento">Número de documento <span class="required-mark">*</span></label>
-              <input class="input-clean" id="matriculaDocumento" name="numero_documento" maxlength="20" required></div>
-            <div class="field"><label class="lbl" for="matriculaTipoDocumento">Tipo de documento <span class="required-mark">*</span></label>
-              <select class="input-clean" id="matriculaTipoDocumento" name="tipo_documento" required>
-                <option value="">Selecciona</option><option>CC</option><option>CE</option><option>TI</option>
-                <option>RC</option><option>Pasaporte</option><option>PPT</option><option>Otro</option>
-              </select></div>
-            <div class="field"><label class="lbl" for="matriculaCategoria">Categoría / licencia <span class="required-mark">*</span></label>
-              <input class="input-clean" id="matriculaCategoria" name="categoria" maxlength="45" placeholder="Ej: A2, B1, C1" required></div>
-          </div>
-          <div class="form-grid two">
-            <div class="field"><label class="lbl" for="tipoMatricula">Proceso <span class="required-mark">*</span></label>
-              <select class="input-clean" id="tipoMatricula" name="tipo_matricula" required>
-                <option value="curso">Curso completo</option><option value="renovacion">Renovación</option>
-              </select></div>
-            <p class="hint form-note">El consecutivo se asigna por año y no reemplaza matrículas anteriores.</p>
-          </div>
-        </section>
-
-        <section class="form-section">
-          <h4>Datos personales</h4>
-          <div class="form-grid two">
-            <div class="field"><label class="lbl" for="matriculaNombres">Nombres <span class="required-mark">*</span></label>
-              <input class="input-clean" id="matriculaNombres" name="nombres" maxlength="100" required></div>
-            <div class="field"><label class="lbl" for="matriculaApellidos">Apellidos <span class="required-mark">*</span></label>
-              <input class="input-clean" id="matriculaApellidos" name="apellidos" maxlength="100" required></div>
-          </div>
-          <div class="form-grid three">
-            <div class="field"><label class="lbl" for="fechaNacimiento">Fecha de nacimiento</label>
-              <input class="input-clean" id="fechaNacimiento" name="fecha_nacimiento" type="date"></div>
-            <div class="field"><label class="lbl" for="lugarNacimiento">Lugar de nacimiento</label>
-              <input class="input-clean" id="lugarNacimiento" name="lugar_nacimiento" maxlength="120" placeholder="Ciudad, departamento"></div>
-            <div class="field"><label class="lbl" for="sexoAlumno">Sexo</label>
-              <select class="input-clean" id="sexoAlumno" name="sexo"><option value="">Selecciona</option><option>F</option><option>M</option><option>Otro</option></select></div>
-            <div class="field"><label class="lbl" for="estadoCivil">Estado civil</label>
-              <select class="input-clean" id="estadoCivil" name="estado_civil">
-                <option value="">Selecciona</option><option>Soltero/a</option><option>Casado/a</option>
-                <option>Unión libre</option><option>Separado/a</option><option>Viudo/a</option>
-              </select></div>
-            <div class="field"><label class="lbl" for="grupoSanguineo">Grupo sanguíneo</label>
-              <select class="input-clean" id="grupoSanguineo" name="grupo_sanguineo">
-                <option value="">Selecciona</option><option>O+</option><option>O-</option><option>A+</option><option>A-</option>
-                <option>B+</option><option>B-</option><option>AB+</option><option>AB-</option>
-              </select></div>
-            <div class="field"><label class="lbl" for="ocupacionAlumno">Ocupación</label>
-              <input class="input-clean" id="ocupacionAlumno" name="ocupacion" maxlength="120"></div>
-          </div>
-        </section>
+          <section class="form-section">
+            <h4>Identificación</h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="matriculaDocumento">Documento <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaDocumento" name="numero_documento" maxlength="20" required></div>
+              <div class="field"><label class="lbl" for="matriculaTipoDocumento">Tipo <span class="required-mark">*</span></label>
+                <select class="input-clean" id="matriculaTipoDocumento" name="tipo_documento" required>
+                  <option value="">Selecciona</option><option>CC</option><option>CE</option><option>TI</option>
+                  <option>RC</option><option>Pasaporte</option><option>PPT</option><option>Otro</option>
+                </select></div>
+              <div class="field"><label class="lbl" for="matriculaCategoria">Categoría <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaCategoria" name="categoria" maxlength="45" placeholder="Ej: A2, B1, C1" required></div>
+              <div class="field"><label class="lbl" for="tipoMatricula">Proceso <span class="required-mark">*</span></label>
+                <select class="input-clean" id="tipoMatricula" name="tipo_matricula" required>
+                  <option value="curso">Curso completo</option><option value="renovacion">Renovación</option>
+                </select></div>
+            </div>
+          </section>
         </div>
 
         <div class="form-step" data-step-pane="1" hidden>
-        <section class="form-section">
-          <h4>Información de contacto <span class="optional-label">Opcional</span></h4>
-          <div class="form-grid two">
-            <div class="field"><label class="lbl" for="celularAlumno">Celular</label>
-              <input class="input-clean" id="celularAlumno" name="celular" maxlength="30" inputmode="tel"></div>
-            <div class="field"><label class="lbl" for="emailAlumno">Correo electrónico</label>
-              <input class="input-clean" id="emailAlumno" name="email" type="email" maxlength="254"></div>
-          </div>
-        </section>
-
-        <details class="form-section responsible-section">
-          <summary>Responsable de inscripción <span class="optional-label">Opcional</span></summary>
-          <p class="hint">Si agregas un responsable, documento, nombres, apellidos y relación son obligatorios. Celular y correo son opcionales.</p>
-          <div class="form-grid two">
-            <div class="field"><label class="lbl" for="responsableTipoDocumento">Tipo de documento <span class="required-mark">*</span></label>
-              <select class="input-clean" id="responsableTipoDocumento" name="responsable_tipo_documento">
-                <option value="">Selecciona</option><option>CC</option><option>CE</option><option>TI</option><option>RC</option><option>Pasaporte</option><option>PPT</option><option>Otro</option>
-              </select></div>
-            <div class="field"><label class="lbl" for="responsableDocumento">Número de documento <span class="required-mark">*</span></label>
-              <input class="input-clean" id="responsableDocumento" name="responsable_documento" maxlength="20"></div>
-            <div class="field"><label class="lbl" for="responsableNombres">Nombres <span class="required-mark">*</span></label>
-              <input class="input-clean" id="responsableNombres" name="responsable_nombres" maxlength="100"></div>
-            <div class="field"><label class="lbl" for="responsableApellidos">Apellidos <span class="required-mark">*</span></label>
-              <input class="input-clean" id="responsableApellidos" name="responsable_apellidos" maxlength="100"></div>
-            <div class="field"><label class="lbl" for="responsableCelular">Celular</label>
-              <input class="input-clean" id="responsableCelular" name="responsable_celular" maxlength="30" inputmode="tel"></div>
-            <div class="field"><label class="lbl" for="responsableEmail">Correo electrónico</label>
-              <input class="input-clean" id="responsableEmail" name="responsable_email" type="email" maxlength="254"></div>
-            <div class="field"><label class="lbl" for="responsableRelacion">Relación con el alumno <span class="required-mark">*</span></label>
-              <select class="input-clean" id="responsableRelacion" name="responsable_relacion">
-                <option value="">Selecciona</option><option>Padre</option><option>Madre</option><option>Cónyuge</option>
-                <option>Hijo/a</option><option>Hermano/a</option><option>Acudiente</option><option>Otro</option>
-              </select></div>
-          </div>
-        </details>
+          <section class="form-section">
+            <h4>Datos del alumno</h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="matriculaNombres">Nombres <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaNombres" name="nombres" maxlength="100" required></div>
+              <div class="field"><label class="lbl" for="matriculaApellidos">Apellidos <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaApellidos" name="apellidos" maxlength="100" required></div>
+            </div>
+            <details class="optional-details">
+              <summary>Más datos (opcional)</summary>
+              <div class="form-grid two">
+                <div class="field"><label class="lbl" for="fechaNacimiento">Fecha de nacimiento</label>
+                  <input class="input-clean" id="fechaNacimiento" name="fecha_nacimiento" type="date"></div>
+                <div class="field"><label class="lbl" for="lugarNacimiento">Lugar</label>
+                  <input class="input-clean" id="lugarNacimiento" name="lugar_nacimiento" maxlength="120" placeholder="Ciudad, departamento"></div>
+                <div class="field"><label class="lbl" for="sexoAlumno">Sexo</label>
+                  <select class="input-clean" id="sexoAlumno" name="sexo"><option value="">Selecciona</option><option>F</option><option>M</option><option>Otro</option></select></div>
+                <div class="field"><label class="lbl" for="estadoCivil">Estado civil</label>
+                  <select class="input-clean" id="estadoCivil" name="estado_civil">
+                    <option value="">Selecciona</option><option>Soltero/a</option><option>Casado/a</option>
+                    <option>Unión libre</option><option>Separado/a</option><option>Viudo/a</option>
+                  </select></div>
+                <div class="field"><label class="lbl" for="grupoSanguineo">Grupo sanguíneo</label>
+                  <select class="input-clean" id="grupoSanguineo" name="grupo_sanguineo">
+                    <option value="">Selecciona</option><option>O+</option><option>O-</option><option>A+</option><option>A-</option>
+                    <option>B+</option><option>B-</option><option>AB+</option><option>AB-</option>
+                  </select></div>
+                <div class="field"><label class="lbl" for="ocupacionAlumno">Ocupación</label>
+                  <input class="input-clean" id="ocupacionAlumno" name="ocupacion" maxlength="120"></div>
+              </div>
+            </details>
+          </section>
         </div>
 
         <div class="form-step" data-step-pane="2" hidden>
-        <section class="form-section price-section">
-          <h4>Valor del curso</h4>
-          <div class="form-grid three">
-            <div class="field"><label class="lbl" for="precioBase">Precio base (COP) <span class="required-mark">*</span></label>
-              <input class="input-clean" id="precioBase" name="precio_base" type="number" min="1" max="999999999999" step="1" required></div>
-            <div class="field"><label class="lbl" for="descuentoPesos">Descuento ($)</label>
-              <input class="input-clean" id="descuentoPesos" type="number" min="0" step="1" placeholder="Ej: 50000"></div>
-            <div class="field"><label class="lbl" for="descuentoPorcentaje">Descuento (%)</label>
-              <input class="input-clean" id="descuentoPorcentaje" type="number" min="0" max="100" step="0.01" placeholder="Ej: 10"></div>
-          </div>
-          <div class="form-grid two">
-            <div class="field"><label class="lbl" for="metodoPagoInicial">Método de pago del abono</label>
-              <select class="input-clean" id="metodoPagoInicial" name="metodo_pago">
-                <option>Efectivo</option><option>Transferencia</option><option>Nequi</option>
-                <option>Daviplata</option><option>Sistecredit</option><option>Otro</option>
-              </select></div>
-            <div class="field"><label class="lbl" for="abonoInicial">Abono inicial (COP) · 0 si no paga ahora</label>
-              <input class="input-clean" id="abonoInicial" name="abono_inicial" type="number" min="0" max="100000000" step="1" value="0"></div>
-          </div>
-          <div class="form-grid two">
-            <div class="field"><label class="lbl" for="acompananteInicial">Acompañante</label>
-              <input class="input-clean" id="acompananteInicial" name="acompanante" maxlength="100" placeholder="Opcional"></div>
-            <div class="field"><label class="lbl" for="notasIniciales">Notas del abono</label>
-              <input class="input-clean" id="notasIniciales" name="observaciones" maxlength="1000" placeholder="Opcional"></div>
-          </div>
-          <div class="field"><label class="lbl" for="matriculaPrecio">Total a pagar (COP) <span class="required-mark">*</span></label>
-            <input class="input-clean total-input" id="matriculaPrecio" name="precio_total" type="number" min="1" max="999999999999" step="1" required>
-            <p class="hint">Puedes ajustar el total directamente. Se guardará el descuento aplicado.</p></div>
-        </section>
-        <p class="step-note">Año {{ anio_actual }} · El consecutivo se asigna automáticamente y conserva los registros anteriores.</p>
+          <section class="form-section">
+            <h4>Contacto <span class="optional-label">Opcional</span></h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="celularAlumno">Celular</label>
+                <input class="input-clean" id="celularAlumno" name="celular" maxlength="30" inputmode="tel"></div>
+              <div class="field"><label class="lbl" for="emailAlumno">Correo electrónico</label>
+                <input class="input-clean" id="emailAlumno" name="email" type="email" maxlength="254"></div>
+            </div>
+            <details class="optional-details responsible-section">
+              <summary>Responsable (opcional)</summary>
+              <p class="hint">Si agregas un responsable, documento, nombres, apellidos y relación son obligatorios.</p>
+              <div class="form-grid two">
+                <div class="field"><label class="lbl" for="responsableTipoDocumento">Tipo <span class="required-mark">*</span></label>
+                  <select class="input-clean" id="responsableTipoDocumento" name="responsable_tipo_documento">
+                    <option value="">Selecciona</option><option>CC</option><option>CE</option><option>TI</option><option>RC</option><option>Pasaporte</option><option>PPT</option><option>Otro</option>
+                  </select></div>
+                <div class="field"><label class="lbl" for="responsableDocumento">Documento <span class="required-mark">*</span></label>
+                  <input class="input-clean" id="responsableDocumento" name="responsable_documento" maxlength="20"></div>
+                <div class="field"><label class="lbl" for="responsableNombres">Nombres <span class="required-mark">*</span></label>
+                  <input class="input-clean" id="responsableNombres" name="responsable_nombres" maxlength="100"></div>
+                <div class="field"><label class="lbl" for="responsableApellidos">Apellidos <span class="required-mark">*</span></label>
+                  <input class="input-clean" id="responsableApellidos" name="responsable_apellidos" maxlength="100"></div>
+                <div class="field"><label class="lbl" for="responsableCelular">Celular</label>
+                  <input class="input-clean" id="responsableCelular" name="responsable_celular" maxlength="30" inputmode="tel"></div>
+                <div class="field"><label class="lbl" for="responsableEmail">Correo electrónico</label>
+                  <input class="input-clean" id="responsableEmail" name="responsable_email" type="email" maxlength="254"></div>
+                <div class="field"><label class="lbl" for="responsableRelacion">Relación <span class="required-mark">*</span></label>
+                  <select class="input-clean" id="responsableRelacion" name="responsable_relacion">
+                    <option value="">Selecciona</option><option>Padre</option><option>Madre</option><option>Cónyuge</option>
+                    <option>Hijo/a</option><option>Hermano/a</option><option>Acudiente</option><option>Otro</option>
+                  </select></div>
+              </div>
+            </details>
+          </section>
+        </div>
+
+        <div class="form-step" data-step-pane="3" hidden>
+          <section class="form-section price-section">
+            <h4>Matrícula y pago</h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="precioBase">Precio base (COP) <span class="required-mark">*</span></label>
+                <input class="input-clean" id="precioBase" name="precio_base" inputmode="numeric" data-money-input required></div>
+              <div class="field"><label class="lbl" for="descuentoPesos">Descuento ($)</label>
+                <input class="input-clean" id="descuentoPesos" data-money-input inputmode="numeric" placeholder="Ej: 50.000"></div>
+              <div class="field"><label class="lbl" for="descuentoPorcentaje">Descuento (%)</label>
+                <input class="input-clean" id="descuentoPorcentaje" type="number" min="0" max="100" step="0.01" placeholder="Ej: 10"></div>
+              <div class="field"><label class="lbl" for="metodoPagoInicial">Método de pago del abono</label>
+                <select class="input-clean" id="metodoPagoInicial" name="metodo_pago">
+                  <option>Efectivo</option><option>Transferencia</option><option>Nequi</option>
+                  <option>Daviplata</option><option>Sistecredit</option><option>Otro</option>
+                </select></div>
+              <div class="field"><label class="lbl" for="abonoInicial">Abono inicial (COP)</label>
+                <input class="input-clean" id="abonoInicial" name="abono_inicial" inputmode="numeric"
+                       data-money-input value="0">
+                <p class="hint">Escribe 0 si no paga ahora.</p></div>
+              <div class="field"><label class="lbl" for="matriculaPrecio">Total a pagar (COP) <span class="required-mark">*</span></label>
+                <input class="input-clean total-input" id="matriculaPrecio" name="precio_total"
+                       inputmode="numeric" data-money-input required>
+                <p class="hint">El total se calcula con el precio y el descuento.</p></div>
+            </div>
+            <details class="optional-details">
+              <summary>Más datos del pago (opcional)</summary>
+              <div class="form-grid two">
+                <div class="field"><label class="lbl" for="acompananteInicial">Acompañante</label>
+                  <input class="input-clean" id="acompananteInicial" name="acompanante" maxlength="100"></div>
+                <div class="field"><label class="lbl" for="notasIniciales">Notas del abono</label>
+                  <input class="input-clean" id="notasIniciales" name="observaciones" maxlength="1000"></div>
+              </div>
+            </details>
+          </section>
+          <p class="step-note">Año {{ anio_actual }} · El consecutivo se asigna automáticamente.</p>
         </div>
       </div>
       <div class="modal-footer">

@@ -33,12 +33,21 @@
     <p class="hint">La categoría es informativa; solo se habilitan las acciones que marques.</p>
     <div class="grid-stats">
       {% for codigo, etiqueta in catalogo.items() %}
-      <label class="hint"><input type="checkbox" name="permisos" value="{{ codigo }}" {% if codigo in ('ver_dashboard','ver_alumnos','ver_caja','ver_tramites') %}checked{% endif %}> {{ etiqueta }}</label>
+      <label class="hint"><input type="checkbox" name="permisos" value="{{ codigo }}"
+        {% if codigo in ('ver_dashboard','ver_alumnos','ver_caja','ver_tramites') %}checked{% endif %}
+        {% if codigo in ('editar_alumnos','eliminar_alumnos','ver_historial_pagos') %}checked data-admin-default="true"{% endif %}> {{ etiqueta }}</label>
       {% endfor %}
     </div>
     <button class="btn-action red" type="submit"><i class="ri-save-line"></i> Crear cuenta y perfil</button>
   </form>
 </section>
+<script>
+  document.getElementById("nuevoRol").addEventListener("change", function () {
+    document.querySelectorAll("[data-admin-default]").forEach(function (permiso) {
+      permiso.checked = this.value === "admin";
+    }, this);
+  });
+</script>
 
 <h3 class="section-title" style="margin:1.5rem 0 1rem">Cuentas existentes</h3>
 {% for u in usuarios %}

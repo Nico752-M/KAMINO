@@ -37,6 +37,14 @@
 
   const form = document.getElementById("movimientoCajaForm");
   if (!form) return;
+  const valor = document.getElementById("movimientoValor");
+  form.addEventListener("submit", (evento) => {
+    if (Number.parseInt(window.soloDigitos(valor.value), 10) > 0) return;
+    evento.preventDefault();
+    valor.setCustomValidity("El valor debe ser mayor a $0.");
+    valor.reportValidity();
+  });
+  valor.addEventListener("input", () => valor.setCustomValidity(""));
   const botonGuardar = document.getElementById("guardarMovimientoCaja");
   const opciones = [...document.querySelectorAll("[data-movement-type]")];
   opciones.forEach((opcion) => {

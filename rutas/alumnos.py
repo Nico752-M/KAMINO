@@ -1,6 +1,6 @@
+import json
 import re
 import time
-import uuid
 from datetime import date
 
 import oracledb
@@ -8,7 +8,8 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 
 import db
 from auth import login_required, permiso_requerido, permisos_actuales
-from utils import hoy
+from servicios.recibos import numero_recibo
+from utils import entero, hoy
 
 bp = Blueprint("alumnos", __name__)
 
@@ -32,11 +33,30 @@ def _like(texto: str) -> str:
     return f"%{texto}%"
 
 
+def _pesos(texto: str) -> int | None:
+    if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto):
+        return None
+    return entero(texto, -1)
+
+
+def _auditar(cur, entidad, entidad_id, accion, usuario_id, antes, despues, motivo=None):
+    cur.execute(
+        """INSERT INTO auditoria_cambios
+           (entidad, entidad_id, accion, usuario_id, antes, despues, motivo)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (entidad, entidad_id, accion, usuario_id,
+         json.dumps(antes, ensure_ascii=False, default=str) if antes is not None else None,
+         json.dumps(despues, ensure_ascii=False, default=str) if despues is not None else None,
+         motivo),
+    )
+
+
 @bp.route("/alumnos")
 @login_required
 @permiso_requerido("ver_alumnos")
 def lista():
     q = request.args.get("q", "").strip()[:60]
+    recibo_nuevo = request.args.get("recibo_nuevo", "").strip()[:50]
     error = None
     filas = []
 
@@ -50,10 +70,12 @@ def lista():
 
     try:
         filas = db.fetchall(f"""
-            SELECT m.id AS matricula_id, m.numero_orden, m.anio, m.categoria, m.estado,
+            SELECT m.id AS matricula_id, m.numero_orden, m.anio, m.categoria,
+                   CASE WHEN m.archivado = 1 THEN 'Archivado' ELSE m.estado END AS estado,
                    COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
                    a.numero_documento, a.nombres, a.apellidos,
-                   COALESCE((SELECT SUM(p.valor) FROM pagos p WHERE p.id_matricula = m.id), 0) AS pagado
+                   COALESCE((SELECT SUM(p.valor) FROM pagos p
+                             WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado
             FROM matriculas m
             JOIN alumnos a ON a.numero_documento = m.numero_documento
             {filtro}
@@ -80,16 +102,12 @@ def lista():
 
     return render_template("alumnos.html", cursos=cursos, renovaciones=renovaciones,
                            q=q, error=error, limite=len(filas) >= 200,
-                           anio_actual=hoy().year)
+                           anio_actual=hoy().year, recibo_nuevo=recibo_nuevo)
 
 
 def _duplicado_unico(error: Exception) -> bool:
     causa = error.args[0] if error.args else None
     return getattr(causa, "code", None) == 1
-
-
-def _numero_recibo() -> str:
-    return f"CEA-{hoy():%Y%m%d}-{uuid.uuid4().hex[:6].upper()}"
 
 
 @bp.route("/alumnos/matricula", methods=["POST"])
@@ -154,18 +172,18 @@ def crear_matricula():
             or (email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))):
         flash("Revisa el sexo, estado civil, grupo sanguíneo o correo electrónico.", "error")
         return redirect(url_for("alumnos.lista"))
-    if not precio_base_texto.isascii() or not precio_base_texto.isdecimal() \
-            or not precio_texto.isascii() or not precio_texto.isdecimal():
+    precio_base = _pesos(precio_base_texto)
+    precio = _pesos(precio_texto)
+    if precio_base is None or precio is None:
         flash("El precio base y el total deben ser valores enteros en pesos.", "error")
         return redirect(url_for("alumnos.lista"))
-    precio_base, precio = int(precio_base_texto), int(precio_texto)
     if precio_base <= 0 or precio_base > 999_999_999_999 or precio <= 0 or precio > precio_base:
         flash("El total debe ser mayor a $0 y no puede superar el precio base.", "error")
         return redirect(url_for("alumnos.lista"))
-    if not abono_texto.isascii() or not abono_texto.isdecimal():
+    abono = _pesos(abono_texto)
+    if abono is None:
         flash("El abono inicial debe ser un valor entero en pesos.", "error")
         return redirect(url_for("alumnos.lista"))
-    abono = int(abono_texto)
     if abono > 100_000_000 or abono > precio:
         flash("El abono inicial no puede superar $100.000.000 ni el total del curso.", "error")
         return redirect(url_for("alumnos.lista"))
@@ -273,7 +291,7 @@ def crear_matricula():
                     ).fetchone()
                     if not caja:
                         raise DatosMatriculaInvalidos("Abre tu caja antes de registrar un abono inicial.")
-                    recibo_inicial = _numero_recibo()
+                    recibo_inicial = numero_recibo(cur)
                     cur.execute("""
                         INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
                                            usuario_id, caja_id, observaciones, acompanante)
@@ -305,4 +323,354 @@ def crear_matricula():
         flash(f"{'Renovación' if tipo_matricula == 'renovacion' else 'Matrícula'} "
               f"{orden}-{str(anio)[-2:]} creada correctamente."
               + (f" Recibo del abono: {recibo_inicial}." if recibo_inicial else ""), "ok")
+    return redirect(url_for("alumnos.lista", recibo_nuevo=recibo_inicial) if recibo_inicial
+                    else url_for("alumnos.lista"))
+
+
+@bp.route("/alumnos/matricula/<int:matricula_id>/editar", methods=["GET", "POST"])
+@login_required
+@permiso_requerido("editar_alumnos")
+def editar_matricula(matricula_id):
+    try:
+        if request.method == "GET":
+            fila = db.fetchone("""
+                SELECT m.id, m.numero_documento AS documento_original, m.categoria, m.estado,
+                       m.precio_base, m.precio_total, m.descuento_valor, m.descuento_porcentaje,
+                       a.tipo_documento, a.nombres, a.apellidos, a.fecha_nacimiento,
+                       a.lugar_nacimiento, a.sexo, a.estado_civil, a.grupo_sanguineo,
+                       a.ocupacion, a.celular, a.email,
+                       r.tipo_documento AS responsable_tipo_documento,
+                       r.numero_documento AS responsable_documento,
+                       r.nombres AS responsable_nombres, r.apellidos AS responsable_apellidos,
+                       r.celular AS responsable_celular, r.email AS responsable_email,
+                       r.relacion AS responsable_relacion
+                FROM matriculas m
+                JOIN alumnos a ON a.numero_documento = m.numero_documento
+                LEFT JOIN responsables_matricula r ON r.id_matricula = m.id
+                WHERE m.id = %s AND m.archivado = 0
+            """, (matricula_id,))
+            if not fila:
+                return "Matrícula no encontrada.", 404
+            pagado = db.fetchone(
+                "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
+                "WHERE id_matricula = %s AND anulado = 0",
+                (matricula_id,),
+            )["total"]
+            return render_template("editar_alumno.html", alumno=fila, pagado=pagado)
+
+        documento_original = request.form.get("documento_original", "").strip()
+        documento = request.form.get("numero_documento", "").strip()
+        tipo_documento = request.form.get("tipo_documento", "").strip()
+        nombres = " ".join(request.form.get("nombres", "").split())
+        apellidos = " ".join(request.form.get("apellidos", "").split())
+        categoria = " ".join(request.form.get("categoria", "").split())
+        fecha_texto = request.form.get("fecha_nacimiento", "").strip()
+        fecha_nacimiento = None
+        if fecha_texto:
+            try:
+                fecha_nacimiento = date.fromisoformat(fecha_texto)
+            except ValueError:
+                raise DatosMatriculaInvalidos("La fecha de nacimiento no es válida.")
+            if fecha_nacimiento > hoy():
+                raise DatosMatriculaInvalidos("La fecha de nacimiento no puede ser futura.")
+
+        opcionales = {
+            "lugar_nacimiento": request.form.get("lugar_nacimiento", "").strip() or None,
+            "sexo": request.form.get("sexo", "").strip() or None,
+            "estado_civil": request.form.get("estado_civil", "").strip() or None,
+            "grupo_sanguineo": request.form.get("grupo_sanguineo", "").strip() or None,
+            "ocupacion": request.form.get("ocupacion", "").strip() or None,
+            "celular": request.form.get("celular", "").strip() or None,
+            "email": request.form.get("email", "").strip() or None,
+        }
+        limites = {"lugar_nacimiento": 120, "sexo": 20, "estado_civil": 30,
+                   "grupo_sanguineo": 5, "ocupacion": 120, "celular": 30, "email": 254}
+        if (not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", documento)
+                or tipo_documento not in TIPOS_DOCUMENTO
+                or not nombres or len(nombres) > 100 or not apellidos or len(apellidos) > 100
+                or not categoria or len(categoria) > 60):
+            raise DatosMatriculaInvalidos("Revisa documento, tipo, nombres, apellidos y categoría.")
+        if any(value and len(value) > limites[campo] for campo, value in opcionales.items()):
+            raise DatosMatriculaInvalidos("Uno de los datos personales o de contacto supera el largo permitido.")
+        if (opcionales["sexo"] not in (None, "F", "M", "Otro")
+                or opcionales["estado_civil"] not in
+                (None, "Soltero/a", "Casado/a", "Unión libre", "Separado/a", "Viudo/a")
+                or opcionales["grupo_sanguineo"] not in
+                (None, "O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-")
+                or (opcionales["email"] and
+                    not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", opcionales["email"]))):
+            raise DatosMatriculaInvalidos("Revisa sexo, estado civil, grupo sanguíneo o correo electrónico.")
+
+        base = _pesos(request.form.get("precio_base", "").strip())
+        descuento_valor = _pesos(request.form.get("descuento_valor", "").strip() or "0")
+        porcentaje_texto = request.form.get("descuento_porcentaje", "").strip() or "0"
+        if (base is None or descuento_valor is None
+                or not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]{1,2})?)", porcentaje_texto)):
+            raise DatosMatriculaInvalidos("El precio y los descuentos deben ser valores válidos en pesos.")
+        porcentaje = float(porcentaje_texto)
+        if (base <= 0 or base > 999_999_999_999 or descuento_valor < 0
+                or porcentaje < 0 or porcentaje > 100
+                or (descuento_valor and porcentaje)):
+            raise DatosMatriculaInvalidos("El descuento debe ser positivo y no puede superar el precio base.")
+        if porcentaje:
+            descuento_valor = round(base * porcentaje / 100)
+        elif descuento_valor:
+            porcentaje = round(descuento_valor * 100 / base, 2)
+        total = base - descuento_valor
+        if total <= 0:
+            raise DatosMatriculaInvalidos("El total a pagar debe ser mayor a $0.")
+
+        responsable = {
+            "tipo_documento": request.form.get("responsable_tipo_documento", "").strip(),
+            "numero_documento": request.form.get("responsable_documento", "").strip(),
+            "nombres": " ".join(request.form.get("responsable_nombres", "").split()),
+            "apellidos": " ".join(request.form.get("responsable_apellidos", "").split()),
+            "celular": request.form.get("responsable_celular", "").strip() or None,
+            "email": request.form.get("responsable_email", "").strip() or None,
+            "relacion": request.form.get("responsable_relacion", "").strip(),
+        }
+        if any(responsable.values()) and (
+                responsable["tipo_documento"] not in TIPOS_DOCUMENTO
+                or not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", responsable["numero_documento"])
+                or not responsable["nombres"] or len(responsable["nombres"]) > 100
+                or not responsable["apellidos"] or len(responsable["apellidos"]) > 100
+                or responsable["relacion"] not in
+                ("Padre", "Madre", "Cónyuge", "Hijo/a", "Hermano/a", "Acudiente", "Otro")
+                or (responsable["celular"] and len(responsable["celular"]) > 30)
+                or (responsable["email"] and
+                    (len(responsable["email"]) > 254
+                     or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", responsable["email"])))):
+            raise DatosMatriculaInvalidos(
+                "Completa documento, nombres, apellidos y relación del responsable; teléfono y correo son opcionales."
+            )
+
+        with db.transaccion() as cur:
+            actual = cur.execute("""
+                SELECT m.id, m.numero_documento, m.categoria, m.estado, m.archivado, m.precio_base,
+                       m.precio_total, m.descuento_valor, m.descuento_porcentaje,
+                       a.tipo_documento, a.nombres, a.apellidos, a.fecha_nacimiento,
+                       a.lugar_nacimiento, a.sexo, a.estado_civil, a.grupo_sanguineo,
+                       a.ocupacion, a.celular, a.email
+                FROM matriculas m JOIN alumnos a ON a.numero_documento = m.numero_documento
+                WHERE m.id = %s AND m.archivado = 0 FOR UPDATE
+            """, (matricula_id,)).fetchone()
+            if not actual:
+                raise DatosMatriculaInvalidos("La matrícula no existe o ya fue archivada.")
+            if documento_original != actual["numero_documento"]:
+                raise DatosMatriculaInvalidos("Los datos cambiaron. Recarga la página e intenta de nuevo.")
+            pagado = cur.execute(
+                "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
+                "WHERE id_matricula = %s AND anulado = 0",
+                (matricula_id,),
+            ).fetchone()["total"]
+            if total < int(pagado):
+                raise DatosMatriculaInvalidos(
+                    "El nuevo precio no puede ser menor a lo ya pagado."
+                )
+            responsable_actual = cur.execute(
+                """SELECT tipo_documento, numero_documento, nombres, apellidos, celular, email, relacion
+                   FROM responsables_matricula WHERE id_matricula = %s FOR UPDATE""",
+                (matricula_id,),
+            ).fetchone()
+            antes = {"alumno": dict(actual), "responsable": dict(responsable_actual)
+                     if responsable_actual else None, "matricula_id": matricula_id}
+
+            if documento != documento_original:
+                duplicado = cur.execute(
+                    "SELECT numero_documento FROM alumnos WHERE numero_documento = %s",
+                    (documento,),
+                ).fetchone()
+                if duplicado:
+                    raise DatosMatriculaInvalidos("Ya existe un alumno con ese número de documento.")
+                cur.execute("""
+                    INSERT INTO alumnos
+                        (numero_documento, tipo_documento, nombres, apellidos, fecha_nacimiento,
+                         lugar_nacimiento, sexo, estado_civil, grupo_sanguineo, ocupacion, celular, email)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (documento, tipo_documento, nombres, apellidos, fecha_nacimiento,
+                      opcionales["lugar_nacimiento"], opcionales["sexo"], opcionales["estado_civil"],
+                      opcionales["grupo_sanguineo"], opcionales["ocupacion"],
+                      opcionales["celular"], opcionales["email"]))
+                cur.execute("UPDATE matriculas SET numero_documento = %s WHERE numero_documento = %s",
+                            (documento, documento_original))
+                cur.execute("DELETE FROM alumnos WHERE numero_documento = %s", (documento_original,))
+            else:
+                cur.execute("""
+                    UPDATE alumnos SET tipo_documento = %s, nombres = %s, apellidos = %s,
+                        fecha_nacimiento = %s, lugar_nacimiento = %s, sexo = %s,
+                        estado_civil = %s, grupo_sanguineo = %s, ocupacion = %s,
+                        celular = %s, email = %s
+                    WHERE numero_documento = %s
+                """, (tipo_documento, nombres, apellidos, fecha_nacimiento,
+                      opcionales["lugar_nacimiento"], opcionales["sexo"], opcionales["estado_civil"],
+                      opcionales["grupo_sanguineo"], opcionales["ocupacion"],
+                      opcionales["celular"], opcionales["email"], documento_original))
+
+            estado = actual["estado"]
+            if estado != "Histórico":
+                estado = ("Cancelado" if int(pagado) >= total else
+                          "Pendiente Pago" if int(pagado) > 0 else "Activo")
+            cur.execute("""
+                UPDATE matriculas
+                SET categoria = %s, precio_base = %s, precio_total = %s,
+                    descuento_valor = %s, descuento_porcentaje = %s, estado = %s
+                WHERE id = %s
+            """, (categoria, base, total, descuento_valor, porcentaje, estado, matricula_id))
+
+            if any(responsable.values()):
+                if responsable_actual:
+                    cur.execute("""
+                        UPDATE responsables_matricula
+                        SET tipo_documento = %s, numero_documento = %s, nombres = %s,
+                            apellidos = %s, celular = %s, email = %s, relacion = %s
+                        WHERE id_matricula = %s
+                    """, (responsable["tipo_documento"], responsable["numero_documento"],
+                          responsable["nombres"], responsable["apellidos"], responsable["celular"],
+                          responsable["email"], responsable["relacion"], matricula_id))
+                else:
+                    cur.execute("""
+                        INSERT INTO responsables_matricula
+                            (id_matricula, tipo_documento, numero_documento, nombres, apellidos,
+                             celular, email, relacion)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (matricula_id, responsable["tipo_documento"], responsable["numero_documento"],
+                          responsable["nombres"], responsable["apellidos"], responsable["celular"],
+                          responsable["email"], responsable["relacion"]))
+            elif responsable_actual:
+                cur.execute("DELETE FROM responsables_matricula WHERE id_matricula = %s", (matricula_id,))
+
+            despues = {"documento": documento, "tipo_documento": tipo_documento,
+                       "nombres": nombres, "apellidos": apellidos, **opcionales,
+                       "categoria": categoria, "precio_base": base, "precio_total": total,
+                       "descuento_valor": descuento_valor, "descuento_porcentaje": porcentaje,
+                       "estado": estado,
+                       "responsable": responsable if any(responsable.values()) else None}
+            _auditar(cur, "MATRICULA", matricula_id, "EDICION", session["uid"], antes, despues)
+    except DatosMatriculaInvalidos as e:
+        flash(str(e), "error")
+        return redirect(url_for("alumnos.editar_matricula", matricula_id=matricula_id))
+    except Exception:
+        current_app.logger.exception("Error editando matrícula %s", matricula_id)
+        flash("No se pudieron guardar los cambios. Intenta de nuevo.", "error")
+        return redirect(url_for("alumnos.lista"))
+
+    flash("Los datos del alumno y la matrícula se actualizaron correctamente.", "ok")
     return redirect(url_for("alumnos.lista"))
+
+
+@bp.route("/alumnos/matricula/<int:matricula_id>/archivar", methods=["POST"])
+@login_required
+@permiso_requerido("eliminar_alumnos")
+def archivar_matricula(matricula_id):
+    motivo = " ".join(request.form.get("motivo", "").split())
+    if not motivo or len(motivo) > 500:
+        flash("El motivo es obligatorio y admite hasta 500 caracteres.", "error")
+        return redirect(url_for("alumnos.lista"))
+    try:
+        with db.transaccion() as cur:
+            actual = cur.execute(
+                """SELECT id, numero_documento, categoria, estado, precio_total, archivado,
+                          motivo_archivo, archivado_por, fecha_archivo
+                   FROM matriculas WHERE id = %s FOR UPDATE""",
+                (matricula_id,),
+            ).fetchone()
+            if not actual:
+                flash("La matrícula ya no existe.", "error")
+                return redirect(url_for("alumnos.lista"))
+            if actual["archivado"]:
+                flash("La matrícula ya está archivada.", "error")
+                return redirect(url_for("alumnos.lista"))
+            cur.execute("""
+                UPDATE matriculas SET archivado = 1, motivo_archivo = %s,
+                    archivado_por = %s, fecha_archivo = CURRENT_TIMESTAMP
+                WHERE id = %s AND archivado = 0
+            """, (motivo, session["uid"], matricula_id))
+            _auditar(cur, "MATRICULA", matricula_id, "ARCHIVO", session["uid"],
+                     dict(actual), {**actual, "archivado": 1, "motivo_archivo": motivo,
+                                    "archivado_por": session["uid"]}, motivo)
+    except Exception:
+        current_app.logger.exception("Error archivando matrícula %s", matricula_id)
+        flash("No se pudo archivar la matrícula. Intenta de nuevo.", "error")
+        return redirect(url_for("alumnos.lista"))
+    flash("Matrícula archivada. Sus pagos y recibos se conservaron.", "ok")
+    return redirect(url_for("alumnos.lista"))
+
+
+@bp.route("/alumnos/matricula/<int:matricula_id>/historial")
+@login_required
+@permiso_requerido("ver_historial_pagos")
+def historial(matricula_id):
+    alumno = db.fetchone("""
+        SELECT m.id, m.numero_orden, m.anio, m.categoria, m.estado, m.precio_total,
+               a.numero_documento, a.tipo_documento, a.nombres, a.apellidos
+        FROM matriculas m JOIN alumnos a ON a.numero_documento = m.numero_documento
+        WHERE m.id = %s
+    """, (matricula_id,))
+    if not alumno:
+        return "Matrícula no encontrada.", 404
+    pagos = db.fetchall("""
+        SELECT p.numero_recibo, p.fecha_pago, p.concepto, p.metodo_pago, p.valor,
+               p.anulado, p.motivo_anulacion, u.nombre AS cajero
+        FROM pagos p LEFT JOIN usuarios u ON u.id = p.usuario_id
+        WHERE p.id_matricula = %s
+        ORDER BY p.fecha_pago DESC
+    """, (matricula_id,))
+    pagado = sum(float(p["valor"]) for p in pagos if not p["anulado"])
+    return render_template("historial_pagos.html", alumno=alumno, pagos=pagos,
+                           pagado=pagado, saldo=max(float(alumno["precio_total"]) - pagado, 0))
+
+
+@bp.route("/pagos/<numero>/anular", methods=["POST"])
+@login_required
+@permiso_requerido("registrar_pagos")
+def anular_pago(numero):
+    motivo = " ".join(request.form.get("motivo", "").split())
+    if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
+        return "Recibo no válido.", 404
+    if not motivo or len(motivo) > 500:
+        flash("El motivo de anulación es obligatorio y admite hasta 500 caracteres.", "error")
+        return redirect(url_for("alumnos.lista"))
+    try:
+        with db.transaccion() as cur:
+            pago = cur.execute("""
+                SELECT id, id_matricula, numero_recibo, concepto, valor, metodo_pago,
+                       anulado, motivo_anulacion
+                FROM pagos WHERE numero_recibo = %s FOR UPDATE
+            """, (numero,)).fetchone()
+            if not pago:
+                flash("No se encontró el pago.", "error")
+                return redirect(url_for("alumnos.lista"))
+            if pago["anulado"]:
+                flash("Este pago ya fue anulado.", "error")
+                return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+            cur.execute("""
+                UPDATE pagos SET anulado = 1, motivo_anulacion = %s,
+                    anulado_por = %s, fecha_anulacion = CURRENT_TIMESTAMP
+                WHERE id = %s AND anulado = 0
+            """, (motivo, session["uid"], pago["id"]))
+            _auditar(cur, "PAGO", pago["id"], "ANULACION", session["uid"],
+                     dict(pago), {**pago, "anulado": 1, "motivo_anulacion": motivo}, motivo)
+            matricula = cur.execute(
+                "SELECT estado, precio_total, archivado FROM matriculas WHERE id = %s FOR UPDATE",
+                (pago["id_matricula"],),
+            ).fetchone()
+            pagado = cur.execute(
+                "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
+                "WHERE id_matricula = %s AND anulado = 0",
+                (pago["id_matricula"],),
+            ).fetchone()["total"]
+            if matricula and not matricula["archivado"] and matricula["estado"] != "Histórico":
+                estado = ("Cancelado" if int(pagado) >= int(matricula["precio_total"]) else
+                          "Pendiente Pago" if int(pagado) > 0 else "Activo")
+                if estado != matricula["estado"]:
+                    cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
+                                (estado, pago["id_matricula"]))
+                    _auditar(cur, "MATRICULA", pago["id_matricula"], "AJUSTE_ESTADO_PAGO",
+                             session["uid"], {"estado": matricula["estado"]},
+                             {"estado": estado}, motivo)
+    except Exception:
+        current_app.logger.exception("Error anulando recibo %s", numero)
+        flash("No se pudo anular el pago. Intenta de nuevo.", "error")
+        return redirect(url_for("alumnos.lista"))
+    flash(f"El pago {numero} fue anulado. El recibo y el registro se conservaron.", "ok")
+    return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))

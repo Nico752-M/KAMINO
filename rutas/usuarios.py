@@ -37,6 +37,9 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         raise DatosInvalidos("Asigna al menos permiso para consultar una pantalla.")
     dependencias = {
         "crear_matricula": "ver_alumnos",
+        "editar_alumnos": "ver_alumnos",
+        "eliminar_alumnos": "ver_alumnos",
+        "ver_historial_pagos": "ver_alumnos",
         "registrar_pagos": "ver_alumnos",
         "gestionar_caja": "ver_caja",
         "marcar_runt": "ver_tramites",

@@ -21,6 +21,48 @@
     pintarBotonTema();
   }
 
+  // ── Pesos: separador de miles solo visual, los formularios envían dígitos ──
+  const soloDigitos = (valor) => String(valor || "").replace(/\D/g, "");
+  window.soloDigitos = soloDigitos;
+  window.formatearMiles = (valor) => {
+    const digitos = soloDigitos(valor);
+    return digitos.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+  window.formatearCampoMoneda = (campo) => {
+    const posicion = campo.selectionStart;
+    const digitosAntes = soloDigitos(campo.value.slice(0, posicion)).length;
+    campo.value = window.formatearMiles(campo.value);
+    if (posicion === null) return;
+    let cursor = 0;
+    let encontrados = 0;
+    while (cursor < campo.value.length && encontrados < digitosAntes) {
+      if (/\d/.test(campo.value[cursor])) encontrados += 1;
+      cursor += 1;
+    }
+    campo.setSelectionRange(cursor, cursor);
+  };
+  document.querySelectorAll("[data-money-input]").forEach((campo) => {
+    window.formatearCampoMoneda(campo);
+    campo.addEventListener("input", () => window.formatearCampoMoneda(campo));
+  });
+  const precioBaseEdicion = document.getElementById("editBase");
+  const descuentoEdicion = document.getElementById("editDescuento");
+  const totalEdicion = document.getElementById("editTotal");
+  if (precioBaseEdicion && descuentoEdicion && totalEdicion) {
+    const calcularEdicion = () => {
+      const base = Number(soloDigitos(precioBaseEdicion.value)) || 0;
+      const descuento = Number(soloDigitos(descuentoEdicion.value)) || 0;
+      totalEdicion.textContent = "$ " + window.formatearMiles(Math.max(base - descuento, 0));
+    };
+    precioBaseEdicion.addEventListener("input", calcularEdicion);
+    descuentoEdicion.addEventListener("input", calcularEdicion);
+  }
+  document.addEventListener("submit", (evento) => {
+    evento.target.querySelectorAll("[data-money-input]").forEach((campo) => {
+      campo.value = soloDigitos(campo.value);
+    });
+  }, true);
+
   // ── Pestañas internas (data-tab="id-del-panel") ──
   document.querySelectorAll(".internal-tabs button[data-tab]").forEach(function (btn) {
     btn.addEventListener("click", function () {

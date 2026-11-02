@@ -3,7 +3,7 @@
    - Las páginas y los datos (pagos, alumnos, caja) NUNCA se guardan: siempre vienen del servidor.
    - Sin internet muestra una pantalla "sin conexión".
    Cuando cambies CSS/JS, sube VERSION para que los celulares se actualicen. */
-const VERSION = "cea-v7";
+const VERSION = "cea-v8";
 const CACHE_FILES = ["/offline", "/static/css/app.css", "/static/js/app.js", "/static/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
