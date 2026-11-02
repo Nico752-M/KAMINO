@@ -5,7 +5,7 @@
 {% macro tabla(filas, vacio) %}
   {% if filas %}
   <div class="table-wrap"><table class="table-clean">
-    <thead><tr><th>Código</th><th>Nombre Alumno</th><th>Categoría</th><th>Saldo Pendiente</th><th>Estado</th><th>Acción Rápida</th></tr></thead>
+    <thead><tr><th>Código</th><th>Nombre Alumno</th><th>Categoría</th><th>Saldo Pendiente</th><th>Estado</th><th>Acciones</th></tr></thead>
     <tbody>
     {% for f in filas %}
       <tr>
@@ -14,7 +14,7 @@
         <td><span class="badge-status active">{{ f.categoria }}</span></td>
         <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
         <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
-        <td>
+        <td class="student-row-actions">
           {% if f.saldo > 0 and f.estado not in ('Histórico', 'Archivado') and 'registrar_pagos' in permisos %}
           <button class="btn-action green sm js-cobrar" type="button"
                   data-matricula="{{ f.matricula_id }}"
@@ -22,24 +22,29 @@
                   data-saldo="{{ f.saldo|int }}"
                   data-concepto="{{ f.concepto }}"><i class="ri-hand-coin-line"></i> Cobrar</button>
           {% endif %}
-          {% if 'ver_historial_pagos' in permisos %}
-          <a class="btn-action sm" href="{{ url_for('alumnos.historial', matricula_id=f.matricula_id) }}"><i class="ri-history-line"></i> Historial</a>
+          {% if 'ver_historial_pagos' in permisos or ('editar_alumnos' in permisos and f.estado != 'Archivado') or ('eliminar_alumnos' in permisos and f.estado != 'Archivado') %}
+          <details class="student-actions-menu">
+            <summary class="btn-action sm"><i class="ri-more-2-fill"></i> Más</summary>
+            <div class="student-actions-list">
+              {% if 'ver_historial_pagos' in permisos %}
+              <a href="{{ url_for('alumnos.historial', matricula_id=f.matricula_id) }}"><i class="ri-history-line"></i> Historial</a>
+              {% endif %}
+              {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
+              <a href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
+              {% endif %}
+              {% if 'eliminar_alumnos' in permisos and f.estado != 'Archivado' %}
+              <form method="post" action="{{ url_for('alumnos.archivar_matricula', matricula_id=f.matricula_id) }}"
+                    data-reason-confirm
+                    data-reason-prompt="Escribe el motivo obligatorio para archivar esta matrícula."
+                    data-confirm-message="¿Archivar esta matrícula? Los pagos y recibos se conservarán.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="motivo" maxlength="500">
+                <button type="submit"><i class="ri-archive-line"></i> Archivar</button>
+              </form>
+              {% endif %}
+            </div>
+          </details>
           {% endif %}
-          {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
-          <a class="btn-action sm" href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
-          {% endif %}
-          {% if 'eliminar_alumnos' in permisos and f.estado != 'Archivado' %}
-          <form method="post" action="{{ url_for('alumnos.archivar_matricula', matricula_id=f.matricula_id) }}"
-                onsubmit="return confirm('¿Archivar esta matrícula? Los pagos y recibos se conservarán.');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input class="input-clean archive-reason" name="motivo" maxlength="500" required
-                   placeholder="Motivo obligatorio" aria-label="Motivo para archivar">
-            <button class="btn-action red sm" type="submit"><i class="ri-archive-line"></i> Archivar</button>
-          </form>
-          {% endif %}
-          {% if not ('registrar_pagos' in permisos and f.saldo > 0 and f.estado not in ('Histórico','Archivado'))
-                and 'ver_historial_pagos' not in permisos and 'editar_alumnos' not in permisos
-                and 'eliminar_alumnos' not in permisos %}<small>—</small>{% endif %}
         </td>
       </tr>
     {% endfor %}

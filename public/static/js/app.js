@@ -21,6 +21,34 @@
     pintarBotonTema();
   }
 
+  const btnMenu = document.getElementById("menu-btn");
+  const contenido = document.querySelector(".preview-content");
+  if (btnMenu && contenido) {
+    btnMenu.addEventListener("click", (evento) => {
+      evento.stopPropagation();
+      document.body.classList.toggle("sidebar-open");
+    });
+    contenido.addEventListener("click", () => document.body.classList.remove("sidebar-open"));
+    document.querySelectorAll(".preview-menu a").forEach((enlace) => {
+      enlace.addEventListener("click", () => document.body.classList.remove("sidebar-open"));
+    });
+  }
+
+  document.querySelectorAll("form[data-reason-confirm]").forEach((formulario) => {
+    formulario.addEventListener("submit", (evento) => {
+      const motivo = window.prompt(formulario.dataset.reasonPrompt || "Escribe el motivo obligatorio.");
+      if (!motivo || !motivo.trim()) {
+        evento.preventDefault();
+        return;
+      }
+      if (!window.confirm(formulario.dataset.confirmMessage || "¿Confirmas esta acción?")) {
+        evento.preventDefault();
+        return;
+      }
+      formulario.querySelector('[name="motivo"]').value = motivo.trim();
+    });
+  });
+
   // ── Pesos: separador de miles solo visual, los formularios envían dígitos ──
   const soloDigitos = (valor) => String(valor || "").replace(/\D/g, "");
   window.soloDigitos = soloDigitos;

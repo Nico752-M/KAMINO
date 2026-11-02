@@ -18,32 +18,39 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-  <header class="app-header">
+  <aside class="preview-sidebar" id="sidebar">
     <a class="preview-brand" href="{{ url_for('dashboard.index') if 'ver_dashboard' in permisos else url_for('alumnos.lista') if 'ver_alumnos' in permisos else url_for('caja.resumen') }}">
-      <span class="preview-brand-badge"></span><span>CEA <strong>PRACTICAR</strong></span>
+      <span class="preview-brand-badge"></span> CEA PRACTICAR
     </a>
-    <nav class="app-nav" aria-label="Navegación principal">
-      {% if 'ver_dashboard' in permisos %}<a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if nav == 'dashboard' }}"><i class="ri-dashboard-3-line"></i><span>Inicio</span></a>{% endif %}
-      {% if 'ver_alumnos' in permisos %}<a href="{{ url_for('alumnos.lista') }}" class="{{ 'active' if nav == 'alumnos' }}"><i class="ri-team-line"></i><span>Alumnos</span></a>{% endif %}
-      {% if 'ver_caja' in permisos %}<a href="{{ url_for('caja.resumen') }}" class="{{ 'active' if nav == 'caja' }}"><i class="ri-safe-2-line"></i><span>Caja</span></a>{% endif %}
-      {% if 'ver_tramites' in permisos %}<a href="{{ url_for('tramites.lista') }}" class="{{ 'active' if nav == 'tramites' }}"><i class="ri-folder-history-line"></i><span>Trámites</span>
+    <nav class="preview-menu" aria-label="Navegación principal">
+      {% if 'ver_dashboard' in permisos %}
+      <div class="sidebar-category">Principal</div>
+      <a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if nav == 'dashboard' }}"><i class="ri-dashboard-3-line"></i> Dashboard</a>
+      {% endif %}
+
+      {% if 'ver_alumnos' in permisos or 'ver_caja' in permisos %}<div class="sidebar-category">Operación</div>{% endif %}
+      {% if 'ver_alumnos' in permisos %}<a href="{{ url_for('alumnos.lista') }}" class="{{ 'active' if nav == 'alumnos' }}"><i class="ri-team-line"></i> Alumnos y Matriculados</a>{% endif %}
+      {% if 'ver_caja' in permisos %}<a href="{{ url_for('caja.resumen') }}" class="{{ 'active' if nav == 'caja' }}"><i class="ri-safe-2-line"></i> Caja y Tesorería</a>{% endif %}
+
+      {% if 'ver_tramites' in permisos or 'gestionar_usuarios' in permisos %}<div class="sidebar-category">Gestión y Archivo</div>{% endif %}
+      {% if 'ver_tramites' in permisos %}<a href="{{ url_for('tramites.lista') }}" class="{{ 'active' if nav == 'tramites' }}"><i class="ri-folder-history-line"></i> Trámites y Archivo
         {% if runt_pendientes %}<span class="nav-badge">{{ runt_pendientes if runt_pendientes < 100 else '99+' }}</span>{% endif %}
       </a>{% endif %}
-      {% if 'gestionar_usuarios' in permisos %}<a href="{{ url_for('usuarios.lista') }}" class="{{ 'active' if nav == 'usuarios' }}"><i class="ri-shield-user-line"></i><span>Usuarios</span></a>{% endif %}
+      {% if 'gestionar_usuarios' in permisos %}<a href="{{ url_for('usuarios.lista') }}" class="{{ 'active' if nav == 'usuarios' }}"><i class="ri-shield-user-line"></i> Usuarios y permisos</a>{% endif %}
     </nav>
-    <div class="header-user">
-      <div class="header-user-name"><strong>{{ session.nombre }}</strong><span>{{ session.rol|capitalize }}</span></div>
+    <div class="sidebar-user">
+      <strong>{{ session.nombre }}</strong>{{ session.rol|capitalize }}
       <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:.6rem">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn-action sm logout-btn" type="submit" aria-label="Cerrar sesión"><i class="ri-logout-box-r-line"></i><span>Salir</span></button>
+        <button class="btn-action sm" type="submit"><i class="ri-logout-box-r-line"></i> Cerrar sesión</button>
       </form>
     </div>
-  </header>
+  </aside>
 
   <main class="preview-content">
-    {% if nav != 'caja' %}
     <div class="top-bar-options">
       <div class="top-left">
+        <button class="menu-btn" id="menu-btn" type="button" aria-label="Abrir menú"><i class="ri-menu-line"></i></button>
         {% if 'ver_alumnos' in permisos %}<form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
           <i class="ri-search-line"></i>
           <input type="search" name="q" value="{{ q|default('') }}" placeholder="Buscar alumno, cédula o categoría..." autocomplete="off">
@@ -54,7 +61,6 @@
         <button class="theme-toggle-btn" id="theme-btn" type="button"><i class="ri-moon-line"></i> <span>Modo Noche (Azul)</span></button>
       </div>
     </div>
-    {% endif %}
 
     {% with mensajes = get_flashed_messages(with_categories=true) %}
       {% for categoria, texto in mensajes %}<div class="alerta {{ categoria }}">{{ texto }}</div>{% endfor %}

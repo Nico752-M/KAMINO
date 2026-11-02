@@ -6,26 +6,27 @@
   <div>
     <span class="eyebrow">HISTORIAL DEL ALUMNO</span>
     <h2 class="section-title">{{ alumno.nombres }} {{ alumno.apellidos }}</h2>
-    <p class="section-desc">{{ alumno.tipo_documento }} {{ alumno.numero_documento }} · {{ alumno.categoria }} · Matrícula {{ alumno.numero_orden }}-{{ alumno.anio|string|last(2) }}</p>
+    <p class="section-desc">{{ alumno.tipo_documento }} {{ alumno.numero_documento }} · {{ alumno.categoria }} · Matrícula {{ alumno.numero_orden }}-{{ (alumno.anio|string)[-2:] }}</p>
   </div>
   <a class="btn-action" href="{{ url_for('alumnos.lista') }}"><i class="ri-arrow-left-line"></i> Volver a alumnos</a>
 </div>
-<div class="grid-stats">
-  <div class="stat-card"><div class="stat-label">Precio total</div><div class="stat-value">{{ alumno.precio_total|cop }}</div></div>
-  <div class="stat-card green"><div class="stat-label">Pagado vigente</div><div class="stat-value">{{ pagado|cop }}</div></div>
-  <div class="stat-card red"><div class="stat-label">Saldo</div><div class="stat-value">{{ saldo|cop }}</div></div>
+<div class="payment-summary">
+  <div><span>Precio total</span><strong>{{ alumno.precio_total|cop }}</strong></div>
+  <div><span>Pagado</span><strong>{{ pagado|cop }}</strong></div>
+  <div><span>Saldo</span><strong>{{ saldo|cop }}</strong></div>
 </div>
 <section class="card-bento">
-  <div class="grupo-titulo"><i class="ri-history-line"></i> Pagos registrados</div>
+  <div class="grupo-titulo"><i class="ri-history-line"></i> Pagos <span class="payment-count">{{ pagos|length }}</span></div>
   {% if pagos %}
   <div class="table-wrap"><table class="table-clean">
-    <thead><tr><th>Fecha</th><th>N.º recibo</th><th>Concepto</th><th>Método</th><th>Valor</th><th>Cajero</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Recibo y detalle</th><th>Valor y estado</th><th>Acciones</th></tr></thead>
     <tbody>{% for pago in pagos %}
       <tr>
         <td>{{ pago.fecha_pago.strftime('%d/%m/%Y %H:%M') if pago.fecha_pago else '—' }}</td>
-        <td>{{ pago.numero_recibo }}</td><td>{{ pago.concepto }}</td><td>{{ pago.metodo_pago }}</td>
-        <td>{{ pago.valor|cop }}</td><td>{{ pago.cajero or '—' }}</td>
-        <td><span class="badge-status {{ 'urgent' if pago.anulado else 'active' }}">{{ 'Anulado' if pago.anulado else 'Vigente' }}</span>
+        <td><strong>{{ pago.numero_recibo }}</strong><br>{{ pago.concepto }}<br>
+          <small>{{ pago.metodo_pago }} · {{ pago.cajero or 'Sin cajero' }}</small></td>
+        <td><strong>{{ pago.valor|cop }}</strong><br>
+          <span class="badge-status {{ 'urgent' if pago.anulado else 'active' }}">{{ 'Anulado' if pago.anulado else 'Vigente' }}</span>
           {% if pago.anulado and pago.motivo_anulacion %}<br><small>{{ pago.motivo_anulacion }}</small>{% endif %}</td>
         <td>
           {% if 'ver_recibos' in permisos %}
@@ -34,9 +35,11 @@
           {% endif %}
           {% if 'registrar_pagos' in permisos and not pago.anulado %}
           <form method="post" action="{{ url_for('alumnos.anular_pago', numero=pago.numero_recibo) }}"
-                onsubmit="return confirm('¿Anular este pago? El recibo y su registro no se borrarán.');">
+                data-reason-confirm
+                data-reason-prompt="Escribe el motivo obligatorio para anular este pago."
+                data-confirm-message="¿Anular este pago? El recibo y su registro no se borrarán.">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input class="input-clean archive-reason" name="motivo" maxlength="500" required placeholder="Motivo obligatorio">
+            <input type="hidden" name="motivo" maxlength="500">
             <button class="btn-action red sm" type="submit"><i class="ri-close-circle-line"></i> Anular</button>
           </form>
           {% endif %}

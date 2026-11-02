@@ -53,6 +53,15 @@ def resumen():
     movs, cajas = [], []
     recibo_q = request.args.get("recibo", "").strip()[:50]
     recibo_nuevo = request.args.get("recibo_nuevo", "").strip()[:50]
+    historial_modo = request.args.get("historial", "dia")
+    if historial_modo not in ("dia", "todos"):
+        historial_modo = "dia"
+    try:
+        pagina_historial = max(1, min(int(request.args.get("pagina", "1")), 1_000_000))
+    except ValueError:
+        pagina_historial = 1
+    historial_anterior = pagina_historial > 1
+    historial_siguiente = False
     busqueda_recibos = []
     totales = {"efectivo": 0.0, "otros": 0.0, "ingresos": 0.0, "salidas": 0.0,
                "apertura": 0.0, "esperado": 0.0, "contado": 0.0, "diferencia": 0.0}
@@ -159,6 +168,59 @@ def resumen():
         error = "No se pudo consultar la caja del día."
         current_app.logger.exception("No se pudo consultar la caja del día")
 
+    if historial_modo == "todos":
+        try:
+            filtro_pago_todos = " AND p.usuario_id = %s" if filtro_usuario is not None else ""
+            filtro_ingreso_todos = " AND i.usuario_id = %s" if filtro_usuario is not None else ""
+            filtro_salida_todos = " AND s.usuario_id = %s" if filtro_usuario is not None else ""
+            params_todos = ()
+            if filtro_usuario is not None:
+                params_todos += (filtro_usuario,)
+            if filtro_usuario is not None:
+                params_todos += (filtro_usuario,)
+            if filtro_usuario is not None:
+                params_todos += (filtro_usuario,)
+            params_todos += ((pagina_historial - 1) * 50, 51)
+            filas_historial = db.fetchall(f"""
+                SELECT * FROM (
+                    SELECT 'pago' AS tipo, p.numero_recibo AS recibo, p.fecha_pago AS momento,
+                           COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
+                               || ' — ' || p.concepto AS detalle,
+                           p.metodo_pago AS metodo, p.valor, u.nombre AS cajero,
+                           p.anulado, p.motivo_anulacion
+                    FROM pagos p
+                    LEFT JOIN matriculas m ON m.id = p.id_matricula
+                    LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
+                    LEFT JOIN usuarios u ON u.id = p.usuario_id
+                    WHERE p.concepto <> 'Abono histórico previo'{filtro_pago_todos}
+                    UNION ALL
+                    SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
+                           'Efectivo', i.valor, u.nombre, i.anulado, i.motivo_anulacion
+                    FROM ingresos_caja i
+                    LEFT JOIN usuarios u ON u.id = i.usuario_id
+                    WHERE 1 = 1{filtro_ingreso_todos}
+                    UNION ALL
+                    SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
+                           'Efectivo', s.valor, u.nombre, s.anulado, s.motivo_anulacion
+                    FROM salidas_caja s
+                    LEFT JOIN usuarios u ON u.id = s.usuario_id
+                    WHERE 1 = 1{filtro_salida_todos}
+                )
+                ORDER BY momento DESC
+                OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
+            """, params_todos)
+            historial_siguiente = len(filas_historial) > 50
+            movs = [{
+                "tipo": fila["tipo"], "recibo": fila["recibo"], "momento": fila["momento"],
+                "detalle": fila["detalle"] or "Sin alumno", "metodo": fila["metodo"],
+                "valor": -float(fila["valor"]) if fila["tipo"] == "salida" else float(fila["valor"]),
+                "cajero": fila["cajero"] or "—", "anulado": bool(fila["anulado"]),
+                "motivo_anulacion": fila["motivo_anulacion"],
+            } for fila in filas_historial[:50]]
+        except Exception:
+            current_app.logger.exception("No se pudo consultar el historial completo de caja")
+            error = error or "No se pudo cargar el historial de caja."
+
     if recibo_q and "ver_recibos" in permisos_actuales():
         try:
             for tabla, tipo, fecha_col, usuario_col in (
@@ -217,7 +279,10 @@ def resumen():
                            t=totales, error=error, admin=admin, cajeros=admin_cajeros,
                            cajero_filtro=cajero_filtro, caja_actual=caja_actual,
                            puede_cobrar=puede_cobrar, recibo_q=recibo_q,
-                           busqueda_recibos=busqueda_recibos, recibo_nuevo=recibo_nuevo)
+                           busqueda_recibos=busqueda_recibos, recibo_nuevo=recibo_nuevo,
+                           historial_modo=historial_modo, pagina_historial=pagina_historial,
+                           historial_anterior=historial_anterior,
+                           historial_siguiente=historial_siguiente)
 
 
 @bp.route("/caja/abrir", methods=["POST"])
