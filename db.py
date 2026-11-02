@@ -26,22 +26,37 @@ def _pos(sql: str) -> str:
     return re.sub(r"%s", reemplazo, sql)
 
 
+import base64, os, pathlib
+
+def _wallet_dir() -> str:
+    pem = os.environ.get("WALLET_PEM_B64")
+    tns = os.environ.get("WALLET_TNS_B64")
+    if not (pem and tns):
+        return Config.WALLET_DIR      # en tu PC sigue usando ./Wallet
+    d = pathlib.Path("/tmp/wallet")
+    d.mkdir(exist_ok=True)
+    (d / "ewallet.pem").write_bytes(base64.b64decode(pem))
+    (d / "tnsnames.ora").write_bytes(base64.b64decode(tns))
+    return str(d)
+
 def _get_pool():
     global _pool
     if _pool is None:
+        carpeta = _wallet_dir()
         _pool = oracledb.create_pool(
             user=Config.DB_USER,
             password=Config.DB_PASSWORD,
             dsn=Config.DB_DSN,
-            config_dir=Config.WALLET_DIR,
-            wallet_location=Config.WALLET_DIR,
+            config_dir=carpeta,
+            wallet_location=carpeta,
             wallet_password=Config.WALLET_PASSWORD,
             min=1,
             max=Config.DB_POOL_SIZE,
             increment=1,
             timeout=300,
-            tcp_connect_timeout=15,
-            retry_count=0,
+            tcp_connect_timeout=60,
+            retry_count=3,
+            retry_delay=2,
             getmode=oracledb.POOL_GETMODE_WAIT,
         )
     return _pool
