@@ -21,14 +21,6 @@
     pintarBotonTema();
   }
 
-  // ── Menú lateral en celular ──
-  const btnMenu = document.getElementById("menu-btn");
-  if (btnMenu) {
-    btnMenu.addEventListener("click", () => document.body.classList.toggle("sidebar-open"));
-    document.querySelector(".preview-content").addEventListener("click", () =>
-      document.body.classList.remove("sidebar-open"));
-  }
-
   // ── Pestañas internas (data-tab="id-del-panel") ──
   document.querySelectorAll(".internal-tabs button[data-tab]").forEach(function (btn) {
     btn.addEventListener("click", function () {

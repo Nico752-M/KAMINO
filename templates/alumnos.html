@@ -56,15 +56,21 @@
 
 {% if 'crear_matricula' in permisos %}
 <div class="modal-overlay" id="matriculaModal">
-  <div class="modal-drawer matricula-drawer">
+  <div class="modal-panel matricula-dialog">
     <div class="modal-header">
-      <div><h3 style="font-size:1.1rem;font-weight:800">Registrar alumno</h3>
-        <p class="hint">Los campos con <span class="required-mark">*</span> son obligatorios.</p></div>
+      <div><span class="eyebrow">NUEVO REGISTRO</span><h3 class="modal-title">Registrar alumno</h3>
+        <p class="hint">Completa los datos por pasos. <span class="required-mark">*</span> Obligatorio</p></div>
       <button class="modal-close-btn" id="btnCerrarMatricula" type="button" aria-label="Cerrar">&times;</button>
     </div>
     <form method="post" action="{{ url_for('alumnos.crear_matricula') }}" class="matricula-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <ol class="form-stepper" aria-label="Pasos del registro">
+        <li class="active" data-step-indicator="0"><span>1</span><div><strong>Alumno</strong><small>Identificación y datos personales</small></div></li>
+        <li data-step-indicator="1"><span>2</span><div><strong>Contacto</strong><small>Contacto y responsable</small></div></li>
+        <li data-step-indicator="2"><span>3</span><div><strong>Matrícula</strong><small>Curso y valor</small></div></li>
+      </ol>
       <div class="matricula-grid">
+        <div class="form-step active" data-step-pane="0">
         <section class="form-section">
           <h4>Identificación</h4>
           <div class="form-grid three">
@@ -116,7 +122,9 @@
               <input class="input-clean" id="ocupacionAlumno" name="ocupacion" maxlength="120"></div>
           </div>
         </section>
+        </div>
 
+        <div class="form-step" data-step-pane="1" hidden>
         <section class="form-section">
           <h4>Información de contacto <span class="optional-label">Opcional</span></h4>
           <div class="form-grid two">
@@ -152,7 +160,9 @@
               </select></div>
           </div>
         </details>
+        </div>
 
+        <div class="form-step" data-step-pane="2" hidden>
         <section class="form-section price-section">
           <h4>Valor del curso</h4>
           <div class="form-grid three">
@@ -182,11 +192,16 @@
             <input class="input-clean total-input" id="matriculaPrecio" name="precio_total" type="number" min="1" max="999999999999" step="1" required>
             <p class="hint">Puedes ajustar el total directamente. Se guardará el descuento aplicado.</p></div>
         </section>
+        <p class="step-note">Año {{ anio_actual }} · El consecutivo se asigna automáticamente y conserva los registros anteriores.</p>
+        </div>
       </div>
-      <p class="hint">Año {{ anio_actual }} · Si el alumno ya existe, usa sus nombres registrados. El documento permite varias matrículas.</p>
       <div class="modal-footer">
         <button type="button" class="btn-action" id="btnCancelarMatricula">Cancelar</button>
-        <button type="submit" class="btn-action green"><i class="ri-save-line"></i> Guardar alumno</button>
+        <div class="step-actions">
+          <button type="button" class="btn-action step-back" id="btnPasoAnterior" hidden><i class="ri-arrow-left-line"></i> Anterior</button>
+          <button type="button" class="btn-action green" id="btnPasoSiguiente">Continuar <i class="ri-arrow-right-line"></i></button>
+          <button type="submit" class="btn-action green" id="btnGuardarMatricula" hidden><i class="ri-save-line"></i> Guardar matrícula</button>
+        </div>
       </div>
     </form>
   </div>

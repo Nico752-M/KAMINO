@@ -102,6 +102,8 @@ región para funciones; `gru1` se configura como esa única región.
 - Creación de matrículas con consecutivo anual.
 - Apertura/cierre individual de caja, consulta de movimientos y registro
   autorizado de ingresos/salidas manuales.
+- Navegación principal horizontal y registro de alumnos guiado en tres pasos;
+  acciones de caja y movimientos se muestran por contexto para reducir ruido.
 - Seguimiento RUNT.
 - Administración de cuentas y perfiles de permisos individuales.
 
