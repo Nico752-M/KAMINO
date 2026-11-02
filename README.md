@@ -14,9 +14,10 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
 4. Copia `.env.example` a `.env` y completa las credenciales Oracle y del wallet.
 5. Si aún no se ha aplicado, ejecuta una vez la migración como `CEA_APP`:
    `@C:\ruta\al\proyecto\migrations\001_perfiles_personales.sql`
-6. Si la base todavía no tiene un administrador, crea el primero:
+6. Después de `001`, ejecuta una vez `migrations/002_datos_alumno_y_cajas.sql` como `CEA_APP`.
+7. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-7. Ejecuta `flask --app app run --debug`.
+8. Ejecuta `flask --app app run --debug`.
 
 ## Oracle
 
@@ -29,6 +30,16 @@ conectado como propietario `CEA_APP` en SQLcl. Crea un perfil privado por
 usuario, asigna permisos iniciales equivalentes a los roles actuales y agrega
 `NUMERO_RECIBO` a `SALIDAS_CAJA`. También otorga a `CEA_WEB` los permisos DML
 necesarios. La app no ejecuta DDL.
+
+La migración `migrations/002_datos_alumno_y_cajas.sql` se ejecuta después de
+`001`, también como `CEA_APP`. Agrega los datos personales y de contacto de
+alumnos, precios/descuentos de matrícula, responsables opcionales y cajas
+individuales por usuario. Los pagos y movimientos nuevos quedan enlazados a la
+caja abierta del usuario; los registros históricos conservan `CAJA_ID` nulo.
+La caja calcula efectivo esperado como base inicial + pagos en efectivo +
+ingresos manuales - salidas. Los demás métodos se auditan aparte. Cada usuario
+con permiso de registrar pagos abre y cierra su propia caja; solo un usuario
+con rol `admin` consulta todas las cajas y el consolidado diario.
 
 Cada perfil pertenece a una única persona: varios usuarios pueden tener la
 misma categoría (`admin`, `cajera`, `secretaria` o `contadora`), pero no
@@ -44,7 +55,9 @@ duplicados cuando se crean matrículas concurrentemente.
 
 Vercel sirve la app Flask desde `index.py` y los archivos estáticos desde
 `public/`. No hace falta comprar ni configurar un dominio: se puede usar el
-dominio gratuito `*.vercel.app`.
+dominio gratuito `*.vercel.app`. La función está fijada a `gru1` (São Paulo),
+la región de Vercel más cercana disponible al Autonomous Database en Bogotá;
+confirma que tu proyecto pueda desplegar en esa región.
 
 En **Project → Settings → Environment Variables**, configura para Production
 (y Preview si corresponde):
@@ -77,19 +90,23 @@ base a internet sin comprobar antes sus restricciones y el uso de wallet.
 Después de configurar las variables, vuelve a desplegar. Los errores de
 conexión se consultan en **Vercel → Deployments → Functions/Logs**. El archivo
 `vercel.json` establece el límite de ejecución de la función Flask; los límites
-exactos disponibles dependen del plan de Vercel.
+exactos disponibles dependen del plan de Vercel. El plan Hobby permite una sola
+región para funciones; `gru1` se configura como esa única región.
 
 ## Funcionalidad
 
 - Inicio/cierre de sesión, CSRF y cuentas con contraseña cifrada.
 - Dashboard, búsqueda de alumnos y matrículas, registro de pagos y recibos PDF.
+- Registro de alumnos y renovaciones con datos personales, responsable
+  opcional, precio/descuento y abono inicial opcional.
 - Creación de matrículas con consecutivo anual.
-- Consulta de caja y registro manual de ingresos y salidas.
+- Apertura/cierre individual de caja, consulta de movimientos y registro
+  autorizado de ingresos/salidas manuales.
 - Seguimiento RUNT.
 - Administración de cuentas y perfiles de permisos individuales.
 
-El cierre de caja con conteo de billetes y exportación PDF/Excel, expedientes y
-otras funciones no tienen todavía una interfaz implementada.
+La exportación de cierres a PDF/Excel, expedientes y otras funciones no tienen
+todavía una interfaz implementada.
 
 ## Pruebas y ejecución local
 

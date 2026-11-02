@@ -7,6 +7,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, session, u
 
 import db
 from auth import login_required, permiso_requerido
+from rutas.caja import caja_abierta
 from servicios.recibos import generar_recibo_pago_pdf
 from utils import entero
 
@@ -83,16 +84,20 @@ def registrar():
             if valor > saldo:
                 raise PagoInvalido(f"El abono supera el saldo pendiente (${int(saldo):,}).".replace(",", "."))
 
+            caja = caja_abierta(cur, session["uid"])
+            if not caja:
+                raise PagoInvalido("Abre tu caja antes de registrar un pago.")
+
             numero = None
             for _ in range(3):  # reintento si el número de recibo se repite
                 candidato = _numero_recibo()
                 try:
                     cur.execute("""
                         INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago,
-                                           numero_recibo, usuario_id, observaciones, acompanante)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                           numero_recibo, usuario_id, observaciones, acompanante, caja_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (mid, concepto, valor, metodo, candidato,
-                          session["uid"], observaciones, acompanante))
+                          session["uid"], observaciones, acompanante, caja["id"]))
                     numero = candidato
                     break
                 except oracledb.IntegrityError as e:

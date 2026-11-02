@@ -33,13 +33,17 @@ def contar_pendientes_cacheado() -> int:
     """Número para la insignia del menú. Se cachea 60 s para no consultar en cada página."""
     if time.time() - _cache["t"] > 60:
         try:
-            pendientes = _pendientes()
+            resultado = db.fetchone("""
+                SELECT COUNT(*) AS n
+                FROM matriculas
+                WHERE (runt_registrado IS NULL OR runt_registrado = 0)
+                  AND estado <> 'Histórico'
+            """)
         except Exception:
             current_app.logger.exception("No se pudo actualizar el contador de pendientes RUNT")
-            _cache["t"] = time.time()
         else:
-            _cache["n"] = len(pendientes)
-            _cache["t"] = time.time()
+            _cache["n"] = int(resultado["n"]) if resultado else 0
+        _cache["t"] = time.time()
     return _cache["n"]
 
 

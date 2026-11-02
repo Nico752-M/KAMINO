@@ -60,34 +60,45 @@ def login_required(f=None, *, roles=None):
     return decorador(f) if f else decorador
 
 
+def _cargar_sesion():
+    if "usuario_actual" in g:
+        return
+    g.usuario_actual = None
+    g.permisos_actuales = set()
+    uid = session.get("uid")
+    if not uid:
+        return
+    filas = db.fetchall("""
+        SELECT u.id, u.nombre, u.rol, u.activo, pp.codigo
+        FROM usuarios u
+        LEFT JOIN perfiles pf ON pf.usuario_id = u.id
+        LEFT JOIN perfil_permisos pp ON pp.perfil_id = pf.id
+        WHERE u.id = %s
+    """, (uid,))
+    if filas:
+        fila = filas[0]
+        g.usuario_actual = {
+            "id": fila["id"],
+            "nombre": fila["nombre"],
+            "rol": fila["rol"],
+            "activo": fila["activo"],
+        }
+        g.permisos_actuales = {f["codigo"] for f in filas if f["codigo"]}
+
+
 def _usuario_actual():
-    if "usuario_actual" not in g:
-        uid = session.get("uid")
-        g.usuario_actual = db.fetchone(
-            "SELECT id, nombre, rol, activo FROM usuarios WHERE id = %s", (uid,)
-        ) if uid else None
+    return usuario_actual()
+
+
+def usuario_actual():
+    """Devuelve el usuario verificado y memorizado para la petición actual."""
+    _cargar_sesion()
     return g.usuario_actual
 
 
 def permisos_actuales() -> set[str]:
-    """Carga los permisos actuales en cada petición autenticada."""
-    if "permisos_actuales" in g:
-        return g.permisos_actuales
-    usuario = _usuario_actual()
-    if not usuario:
-        g.permisos_actuales = set()
-        return g.permisos_actuales
-
-    filas = db.fetchall("""
-        SELECT pf.id AS perfil_id, pp.codigo
-        FROM perfiles pf
-        LEFT JOIN perfil_permisos pp ON pp.perfil_id = pf.id
-        WHERE pf.usuario_id = %s
-    """, (usuario["id"],))
-    if filas and filas[0]["perfil_id"] is not None:
-        g.permisos_actuales = {f["codigo"] for f in filas if f["codigo"]}
-    else:
-        g.permisos_actuales = set()
+    """Carga usuario y permisos juntos en una sola consulta por petición."""
+    _cargar_sesion()
     return g.permisos_actuales
 
 

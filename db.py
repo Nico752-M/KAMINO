@@ -4,6 +4,9 @@ Cada consulta toma una conexión del pool y la devuelve al terminar.
 Se conserva el estilo %s de los parámetros: aquí se convierten a :1, :2, ...
 Las filas se devuelven como dict con las claves en minúscula.
 """
+import base64
+import os
+import pathlib
 import re
 from contextlib import contextmanager
 
@@ -26,8 +29,6 @@ def _pos(sql: str) -> str:
     return re.sub(r"%s", reemplazo, sql)
 
 
-import base64, os, pathlib
-
 def _wallet_dir() -> str:
     pem = os.environ.get("WALLET_PEM_B64")
     tns = os.environ.get("WALLET_TNS_B64")
@@ -43,6 +44,17 @@ def _wallet_dir() -> str:
     (d / "tnsnames.ora").write_bytes(base64.b64decode(tns, validate=True))
     return str(d)
 
+
+def _init_sesion(cnx, requested_tag):
+    with cnx.cursor() as c:
+        if Config.DB_SCHEMA:
+            c.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {Config.DB_SCHEMA}")
+        c.execute(f"ALTER SESSION SET TIME_ZONE = '{Config.DB_TIMEZONE}'")
+        # Búsquedas sin distinguir mayúsculas ni tildes.
+        c.execute("ALTER SESSION SET NLS_COMP = LINGUISTIC")
+        c.execute("ALTER SESSION SET NLS_SORT = BINARY_AI")
+
+
 def _get_pool():
     global _pool
     if _pool is None:
@@ -56,7 +68,7 @@ def _get_pool():
             config_dir=carpeta,
             wallet_location=carpeta,
             wallet_password=Config.WALLET_PASSWORD,
-            min=1,
+            min=2,
             max=Config.DB_POOL_SIZE,
             increment=1,
             timeout=300,
@@ -64,20 +76,13 @@ def _get_pool():
             retry_count=3,
             retry_delay=2,
             getmode=oracledb.POOL_GETMODE_WAIT,
+            session_callback=_init_sesion,
         )
     return _pool
 
 
 def _conectar():
-    cnx = _get_pool().acquire()
-    with cnx.cursor() as c:
-        if Config.DB_SCHEMA:
-            c.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {Config.DB_SCHEMA}")
-        c.execute(f"ALTER SESSION SET TIME_ZONE = '{Config.DB_TIMEZONE}'")
-        # Búsquedas sin distinguir mayúsculas ni tildes (como en MySQL)
-        c.execute("ALTER SESSION SET NLS_COMP = LINGUISTIC")
-        c.execute("ALTER SESSION SET NLS_SORT = BINARY_AI")
-    return cnx
+    return _get_pool().acquire()
 
 
 class _Cursor:

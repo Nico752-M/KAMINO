@@ -5,23 +5,87 @@
 <div class="section-header">
   <div>
     <h2 class="section-title">Caja y Tesorería</h2>
-    <p class="section-desc">Auditoría de ingresos y salidas del día.</p>
+    <p class="section-desc">{{ 'Resumen general y cierres individuales del día.' if admin else 'Movimientos y cierre de tu caja.' }}</p>
   </div>
-  <form method="get" style="display:flex;gap:8px;align-items:center">
-    <input class="input-clean" type="date" name="fecha" value="{{ dia.isoformat() }}" style="width:auto">
-    <button class="btn-action" type="submit">Ver</button>
+  <form method="get" class="cash-filter">
+    <input class="input-clean" type="date" name="fecha" value="{{ dia.isoformat() }}" aria-label="Fecha">
+    {% if admin %}<select class="input-clean" name="cajero" aria-label="Cajero">
+      <option value="">Todas las cajas</option>
+      {% for cajero in cajeros %}<option value="{{ cajero.id }}" {{ 'selected' if cajero_filtro == cajero.id|string }}>{{ cajero.nombre }}</option>{% endfor %}
+    </select>{% endif %}
+    <button class="btn-action" type="submit">Consultar</button>
   </form>
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+
+{% if puede_cobrar %}
+<section class="card-bento cash-session-card">
+  {% if caja_actual %}
+    <div>
+      <div class="grupo-titulo"><i class="ri-lock-unlock-line"></i> Tu caja está abierta</div>
+      <p class="section-desc">Apertura {{ caja_actual.fecha_apertura.strftime('%d/%m/%Y %H:%M') }} · Base inicial {{ caja_actual.monto_apertura|cop }}</p>
+      <p class="hint">Efectivo esperado hasta ahora: <strong>{{ caja_actual.efectivo_esperado|cop }}</strong></p>
+    </div>
+    <form method="post" action="{{ url_for('caja.cerrar') }}" class="cash-session-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label class="lbl" for="montoCierre">Efectivo contado al cierre (COP) <span class="required-mark">*</span></label>
+        <input class="input-clean" id="montoCierre" name="monto_cierre" type="number" min="0" max="999999999999" step="1" required></div>
+      <div class="field"><label class="lbl" for="observacionesCierre">Observaciones</label>
+        <input class="input-clean" id="observacionesCierre" name="observaciones" maxlength="1000"></div>
+      <button class="btn-action red" type="submit"><i class="ri-lock-line"></i> Cerrar mi caja</button>
+    </form>
+  {% else %}
+    <div>
+      <div class="grupo-titulo"><i class="ri-safe-2-line"></i> Abre tu caja para empezar a cobrar</div>
+      <p class="section-desc">Los pagos y movimientos quedarán asociados exclusivamente a tu caja.</p>
+    </div>
+    <form method="post" action="{{ url_for('caja.abrir') }}" class="cash-session-form open-cash-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label class="lbl" for="montoApertura">Base inicial en efectivo (COP) <span class="required-mark">*</span></label>
+        <input class="input-clean" id="montoApertura" name="monto_apertura" type="number" min="0" max="999999999999" step="1" value="0" required></div>
+      <button class="btn-action green" type="submit"><i class="ri-lock-unlock-line"></i> Abrir mi caja</button>
+    </form>
+  {% endif %}
+</section>
+{% endif %}
 
 <div class="grid-stats">
   <div class="stat-card green"><div class="stat-label">Efectivo de alumnos</div><div class="stat-value">{{ t.efectivo|cop }}</div></div>
   <div class="stat-card"><div class="stat-label">Otros métodos</div><div class="stat-value">{{ t.otros|cop }}</div></div>
   <div class="stat-card green"><div class="stat-label">Ingresos manuales</div><div class="stat-value">{{ t.ingresos|cop }}</div></div>
   <div class="stat-card red"><div class="stat-label">Salidas</div><div class="stat-value" style="color:var(--accent-red)">{{ t.salidas|cop }}</div></div>
-  <div class="stat-card gold"><div class="stat-label">Efectivo esperado en caja</div><div class="stat-value" style="color:var(--accent-gold)">{{ t.en_caja|cop }}</div></div>
+  <div class="stat-card"><div class="stat-label">Base inicial del día</div><div class="stat-value">{{ t.apertura|cop }}</div></div>
+  <div class="stat-card gold"><div class="stat-label">Efectivo esperado en cajas</div><div class="stat-value" style="color:var(--accent-gold)">{{ t.en_caja|cop }}</div></div>
+  {% if admin %}<div class="stat-card"><div class="stat-label">Efectivo contado</div><div class="stat-value">{{ t.contado|cop }}</div></div>
+  <div class="stat-card {{ 'green' if t.diferencia == 0 else 'red' }}"><div class="stat-label">Diferencia de cierres</div><div class="stat-value">{{ t.diferencia|cop }}</div></div>{% endif %}
 </div>
+
+{% if admin %}
+<div class="card-bento">
+  <div class="grupo-titulo"><i class="ri-file-list-3-line"></i> Cierres por cajero — {{ dia.strftime('%d/%m/%Y') }}</div>
+  {% if cajas %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Cajero</th><th>Apertura</th><th>Base inicial</th><th>Pagos efectivo</th><th>Otros métodos</th><th>Ingresos</th><th>Salidas</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Estado</th></tr></thead>
+    <tbody>{% for c in cajas %}
+      <tr>
+        <td><strong>{{ c.cajero }}</strong></td>
+        <td>{{ c.fecha_apertura.strftime('%H:%M') }}</td>
+        <td>{{ c.monto_apertura|cop }}</td>
+        <td>{{ c.pagos_efectivo|cop }}</td>
+        <td>{{ c.pagos_otros|cop }}</td>
+        <td>{{ c.ingresos|cop }}</td>
+        <td>{{ c.salidas|cop }}</td>
+        <td><strong>{{ c.efectivo_calculado|cop }}</strong></td>
+        <td>{{ c.contado_calculado|cop if c.estado == 'CERRADA' else '—' }}</td>
+        <td>{{ c.diferencia_calculada|cop if c.estado == 'CERRADA' else '—' }}</td>
+        <td><span class="badge-status {{ 'active' if c.estado == 'CERRADA' else 'pending' }}">{{ c.estado|capitalize }}</span></td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">No hay cajas abiertas o cerradas para esta fecha.</div>{% endif %}
+</div>
+{% endif %}
 
 {% if 'gestionar_caja' in permisos %}
 <div class="grid-stats">
@@ -53,7 +117,7 @@
 <div class="card-bento">
   {% if movs %}
   <div class="table-wrap"><table class="table-clean">
-    <thead><tr><th>Hora</th><th>Recibo</th><th>Tipo</th><th>Detalle</th><th>Método</th><th>Valor</th></tr></thead>
+    <thead><tr><th>Hora</th><th>Recibo</th><th>Tipo</th>{% if admin %}<th>Cajero</th>{% endif %}<th>Detalle</th><th>Método</th><th>Valor</th></tr></thead>
     <tbody>
     {% for m in movs %}
       <tr>
@@ -62,6 +126,7 @@
         <td>{% if m.tipo == 'salida' %}<span class="badge-status urgent">↓ Salida</span>
             {% elif m.tipo == 'ingreso' %}<span class="badge-status active">↑ Ingreso</span>
             {% else %}<span class="badge-status paid">Pago alumno</span>{% endif %}</td>
+        {% if admin %}<td>{{ m.cajero or '—' }}</td>{% endif %}
         <td>{{ m.detalle }}</td>
         <td>{{ m.metodo }}</td>
         <td><strong style="color:{{ 'var(--accent-red)' if m.valor < 0 else 'var(--accent-green)' }}">{{ m.valor|cop }}</strong></td>
@@ -71,5 +136,5 @@
   </table></div>
   {% else %}<div class="vacio">Sin movimientos en esta fecha.</div>{% endif %}
 </div>
-<p class="hint">El cierre de caja con conteo de billetes y exportación PDF/Excel aún no está disponible.</p>
+<p class="hint">Cada caja conserva su propio saldo y cierre. El administrador puede consultar el consolidado y el detalle por cajero.</p>
 {% endblock %}

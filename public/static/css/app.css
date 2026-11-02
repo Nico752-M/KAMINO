@@ -95,6 +95,33 @@ a{color:inherit;text-decoration:none}
 .modal-overlay{position:fixed;inset:0;background:var(--overlay-bg);display:none;justify-content:flex-end;z-index:999}
 .modal-overlay.open{display:flex}
 .modal-drawer{width:min(440px,100vw);height:100%;background:var(--bg-card);border-left:1px solid var(--border-color);padding:2rem;display:flex;flex-direction:column;box-shadow:-10px 0 30px rgba(0,0,0,.15);animation:slideLeft .25s ease-out;overflow-y:auto}
+.matricula-drawer{width:min(1040px,100vw);padding:1.5rem 2rem}
+.matricula-form{display:flex;flex-direction:column;flex:1}
+.matricula-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
+.form-section{min-width:0;background:var(--bg-app);border:1px solid var(--border-color);border-top:2px solid var(--accent-blue);border-radius:14px;padding:1rem 1.15rem}
+.form-section h4,.responsible-section summary{font-size:.76rem;font-weight:800;letter-spacing:.8px;text-transform:uppercase;margin-bottom:1rem}
+.form-grid{display:grid;gap:0 1rem}
+.form-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.form-section .field{min-width:0}
+.form-section .input-clean{border-radius:10px;padding:.7rem .85rem}
+.responsible-section,.price-section{grid-column:1/-1}
+.responsible-section summary{cursor:pointer;list-style:none}
+.responsible-section summary::-webkit-details-marker{display:none}
+.responsible-section summary:after{content:"+";float:right;color:var(--accent-blue);font-size:1.1rem}
+.responsible-section[open] summary:after{content:"−"}
+.responsible-section .hint{margin:-.5rem 0 1rem}
+.optional-label{color:var(--text-muted);font-size:.68rem;letter-spacing:0;text-transform:none;font-weight:600;margin-left:.4rem}
+.required-mark{color:var(--accent-red);font-weight:800}
+.form-note{align-self:center;margin:0 0 1rem}
+.total-input{font-size:1.2rem!important;font-weight:800;border:2px solid var(--accent-blue)!important}
+.cash-filter{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cash-filter .input-clean{width:auto;min-width:160px}
+.cash-session-card{display:flex;justify-content:space-between;align-items:center;gap:1.5rem;border-top-color:var(--accent-green)}
+.cash-session-form{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:0 1rem;align-items:end;flex:1;max-width:680px}
+.cash-session-form .field{margin-bottom:.75rem}
+.cash-session-form .btn-action{align-self:center}
+.open-cash-form{grid-template-columns:minmax(200px,1fr) auto;max-width:580px}
 @keyframes slideLeft{from{transform:translateX(100%)}to{transform:translateX(0)}}
 .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.2rem}
 .modal-close-btn{background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer}
@@ -119,4 +146,17 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
   .preview-content{padding:1rem 1rem 4rem}
   .fecha-hoy{display:none}
   .theme-toggle-btn span{display:none}
+}
+@media (max-width:700px){
+  .matricula-drawer{padding:1rem}
+  .matricula-grid{grid-template-columns:1fr}
+  .responsible-section,.price-section{grid-column:auto}
+  .form-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cash-session-card{align-items:stretch;flex-direction:column}
+  .cash-session-form,.open-cash-form{grid-template-columns:1fr;max-width:none}
+}
+@media (max-width:460px){
+  .form-grid.two,.form-grid.three{grid-template-columns:1fr}
+  .cash-filter{width:100%}
+  .cash-filter .input-clean{flex:1;min-width:0}
 }
