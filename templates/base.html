@@ -51,7 +51,7 @@
     <div class="top-bar-options">
       <div class="top-left">
         <button class="menu-btn" id="menu-btn" type="button" aria-label="Abrir menú"><i class="ri-menu-line"></i></button>
-        {% if 'ver_alumnos' in permisos %}<form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
+        {% if 'ver_alumnos' in permisos and nav != 'alumnos' %}<form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
           <i class="ri-search-line"></i>
           <input type="search" name="q" value="{{ q|default('') }}" placeholder="Buscar alumno, cédula o categoría..." autocomplete="off">
         </form>{% endif %}

@@ -2,7 +2,7 @@ import json
 import re
 import time
 import unicodedata
-from datetime import date
+from datetime import date, timedelta
 
 import oracledb
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
@@ -40,6 +40,19 @@ def _normalizar_busqueda(texto: str) -> str:
                    if unicodedata.category(caracter) != "Mn")
 
 
+def _siguiente_orden_matricula(cur, anio: int) -> int:
+    bloqueo = cur.execute(
+        "SELECT id FROM bloqueo_matriculas WHERE id = 1 FOR UPDATE"
+    ).fetchone()
+    if not bloqueo:
+        raise RuntimeError("Falta aplicar la migración 004 de concurrencia de matrículas.")
+    return cur.execute(
+        "SELECT COALESCE(MAX(numero_orden), 0) + 1 AS siguiente "
+        "FROM matriculas WHERE anio = %s",
+        (anio,),
+    ).fetchone()["siguiente"]
+
+
 def _pesos(texto: str) -> int | None:
     if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto):
         return None
@@ -63,41 +76,73 @@ def _auditar(cur, entidad, entidad_id, accion, usuario_id, antes, despues, motiv
 @permiso_requerido("ver_alumnos")
 def lista():
     q = request.args.get("q", "").strip()[:60]
+    desde_texto = request.args.get("desde", "").strip()
+    hasta_texto = request.args.get("hasta", "").strip()
+    hay_filtros = bool(q or desde_texto or hasta_texto)
+    try:
+        pagina = max(1, min(int(request.args.get("pagina", "1")), 1_000_000))
+    except ValueError:
+        pagina = 1
+    if not hay_filtros:
+        pagina = 1
+    fecha_desde = None
+    fecha_hasta = None
     recibo_nuevo = request.args.get("recibo_nuevo", "").strip()[:50]
     error = None
     filas = []
 
-    filtro, params = "", ()
+    condiciones, params = [], []
     if q:
         like = _like(_normalizar_busqueda(q))
         normalizar = (
             "TRANSLATE(UPPER({}), 'ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝÁÉÍÓÚÜ', "
             "'AAAAAACEEEEIIIINOOOOOUUUUYAEIOUU')"
         )
-        filtro = rf"""WHERE ({normalizar.format('a.numero_documento')} LIKE %s ESCAPE '\'
+        condiciones.append(rf"""({normalizar.format('a.numero_documento')} LIKE %s ESCAPE '\'
                    OR {normalizar.format('a.nombres')} LIKE %s ESCAPE '\'
                    OR {normalizar.format('a.apellidos')} LIKE %s ESCAPE '\'
                    OR {normalizar.format('m.categoria')} LIKE %s ESCAPE '\'
-                   OR {normalizar.format("(m.numero_orden || '-' || SUBSTR(TO_CHAR(m.anio), -2))")} LIKE %s ESCAPE '\')"""
-        params = (like,) * 5
+                   OR {normalizar.format("(m.numero_orden || '-' || SUBSTR(TO_CHAR(m.anio), -2))")} LIKE %s ESCAPE '\')""")
+        params.extend((like,) * 5)
 
     try:
-        filas = db.fetchall(f"""
-            SELECT m.id AS matricula_id, m.numero_orden, m.anio, m.categoria,
-                   CASE WHEN m.archivado = 1 THEN 'Archivado' ELSE m.estado END AS estado,
-                   COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
-                   a.numero_documento, a.nombres, a.apellidos,
-                   COALESCE((SELECT SUM(p.valor) FROM pagos p
-                             WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado
-            FROM matriculas m
-            JOIN alumnos a ON a.numero_documento = m.numero_documento
-            {filtro}
-            ORDER BY m.fecha_registro DESC
-            FETCH FIRST 200 ROWS ONLY
-        """, params)
-    except Exception:
-        error = "No se pudo consultar la lista de alumnos."
-        current_app.logger.exception("No se pudo consultar la lista de alumnos")
+        if desde_texto:
+            fecha_desde = date.fromisoformat(desde_texto)
+            condiciones.append("m.fecha_registro >= %s")
+            params.append(fecha_desde)
+        if hasta_texto:
+            fecha_hasta = date.fromisoformat(hasta_texto)
+            condiciones.append("m.fecha_registro < %s")
+            params.append(fecha_hasta + timedelta(days=1))
+        if fecha_desde and fecha_hasta and fecha_desde > fecha_hasta:
+            raise ValueError
+    except ValueError:
+        error = "Revisa las fechas: el formato no es válido y «Desde» no puede ser posterior a «Hasta»."
+
+    if not error:
+        try:
+            filtro = "WHERE " + " AND ".join(condiciones) if condiciones else ""
+            params.extend(((pagina - 1) * 10, 11))
+            filas = db.fetchall(f"""
+                SELECT m.id AS matricula_id, m.numero_orden, m.anio, m.categoria,
+                       CASE WHEN m.archivado = 1 THEN 'Archivado' ELSE m.estado END AS estado,
+                       COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
+                       a.numero_documento, a.nombres, a.apellidos,
+                       COALESCE((SELECT SUM(p.valor) FROM pagos p
+                                 WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado
+                FROM matriculas m
+                JOIN alumnos a ON a.numero_documento = m.numero_documento
+                {filtro}
+                ORDER BY m.fecha_registro DESC, m.id DESC
+                OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
+            """, tuple(params))
+        except Exception:
+            error = "No se pudo consultar la lista de alumnos."
+            current_app.logger.exception("No se pudo consultar la lista de alumnos")
+
+    hay_siguiente = len(filas) > 10
+    if hay_siguiente:
+        filas = filas[:10]
 
     cursos, renovaciones = [], []
     for f in filas:
@@ -114,8 +159,13 @@ def lista():
         (renovaciones if str(f["categoria"]).startswith("Renovación") else cursos).append(item)
 
     return render_template("alumnos.html", cursos=cursos, renovaciones=renovaciones,
-                           q=q, error=error, limite=len(filas) >= 200,
-                           anio_actual=hoy().year, recibo_nuevo=recibo_nuevo)
+                           q=q, desde=desde_texto, hasta=hasta_texto, pagina=pagina,
+                           hay_filtros=hay_filtros,
+                           hay_anterior=hay_filtros and pagina > 1,
+                           hay_siguiente=hay_filtros and hay_siguiente,
+                           primer_resultado=(pagina - 1) * 10 + 1 if filas else 0,
+                           ultimo_resultado=(pagina - 1) * 10 + len(filas),
+                           error=error, anio_actual=hoy().year, recibo_nuevo=recibo_nuevo)
 
 
 def _duplicado_unico(error: Exception) -> bool:
@@ -273,11 +323,7 @@ def crear_matricula():
                          grupo_sanguineo, ocupacion, celular, email, documento),
                     )
 
-                orden = cur.execute(
-                    "SELECT COALESCE(MAX(numero_orden), 0) + 1 AS siguiente "
-                    "FROM matriculas WHERE anio = %s",
-                    (anio,),
-                ).fetchone()["siguiente"]
+                orden = _siguiente_orden_matricula(cur, anio)
                 cur.execute("""
                     INSERT INTO matriculas
                         (numero_orden, anio, numero_documento, categoria, estado, precio_total,

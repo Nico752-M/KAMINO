@@ -16,9 +16,10 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
    `@C:\ruta\al\proyecto\migrations\001_perfiles_personales.sql`
 6. Después de `001`, ejecuta una vez `migrations/002_datos_alumno_y_cajas.sql` como `CEA_APP`.
 7. Después de `002`, ejecuta una vez `migrations/003_recibos_unificados.sql` como `CEA_APP`.
-8. Si la base todavía no tiene un administrador, crea el primero:
+8. Después de `003`, ejecuta una vez `migrations/004_matriculas_concurrentes.sql` como `CEA_APP` y antes de desplegar la versión nueva de la app.
+9. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-9. Ejecuta `flask --app app run --debug`.
+10. Ejecuta `flask --app app run --debug`.
 
 ## Oracle
 
@@ -49,15 +50,22 @@ cambios y reimpresiones. Los recibos existentes no se renumeran. Los tres
 permisos nuevos se asignan inicialmente solo a perfiles administradores; desde
 **Usuarios y permisos** puedes revisar o cambiar los permisos de cada persona.
 
+La migración `migrations/004_matriculas_concurrentes.sql` se ejecuta después de
+`003`, conectada como `CEA_APP`. Debe aplicarse antes de desplegar la versión
+de la app que la usa. Crea un registro de bloqueo para serializar por transacción
+la asignación del consecutivo anual, evitando colisiones cuando dos cajeros
+registran matrículas al mismo tiempo.
+
 Cada perfil pertenece a una única persona: varios usuarios pueden tener la
 misma categoría (`admin`, `cajera`, `secretaria` o `contadora`), pero no
 comparten perfil ni permisos. El administrador puede cambiar individualmente
 los permisos de cada cuenta desde **Usuarios y permisos**. El campo `ROL` se
 mantiene por compatibilidad y como categoría; la autorización usa el perfil.
 
-El consecutivo de matrícula empieza de nuevo cada año. La restricción única
-`UQ_MAT_ORDEN (ANIO, NUMERO_ORDEN)` conserva los registros anteriores y evita
-duplicados cuando se crean matrículas concurrentemente.
+El consecutivo de matrícula empieza de nuevo cada año. La app bloquea la fila
+de `BLOQUEO_MATRICULAS` mientras asigna e inserta el siguiente número; la
+restricción única `UQ_MAT_ORDEN (ANIO, NUMERO_ORDEN)` permanece como protección
+final contra duplicados.
 
 ## Vercel
 
