@@ -71,7 +71,7 @@ def lista():
 def marcar_runt(matricula_id):
     afectadas = db.execute(
         "UPDATE matriculas SET runt_registrado = 1 "
-        "WHERE id = %s AND estado <> 'Histórico' AND runt_registrado = 0",
+        "WHERE id = %s AND estado <> 'Histórico' AND (runt_registrado IS NULL OR runt_registrado = 0)",
         (matricula_id,),
     )
     if afectadas != 1:

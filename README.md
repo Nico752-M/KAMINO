@@ -17,9 +17,11 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
 6. Después de `001`, ejecuta una vez `migrations/002_datos_alumno_y_cajas.sql` como `CEA_APP`.
 7. Después de `002`, ejecuta una vez `migrations/003_recibos_unificados.sql` como `CEA_APP`.
 8. Después de `003`, ejecuta una vez `migrations/004_matriculas_concurrentes.sql` como `CEA_APP` y antes de desplegar la versión nueva de la app.
-9. Si la base todavía no tiene un administrador, crea el primero:
+9. Después de `004`, ejecuta una vez `migrations/005_tarifas_categoria.sql` como `CEA_APP` y antes de desplegar la versión que configura tarifas.
+10. Después de `005`, ejecuta una vez `migrations/006_seguridad_y_categorias_caja.sql` como `CEA_APP` y antes de desplegar seguridad persistente y categorías de movimientos.
+11. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-10. Ejecuta `flask --app app run --debug`.
+12. Ejecuta `flask --app app run --debug`.
 
 ## Oracle
 
@@ -55,6 +57,18 @@ La migración `migrations/004_matriculas_concurrentes.sql` se ejecuta después d
 de la app que la usa. Crea un registro de bloqueo para serializar por transacción
 la asignación del consecutivo anual, evitando colisiones cuando dos cajeros
 registran matrículas al mismo tiempo.
+
+La migración `migrations/005_tarifas_categoria.sql` se ejecuta después de
+`004`, conectada como `CEA_APP`. Crea el catálogo de categorías y precios
+administrable desde **Usuarios y permisos**. La selección de una categoría
+activa propone su tarifa al registrar una matrícula; el precio puede ajustarse
+para esa matrícula sin modificar la tarifa guardada ni otras matrículas.
+
+La migración `migrations/006_seguridad_y_categorias_caja.sql` se ejecuta después
+de `005`, conectada como `CEA_APP`. Persiste el límite de intentos fallidos de
+inicio de sesión y crea las categorías opcionales de ingresos y salidas,
+administrables desde **Usuarios y permisos**. También guarda el cambio devuelto
+en cada pago para que las reimpresiones usen el valor original.
 
 Cada perfil pertenece a una única persona: varios usuarios pueden tener la
 misma categoría (`admin`, `cajera`, `secretaria` o `contadora`), pero no
@@ -117,8 +131,15 @@ región para funciones; `gru1` se configura como esa única región.
 - Registro de alumnos y renovaciones con datos personales, responsable
   opcional, precio/descuento y abono inicial opcional.
 - Creación de matrículas con consecutivo anual.
+- Tarifas administrables por categoría y autocompletado de alumno por documento
+  al registrar cursos y renovaciones.
 - Apertura/cierre individual de caja, consulta/reimpresión de movimientos y
   registro autorizado de ingresos/salidas manuales con recibos PDF.
+- Exportación a PDF y Excel de cierres cerrados, con resumen y detalle de
+  pagos, ingresos y salidas.
+- Categorías opcionales para clasificar ingresos y salidas manuales de caja.
+- Dashboard con matrículas del mes, comparación con el mes anterior,
+  distribución por categoría y avance de pago de las matrículas recientes.
 - Navegación principal horizontal y registro de alumnos guiado en cuatro pasos;
   acciones de caja y movimientos se muestran por contexto para reducir ruido.
 - Seguimiento RUNT.

@@ -5,6 +5,9 @@
   if (!modal || !abrir) return;
 
   const precioBase = document.getElementById("precioBase");
+  const categoria = document.getElementById("matriculaCategoria");
+  const documento = document.getElementById("matriculaDocumento");
+  const lookupMessage = document.getElementById("matriculaLookupMessage");
   const descuentoPesos = document.getElementById("descuentoPesos");
   const descuentoPorcentaje = document.getElementById("descuentoPorcentaje");
   const precioTotal = document.getElementById("matriculaPrecio");
@@ -55,6 +58,64 @@
     precioTotal.value = base ? window.formatearMiles(Math.max(base - descuento, 0)) : "";
   }
 
+  categoria.addEventListener("change", () => {
+    const precio = categoria.selectedOptions[0]?.dataset.price;
+    precioBase.value = precio ? window.formatearMiles(precio) : "";
+    calcularTotal();
+  });
+
+  const camposAlumno = {
+    tipo_documento: document.getElementById("matriculaTipoDocumento"),
+    nombres: document.getElementById("matriculaNombres"),
+    apellidos: document.getElementById("matriculaApellidos"),
+    fecha_nacimiento: document.getElementById("fechaNacimiento"),
+    lugar_nacimiento: document.getElementById("lugarNacimiento"),
+    sexo: document.getElementById("sexoAlumno"),
+    estado_civil: document.getElementById("estadoCivil"),
+    grupo_sanguineo: document.getElementById("grupoSanguineo"),
+    ocupacion: document.getElementById("ocupacionAlumno"),
+    celular: document.getElementById("celularAlumno"),
+    email: document.getElementById("emailAlumno"),
+  };
+  let autocompletados = {};
+  let consultaDocumento = 0;
+  documento.addEventListener("blur", async () => {
+    const numero = documento.value.trim();
+    if (!numero) return;
+    Object.entries(autocompletados).forEach(([nombre, valor]) => {
+      if (camposAlumno[nombre].value === valor) camposAlumno[nombre].value = "";
+    });
+    autocompletados = {};
+    const consulta = ++consultaDocumento;
+    lookupMessage.textContent = "Buscando alumno...";
+    try {
+      const base = documento.dataset.documentLookupUrl.replace("DOCUMENTO", encodeURIComponent(numero));
+      const respuesta = await fetch(base, { credentials: "same-origin" });
+      const resultado = await respuesta.json();
+      if (consulta !== consultaDocumento || documento.value.trim() !== numero) return;
+      if (!respuesta.ok || !resultado.ok) {
+        lookupMessage.textContent = resultado.error || "No se pudo consultar el documento.";
+        return;
+      }
+      if (!resultado.encontrado) {
+        lookupMessage.textContent = "Alumno nuevo. Completa sus datos en el siguiente paso.";
+        return;
+      }
+      Object.entries(camposAlumno).forEach(([nombre, campo]) => {
+        const valor = resultado.alumno[nombre] || "";
+        if (valor && !campo.value) {
+          campo.value = valor;
+          autocompletados[nombre] = valor;
+        }
+      });
+      lookupMessage.textContent = "Datos encontrados y precargados.";
+    } catch (error) {
+      if (consulta === consultaDocumento) {
+        lookupMessage.textContent = "No se pudo consultar el documento. Revisa la conexión e intenta de nuevo.";
+      }
+    }
+  });
+
   precioBase.addEventListener("input", calcularTotal);
   descuentoPesos.addEventListener("input", () => {
     if (descuentoPesos.value) descuentoPorcentaje.value = "";
@@ -74,6 +135,8 @@
   const cerrar = () => modal.classList.remove("open");
   abrir.addEventListener("click", () => {
     form.reset();
+    autocompletados = {};
+    lookupMessage.textContent = "";
     descuentoPesos.value = "";
     descuentoPorcentaje.value = "";
     form.querySelectorAll("[data-money-input]").forEach(window.formatearCampoMoneda);

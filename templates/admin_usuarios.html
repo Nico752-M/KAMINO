@@ -10,6 +10,78 @@
 </div>
 
 <section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-price-tag-3-line"></i> Precios por categoría</div>
+  <p class="hint">Configura las categorías y tarifas de esta escuela. El precio se propone al matricular y se puede ajustar antes de guardar.</p>
+  <form method="post" action="{{ url_for('usuarios.crear_tarifa') }}" class="tariff-create-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label class="lbl" for="nuevaCategoria">Categoría</label>
+      <input class="input-clean" id="nuevaCategoria" name="categoria" maxlength="45" placeholder="Ej. B1" required></div>
+    <div class="field"><label class="lbl" for="nuevoPrecioCategoria">Precio base (COP)</label>
+      <input class="input-clean" id="nuevoPrecioCategoria" name="precio_base" type="text"
+             inputmode="numeric" data-money-input required></div>
+    <button class="btn-action red" type="submit"><i class="ri-add-line"></i> Agregar categoría</button>
+  </form>
+  {% if tarifas %}
+  <div class="table-wrap"><table class="table-clean tariff-table">
+    <thead><tr><th>Categoría</th><th>Precio base</th><th>Estado</th><th></th></tr></thead>
+    <tbody>{% for tarifa in tarifas %}
+      <tr>
+        <td><strong>{{ tarifa.categoria }}</strong></td>
+        <td colspan="3">
+          <form method="post" action="{{ url_for('usuarios.actualizar_tarifa', categoria=tarifa.categoria) }}" class="tariff-row-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input class="input-clean" name="precio_base" type="text" inputmode="numeric"
+                   data-money-input value="{{ tarifa.precio_base }}" aria-label="Precio de {{ tarifa.categoria }}" required>
+            <label class="hint"><input type="checkbox" name="activo" value="1" {% if tarifa.activo %}checked{% endif %}> Activa</label>
+            <button class="btn-action sm" type="submit" name="accion" value="actualizar"><i class="ri-save-line"></i> Guardar</button>
+            {% if tarifa.activo %}
+            <button class="btn-action red sm" type="submit" name="accion" value="desactivar"
+                    onclick="return confirm('¿Desactivar {{ tarifa.categoria }}? Las matrículas existentes no cambiarán.');">
+              Desactivar
+            </button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">Aún no hay categorías. Agrega la primera para usarla en matrículas.</div>{% endif %}
+</section>
+
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-list-check-2"></i> Categorías de movimientos de caja</div>
+  <p class="hint">Opcionales al registrar ingresos y salidas. Las categorías desactivadas se conservan en los reportes históricos.</p>
+  <form method="post" action="{{ url_for('usuarios.crear_categoria_caja') }}" class="tariff-create-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label class="lbl" for="nuevaCategoriaCaja">Nueva categoría</label>
+      <input class="input-clean" id="nuevaCategoriaCaja" name="categoria" maxlength="45" required></div>
+    <span></span>
+    <button class="btn-action red" type="submit"><i class="ri-add-line"></i> Agregar categoría</button>
+  </form>
+  {% if categorias_caja %}
+  <div class="table-wrap"><table class="table-clean tariff-table">
+    <thead><tr><th>Categoría</th><th>Estado</th><th></th></tr></thead>
+    <tbody>{% for categoria in categorias_caja %}
+      <tr>
+        <td><strong>{{ categoria.categoria }}</strong></td>
+        <td>{{ 'Activa' if categoria.activo else 'Inactiva' }}</td>
+        <td><form method="post" action="{{ url_for('usuarios.actualizar_categoria_caja', categoria=categoria.categoria) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if categoria.activo %}
+          <button class="btn-action red sm" type="submit" name="accion" value="desactivar"
+                  onclick="return confirm('¿Desactivar {{ categoria.categoria }}?');">Desactivar</button>
+          {% else %}
+          <button class="btn-action sm" type="submit" name="accion" value="actualizar">Activar</button>
+          <input type="hidden" name="activo" value="1">
+          {% endif %}
+        </form></td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">Aún no hay categorías de caja.</div>{% endif %}
+</section>
+
+<section class="card-bento">
   <div class="grupo-titulo"><i class="ri-user-add-line"></i> Crear usuario y perfil personal</div>
   <form method="post" action="{{ url_for('usuarios.crear') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -35,7 +107,9 @@
       {% for codigo, etiqueta in catalogo.items() %}
       <label class="hint"><input type="checkbox" name="permisos" value="{{ codigo }}"
         {% if codigo in ('ver_dashboard','ver_alumnos','ver_caja','ver_tramites') %}checked{% endif %}
-        {% if codigo in ('editar_alumnos','eliminar_alumnos','ver_historial_pagos') %}checked data-admin-default="true"{% endif %}> {{ etiqueta }}</label>
+        {% if codigo in ('editar_alumnos','eliminar_alumnos','ver_historial_pagos') %}
+          {% if request.form.get('rol', 'admin') == 'admin' %}checked{% endif %} data-admin-default="true"
+        {% endif %}> {{ etiqueta }}</label>
       {% endfor %}
     </div>
     <button class="btn-action red" type="submit"><i class="ri-save-line"></i> Crear cuenta y perfil</button>

@@ -5,10 +5,11 @@ import unicodedata
 from datetime import date, timedelta
 
 import oracledb
-from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 
 import db
 from auth import login_required, permiso_requerido, permisos_actuales
+from servicios.matriculas import estado_matricula
 from servicios.recibos import numero_recibo
 from utils import entero, hoy
 
@@ -90,6 +91,16 @@ def lista():
     recibo_nuevo = request.args.get("recibo_nuevo", "").strip()[:50]
     error = None
     filas = []
+    tarifas, error_tarifas = [], None
+
+    try:
+        tarifas = db.fetchall(
+            "SELECT categoria, precio_base FROM tarifas_categoria "
+            "WHERE activo = 1 ORDER BY categoria"
+        )
+    except Exception:
+        error_tarifas = "No se pudieron cargar las tarifas por categoría."
+        current_app.logger.exception("No se pudieron cargar las tarifas")
 
     condiciones, params = [], []
     if q:
@@ -159,6 +170,7 @@ def lista():
         (renovaciones if str(f["categoria"]).startswith("Renovación") else cursos).append(item)
 
     return render_template("alumnos.html", cursos=cursos, renovaciones=renovaciones,
+                           tarifas=tarifas, error_tarifas=error_tarifas,
                            q=q, desde=desde_texto, hasta=hasta_texto, pagina=pagina,
                            hay_filtros=hay_filtros,
                            hay_anterior=hay_filtros and pagina > 1,
@@ -166,6 +178,30 @@ def lista():
                            primer_resultado=(pagina - 1) * 10 + 1 if filas else 0,
                            ultimo_resultado=(pagina - 1) * 10 + len(filas),
                            error=error, anio_actual=hoy().year, recibo_nuevo=recibo_nuevo)
+
+
+@bp.route("/alumnos/documento/<documento>")
+@login_required
+@permiso_requerido("crear_matricula")
+def buscar_documento(documento: str):
+    if not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", documento):
+        return jsonify(ok=False, error="Documento no válido."), 400
+    try:
+        alumno = db.fetchone("""
+            SELECT tipo_documento, numero_documento, nombres, apellidos,
+                   fecha_nacimiento, lugar_nacimiento, sexo, estado_civil,
+                   grupo_sanguineo, ocupacion, celular, email
+            FROM alumnos
+            WHERE numero_documento = %s
+        """, (documento,))
+    except Exception:
+        current_app.logger.exception("Error buscando alumno por documento")
+        return jsonify(ok=False, error="No se pudo consultar el documento."), 500
+    if not alumno:
+        return jsonify(ok=True, encontrado=False)
+    if alumno.get("fecha_nacimiento"):
+        alumno["fecha_nacimiento"] = alumno["fecha_nacimiento"].strftime("%Y-%m-%d")
+    return jsonify(ok=True, encontrado=True, alumno=alumno)
 
 
 def _duplicado_unico(error: Exception) -> bool:
@@ -181,7 +217,7 @@ def crear_matricula():
     tipo_documento = request.form.get("tipo_documento", "").strip()
     nombres = " ".join(request.form.get("nombres", "").split())
     apellidos = " ".join(request.form.get("apellidos", "").split())
-    categoria_base = request.form.get("categoria", "").strip()
+    categoria_base = " ".join(request.form.get("categoria", "").upper().split())
     tipo_matricula = request.form.get("tipo_matricula", "curso")
     categoria = f"Renovación - {categoria_base}" if tipo_matricula == "renovacion" else categoria_base
     fecha_texto = request.form.get("fecha_nacimiento", "").strip()
@@ -285,6 +321,15 @@ def crear_matricula():
     for intento in range(5):
         try:
             with db.transaccion() as cur:
+                tarifa = cur.execute(
+                    """SELECT categoria FROM tarifas_categoria
+                       WHERE categoria = %s AND activo = 1""",
+                    (categoria_base,),
+                ).fetchone()
+                if not tarifa:
+                    raise DatosMatriculaInvalidos(
+                        "Selecciona una categoría activa con tarifa configurada."
+                    )
                 existente = cur.execute(
                     "SELECT nombres, apellidos FROM alumnos WHERE numero_documento = %s FOR UPDATE",
                     (documento,),
@@ -330,7 +375,7 @@ def crear_matricula():
                          precio_base, descuento_valor, descuento_porcentaje)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (orden, anio, documento, categoria,
-                      "Cancelado" if abono >= precio else "Pendiente Pago" if abono else "Activo",
+                      estado_matricula("Activo", precio, abono),
                       precio, precio_base, precio_base - precio,
                       round((precio_base - precio) * 100 / precio_base, 2)))
                 matricula_id = cur.execute("SELECT id FROM matriculas WHERE anio = %s AND numero_orden = %s",
@@ -566,10 +611,7 @@ def editar_matricula(matricula_id):
                       opcionales["grupo_sanguineo"], opcionales["ocupacion"],
                       opcionales["celular"], opcionales["email"], documento_original))
 
-            estado = actual["estado"]
-            if estado != "Histórico":
-                estado = ("Cancelado" if int(pagado) >= total else
-                          "Pendiente Pago" if int(pagado) > 0 else "Activo")
+            estado = estado_matricula(actual["estado"], total, int(pagado))
             cur.execute("""
                 UPDATE matriculas
                 SET categoria = %s, precio_base = %s, precio_total = %s,
@@ -720,8 +762,8 @@ def anular_pago(numero):
                 (pago["id_matricula"],),
             ).fetchone()["total"]
             if matricula and not matricula["archivado"] and matricula["estado"] != "Histórico":
-                estado = ("Cancelado" if int(pagado) >= int(matricula["precio_total"]) else
-                          "Pendiente Pago" if int(pagado) > 0 else "Activo")
+                estado = estado_matricula(matricula["estado"],
+                                          int(matricula["precio_total"]), int(pagado))
                 if estado != matricula["estado"]:
                     cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
                                 (estado, pago["id_matricula"]))

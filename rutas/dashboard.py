@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from flask import Blueprint, render_template
+from flask import Blueprint, current_app, render_template
 
 import db
 from auth import login_required, permiso_requerido
@@ -19,14 +19,23 @@ def _rango_mes(d: date) -> tuple[date, date]:
 @login_required
 @permiso_requerido("ver_dashboard")
 def index():
-    datos = {"activos": 0, "ingresos_mes": 0, "pendiente_total": 0, "deudores": []}
+    datos = {
+        "activos": 0, "ingresos_mes": 0, "pendiente_total": 0,
+        "matriculas_mes": 0, "matriculas_mes_anterior": 0,
+        "por_categoria": [], "recientes": [], "deudores": [],
+    }
     error = None
     try:
         inicio, fin = _rango_mes(hoy())
+        inicio_mes_anterior = (inicio - timedelta(days=1)).replace(day=1)
         r = db.fetchone("""
             SELECT
                 (SELECT COUNT(*) FROM matriculas
                  WHERE archivado = 0 AND estado NOT IN ('Cancelado', 'Histórico')) AS activos,
+                (SELECT COUNT(*) FROM matriculas
+                 WHERE archivado = 0 AND fecha_registro >= %s AND fecha_registro < %s) AS matriculas_mes,
+                (SELECT COUNT(*) FROM matriculas
+                 WHERE archivado = 0 AND fecha_registro >= %s AND fecha_registro < %s) AS matriculas_mes_anterior,
                 (SELECT COALESCE(SUM(valor), 0) FROM pagos
                  WHERE fecha_pago >= %s AND fecha_pago < %s AND anulado = 0) AS ingresos_mes,
                 (SELECT COALESCE(SUM(saldo), 0) FROM (
@@ -38,10 +47,43 @@ def index():
                     HAVING COALESCE(m.precio_total, 0) > COALESCE(SUM(p.valor), 0)
                 )) AS pendiente_total
             FROM dual
-        """, (inicio, fin))
+        """, (inicio, fin, inicio_mes_anterior, inicio, inicio, fin))
         datos["activos"] = int(r["activos"]) if r else 0
+        datos["matriculas_mes"] = int(r["matriculas_mes"]) if r else 0
+        datos["matriculas_mes_anterior"] = int(r["matriculas_mes_anterior"]) if r else 0
         datos["ingresos_mes"] = float(r["ingresos_mes"]) if r else 0
         datos["pendiente_total"] = float(r["pendiente_total"]) if r else 0
+
+        datos["por_categoria"] = db.fetchall("""
+            SELECT categoria, COUNT(*) AS cantidad
+            FROM matriculas
+            WHERE archivado = 0 AND fecha_registro >= %s AND fecha_registro < %s
+            GROUP BY categoria
+            ORDER BY cantidad DESC, categoria
+            FETCH FIRST 8 ROWS ONLY
+        """, (inicio, fin))
+
+        datos["recientes"] = db.fetchall("""
+            SELECT * FROM (
+                SELECT m.id, m.fecha_registro, m.categoria,
+                       CASE WHEN m.estado = 'Cancelado' THEN 'Pagado' ELSE m.estado END AS estado,
+                       a.nombres, a.apellidos, m.precio_total,
+                       COALESCE(SUM(p.valor), 0) AS pagado
+                FROM matriculas m
+                JOIN alumnos a ON a.numero_documento = m.numero_documento
+                LEFT JOIN pagos p ON p.id_matricula = m.id AND p.anulado = 0
+                WHERE m.archivado = 0
+                GROUP BY m.id, m.fecha_registro, m.categoria, m.estado,
+                         a.nombres, a.apellidos, m.precio_total
+                ORDER BY m.fecha_registro DESC, m.id DESC
+            )
+            FETCH FIRST 8 ROWS ONLY
+        """)
+        for matricula in datos["recientes"]:
+            total = float(matricula["precio_total"] or 0)
+            pagado = float(matricula["pagado"] or 0)
+            matricula["progreso"] = min(100, round(pagado * 100 / total)) if total else 0
+            matricula["saldo"] = max(total - pagado, 0)
 
         filas = db.fetchall("""
             SELECT *
@@ -64,6 +106,6 @@ def index():
         datos["deudores"] = filas
     except Exception as e:
         error = "No se pudieron cargar las métricas. Revisa la conexión con la base de datos."
-        print(f"[dashboard] {e}")
+        current_app.logger.exception("No se pudieron cargar las métricas del dashboard: %s", e)
 
     return render_template("dashboard.html", d=datos, error=error)

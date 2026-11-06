@@ -77,7 +77,7 @@
   </div>
   {% if cajas %}
   <div class="table-wrap"><table class="table-clean">
-    <thead><tr><th>Cajero / apertura</th><th>Base</th><th>Pagos efectivo</th><th>Ingresos − salidas</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Cajero / apertura</th><th>Base</th><th>Pagos efectivo</th><th>Ingresos − salidas</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Estado</th><th>Exportar</th></tr></thead>
     <tbody>{% for c in cajas %}
       <tr>
         <td><strong>{{ c.cajero }}</strong><br><small>{{ c.fecha_apertura.strftime('%H:%M') }}</small></td>
@@ -88,10 +88,40 @@
         <td>{{ c.contado_calculado|cop if c.estado == 'CERRADA' else '—' }}</td>
         <td>{{ c.diferencia_calculada|cop if c.estado == 'CERRADA' else '—' }}</td>
         <td><span class="badge-status {{ 'active' if c.estado == 'CERRADA' else 'pending' }}">{{ c.estado|capitalize }}</span></td>
+        <td>{% if c.estado == 'CERRADA' %}
+          <a class="btn-action sm" href="{{ url_for('caja.exportar_cierre_pdf', caja_id=c.id) }}">PDF</a>
+          <a class="btn-action sm" href="{{ url_for('caja.exportar_cierre_excel', caja_id=c.id) }}">Excel</a>
+        {% else %}—{% endif %}</td>
       </tr>
     {% endfor %}</tbody>
   </table></div>
   {% else %}<div class="vacio">No hay cajas para la fecha seleccionada.</div>{% endif %}
+</section>
+{% endif %}
+
+{% if not admin %}
+<section class="card-bento cash-closings">
+  <div class="cash-block-heading">
+    <div><h3>Mis cierres</h3><p>Exporta el resumen de una caja cerrada.</p></div>
+  </div>
+  {% set cierres = cajas|selectattr('estado', 'equalto', 'CERRADA')|list %}
+  {% if cierres %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Apertura</th><th>Cierre</th><th>Base</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Exportar</th></tr></thead>
+    <tbody>{% for c in cierres %}
+      <tr>
+        <td>{{ c.fecha_apertura.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ c.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ c.monto_apertura|cop }}</td>
+        <td>{{ c.efectivo_calculado|cop }}</td>
+        <td>{{ c.contado_calculado|cop }}</td>
+        <td>{{ c.diferencia_calculada|cop }}</td>
+        <td><a class="btn-action sm" href="{{ url_for('caja.exportar_cierre_pdf', caja_id=c.id) }}">PDF</a>
+          <a class="btn-action sm" href="{{ url_for('caja.exportar_cierre_excel', caja_id=c.id) }}">Excel</a></td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">No hay cierres en la fecha seleccionada.</div>{% endif %}
 </section>
 {% endif %}
 
@@ -165,7 +195,9 @@
         <td>{% if m.tipo == 'salida' %}<span class="badge-status urgent">Salida</span>
             {% elif m.tipo == 'ingreso' %}<span class="badge-status active">Ingreso</span>
             {% else %}<span class="badge-status paid">Pago</span>{% endif %}</td>
-        <td>{{ m.detalle }}<br><small>{{ m.recibo }}
+        <td>{{ m.detalle }}
+          {% if m.categoria %}<br><small>Categoría: {{ m.categoria }}</small>{% endif %}
+          <br><small>{{ m.recibo }}
           {% if m.anulado %}<span class="badge-status urgent">Anulado</span>{% endif %}
         </small>{% if m.anulado and m.motivo_anulacion %}<br><small>Motivo: {{ m.motivo_anulacion }}</small>{% endif %}</td>
         {% if admin %}<td>{{ m.cajero or '—' }}</td>{% endif %}
@@ -198,6 +230,21 @@
     <form method="post" action="{{ url_for('caja.cerrar') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="cash-close-expected"><span>Efectivo esperado</span><strong>{{ caja_actual.efectivo_esperado|cop }}</strong></div>
+      <details class="cash-denomination-tool">
+        <summary><i class="ri-coins-line"></i> Contar billetes y monedas</summary>
+        <div class="cash-denominations">
+          {% for denominacion in (100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50) %}
+          <label class="cash-denomination">
+            <span>{{ denominacion|cop }}</span>
+            <input type="number" min="0" step="1" value="0" inputmode="numeric"
+                   data-denomination="{{ denominacion }}" aria-label="Cantidad de {{ denominacion|cop }}">
+          </label>
+          {% endfor %}
+          <div class="cash-denomination-total">
+            <span>Total contado</span><strong id="totalDenominaciones">$ 0</strong>
+          </div>
+        </div>
+      </details>
       <div class="field"><label class="lbl" for="montoCierre">Efectivo contado (COP) <span class="required-mark">*</span></label>
         <input class="input-clean" id="montoCierre" name="monto_cierre" type="text" inputmode="numeric"
                data-money-input required></div>
@@ -231,6 +278,11 @@
       <div class="field"><label class="lbl" for="movimientoValor">Valor (COP) <span class="required-mark">*</span></label>
         <input class="input-clean" id="movimientoValor" name="valor" type="text" inputmode="numeric"
                data-money-input required></div>
+      <div class="field"><label class="lbl" for="movimientoCategoria">Categoría (opcional)</label>
+        <select class="input-clean" id="movimientoCategoria" name="categoria">
+          <option value="">Sin categoría</option>
+          {% for categoria in categorias_caja %}<option value="{{ categoria.categoria }}">{{ categoria.categoria }}</option>{% endfor %}
+        </select></div>
       <div class="modal-footer">
         <button class="btn-action" type="button" data-close-modal>Cancelar</button>
         <button class="btn-action green" id="guardarMovimientoCaja" type="submit"><i class="ri-save-line"></i> Guardar entrada</button>

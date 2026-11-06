@@ -14,8 +14,44 @@
 
 <div class="grid-stats">
   <div class="stat-card green"><div class="stat-label">Alumnos Activos</div><div class="stat-value">{{ d.activos }}</div></div>
+  <div class="stat-card"><div class="stat-label">Matrículas este mes</div><div class="stat-value">{{ d.matriculas_mes }}</div>
+    {% set variacion = d.matriculas_mes - d.matriculas_mes_anterior %}
+    <small class="hint">{{ "%+d"|format(variacion) }} frente al mes anterior ({{ d.matriculas_mes_anterior }})</small>
+  </div>
   <div class="stat-card gold"><div class="stat-label">Ingresos del Mes</div><div class="stat-value" style="color:var(--accent-gold)">{{ d.ingresos_mes|cop }}</div></div>
   <div class="stat-card red"><div class="stat-label">Pagos Pendientes</div><div class="stat-value" style="color:var(--accent-red)">{{ d.pendiente_total|cop }}</div></div>
+</div>
+
+<div class="card-bento">
+  <div class="grupo-titulo"><i class="ri-pie-chart-2-line"></i> Matrículas de este mes por categoría</div>
+  {% if d.por_categoria %}
+  <div class="grid-stats">
+    {% for categoria in d.por_categoria %}
+    <div class="stat-card"><div class="stat-label">{{ categoria.categoria }}</div>
+      <div class="stat-value">{{ categoria.cantidad }}</div></div>
+    {% endfor %}
+  </div>
+  {% else %}<div class="vacio">Aún no hay matrículas este mes.</div>{% endif %}
+</div>
+
+<div class="card-bento">
+  <div class="grupo-titulo"><i class="ri-time-line"></i> Últimas matrículas y avance de pago</div>
+  {% if d.recientes %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Fecha</th><th>Alumno</th><th>Categoría</th><th>Estado</th><th>Pago</th><th>Saldo</th></tr></thead>
+    <tbody>{% for x in d.recientes %}
+      <tr>
+        <td>{{ x.fecha_registro.strftime('%d/%m/%Y') }}</td>
+        <td><strong>{{ x.nombres }} {{ x.apellidos }}</strong></td>
+        <td>{{ x.categoria }}</td>
+        <td><span class="badge-status {{ 'paid' if x.estado == 'Pagado' else 'pending' if x.estado == 'Pendiente Pago' else 'active' }}">{{ x.estado }}</span></td>
+        <td><progress class="payment-progress" max="100" value="{{ x.progreso }}" aria-label="Pagado {{ x.progreso }} por ciento"></progress>
+          <small>{{ x.pagado|cop }} / {{ x.precio_total|cop }}</small></td>
+        <td>{{ x.saldo|cop }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">Todavía no hay matrículas para mostrar.</div>{% endif %}
 </div>
 
 <div class="card-bento">

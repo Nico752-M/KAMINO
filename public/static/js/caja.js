@@ -35,6 +35,22 @@
     if (evento.key === "Escape") modals.forEach(cerrar);
   });
 
+  const denominaciones = [...document.querySelectorAll("[data-denomination]")];
+  const efectivoContado = document.getElementById("montoCierre");
+  const totalDenominaciones = document.getElementById("totalDenominaciones");
+  if (denominaciones.length && efectivoContado && totalDenominaciones) {
+    const calcularEfectivo = () => {
+      const total = denominaciones.reduce((suma, campo) => {
+        const cantidad = Number.parseInt(campo.value, 10) || 0;
+        return suma + cantidad * Number(campo.dataset.denomination);
+      }, 0);
+      efectivoContado.value = window.formatearMiles(total);
+      efectivoContado.dispatchEvent(new Event("input", { bubbles: true }));
+      totalDenominaciones.textContent = "$ " + window.formatearMiles(total);
+    };
+    denominaciones.forEach((campo) => campo.addEventListener("input", calcularEfectivo));
+  }
+
   const form = document.getElementById("movimientoCajaForm");
   if (!form) return;
   const valor = document.getElementById("movimientoValor");

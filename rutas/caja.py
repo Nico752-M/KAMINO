@@ -1,9 +1,10 @@
 """Apertura, cierre y consulta de cajas individuales."""
 from datetime import date, timedelta
+from io import BytesIO
 import re
 
 import oracledb
-from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, session, url_for
 
 import db
 from auth import login_required, permiso_requerido, permisos_actuales, usuario_actual
@@ -37,6 +38,233 @@ def _entero_form(nombre: str, defecto: str = "") -> int | None:
     return entero(valor, -1)
 
 
+def _datos_cierre(caja_id: int) -> dict | None:
+    admin = usuario_actual()["rol"] == "admin"
+    filtro_usuario = "" if admin else " AND c.usuario_id = %s"
+    params = (caja_id,) if admin else (caja_id, session["uid"])
+    caja = db.fetchone(f"""
+        SELECT c.id, c.usuario_id, u.nombre AS cajero, c.fecha_apertura, c.fecha_cierre,
+               c.monto_apertura, c.monto_cierre, c.efectivo_esperado, c.diferencia,
+               c.observaciones_cierre
+        FROM cajas c
+        JOIN usuarios u ON u.id = c.usuario_id
+        WHERE c.id = %s AND c.estado = 'CERRADA'{filtro_usuario}
+    """, params)
+    if not caja:
+        return None
+
+    totales = db.fetchone("""
+        SELECT
+            NVL((SELECT SUM(p.valor) FROM pagos p WHERE p.caja_id = %s
+                 AND p.metodo_pago = 'Efectivo' AND p.anulado = 0
+                 AND p.concepto <> 'Abono histórico previo'), 0) AS pagos_efectivo,
+            NVL((SELECT SUM(p.valor) FROM pagos p WHERE p.caja_id = %s
+                 AND p.metodo_pago <> 'Efectivo' AND p.anulado = 0
+                 AND p.concepto <> 'Abono histórico previo'), 0) AS pagos_otros,
+            NVL((SELECT SUM(i.valor) FROM ingresos_caja i
+                 WHERE i.caja_id = %s AND i.anulado = 0), 0) AS ingresos,
+            NVL((SELECT SUM(s.valor) FROM salidas_caja s
+                 WHERE s.caja_id = %s AND s.anulado = 0), 0) AS salidas
+        FROM dual
+    """, (caja_id, caja_id, caja_id, caja_id))
+    pagos = db.fetchall("""
+        SELECT p.fecha_pago AS momento, p.numero_recibo, p.concepto, m.categoria,
+               TRIM(a.nombres || ' ' || a.apellidos) AS alumno,
+               p.metodo_pago, p.valor, p.anulado, p.motivo_anulacion
+        FROM pagos p
+        LEFT JOIN matriculas m ON m.id = p.id_matricula
+        LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
+        WHERE p.caja_id = %s AND p.concepto <> 'Abono histórico previo'
+        ORDER BY p.fecha_pago, p.numero_recibo
+    """, (caja_id,))
+    ingresos = db.fetchall("""
+        SELECT fecha_ingreso AS momento, numero_recibo, concepto, categoria, valor,
+               anulado, motivo_anulacion
+        FROM ingresos_caja WHERE caja_id = %s
+        ORDER BY fecha_ingreso, numero_recibo
+    """, (caja_id,))
+    salidas = db.fetchall("""
+        SELECT fecha_salida AS momento, numero_recibo, concepto, categoria, valor,
+               anulado, motivo_anulacion
+        FROM salidas_caja WHERE caja_id = %s
+        ORDER BY fecha_salida, numero_recibo
+    """, (caja_id,))
+    return {"caja": caja, "totales": totales, "pagos": pagos,
+            "ingresos": ingresos, "salidas": salidas}
+
+
+@bp.route("/caja/cierres/<int:caja_id>/pdf")
+@login_required
+@permiso_requerido("ver_caja")
+def exportar_cierre_pdf(caja_id: int):
+    datos = _datos_cierre(caja_id)
+    if not datos:
+        abort(404)
+    from xml.sax.saxutils import escape
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    caja, t = datos["caja"], datos["totales"]
+    salida = BytesIO()
+    pdf = SimpleDocTemplate(salida, pagesize=landscape(letter),
+                            leftMargin=12 * mm, rightMargin=12 * mm,
+                            topMargin=12 * mm, bottomMargin=12 * mm)
+    estilos = getSampleStyleSheet()
+    estilos.add(ParagraphStyle(name="TituloCierre", parent=estilos["Title"],
+                               alignment=TA_CENTER, fontSize=16, leading=20))
+    estilos.add(ParagraphStyle(name="Celda", parent=estilos["BodyText"],
+                               fontSize=7, leading=8))
+    story = [
+        Paragraph("CIERRE DE CAJA", estilos["TituloCierre"]),
+        Paragraph(f"Cajero: {escape(str(caja['cajero']))} · "
+                  f"Apertura: {caja['fecha_apertura'].strftime('%d/%m/%Y %H:%M')} · "
+                  f"Cierre: {caja['fecha_cierre'].strftime('%d/%m/%Y %H:%M')}",
+                  estilos["BodyText"]),
+        Spacer(1, 8),
+    ]
+    resumen = [
+        ["Resumen", "Valor"],
+        ["Base inicial", cop(caja["monto_apertura"])],
+        ["Pagos en efectivo", cop(t["pagos_efectivo"])],
+        ["Pagos otros medios", cop(t["pagos_otros"])],
+        ["Ingresos manuales", cop(t["ingresos"])],
+        ["Salidas manuales", cop(t["salidas"])],
+        ["Efectivo esperado", cop(caja["efectivo_esperado"])],
+        ["Efectivo contado", cop(caja["monto_cierre"])],
+        ["Diferencia", cop(caja["diferencia"])],
+    ]
+    story.extend([Table(resumen, hAlign="LEFT", colWidths=[90 * mm, 42 * mm]),
+                  Spacer(1, 10)])
+
+    def tabla_movimientos(titulo, encabezados, registros, filas):
+        story.append(Paragraph(titulo, estilos["Heading2"]))
+        contenido = [encabezados]
+        for fila in registros:
+            contenido.append([Paragraph(escape(str(valor or "—")), estilos["Celda"])
+                              for valor in filas(fila)])
+        if len(contenido) == 1:
+            contenido.append([Paragraph("Sin movimientos", estilos["Celda"])]
+                             + ["" for _ in encabezados[1:]])
+        tabla = Table(contenido, repeatRows=1, hAlign="LEFT")
+        tabla.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#253449")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#ccd2da")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#f3f5f7")]),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.extend([tabla, Spacer(1, 8)])
+
+    fecha = lambda fila: fila["momento"].strftime("%d/%m/%Y %H:%M")
+    estado = lambda fila: "ANULADO" if fila["anulado"] else "Válido"
+    tabla_movimientos(
+        "Pagos", ["Fecha", "Recibo", "Alumno", "Categoría", "Concepto", "Medio", "Valor", "Estado"],
+        datos["pagos"],
+        lambda r: (fecha(r), r["numero_recibo"], r["alumno"], r["categoria"], r["concepto"],
+                   r["metodo_pago"], cop(r["valor"]), estado(r)),
+    )
+    for titulo, registros in (("Ingresos", datos["ingresos"]), ("Salidas", datos["salidas"])):
+        tabla_movimientos(
+            titulo, ["Fecha", "Recibo", "Categoría", "Concepto", "Valor", "Estado", "Motivo de anulación"],
+            registros,
+            lambda r: (fecha(r), r["numero_recibo"], r["categoria"], r["concepto"], cop(r["valor"]),
+                       estado(r), r["motivo_anulacion"]),
+        )
+    if caja["observaciones_cierre"]:
+        story.append(Paragraph("Observaciones: " + escape(caja["observaciones_cierre"]),
+                               estilos["BodyText"]))
+    pdf.build(story)
+    return Response(salida.getvalue(), mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="cierre-{caja_id}.pdf"'})
+
+
+@bp.route("/caja/cierres/<int:caja_id>/excel")
+@login_required
+@permiso_requerido("ver_caja")
+def exportar_cierre_excel(caja_id: int):
+    datos = _datos_cierre(caja_id)
+    if not datos:
+        abort(404)
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    caja, t = datos["caja"], datos["totales"]
+    libro = Workbook()
+    resumen = libro.active
+    resumen.title = "Resumen"
+    resumen.append(["Cierre de caja", ""])
+    resumen.append(["Cajero", caja["cajero"]])
+    resumen.append(["Apertura", caja["fecha_apertura"]])
+    resumen.append(["Cierre", caja["fecha_cierre"]])
+    resumen.append(["Base inicial", caja["monto_apertura"]])
+    resumen.append(["Pagos en efectivo", t["pagos_efectivo"]])
+    resumen.append(["Pagos otros medios", t["pagos_otros"]])
+    resumen.append(["Ingresos manuales", t["ingresos"]])
+    resumen.append(["Salidas manuales", t["salidas"]])
+    resumen.append(["Efectivo esperado", caja["efectivo_esperado"]])
+    resumen.append(["Efectivo contado", caja["monto_cierre"]])
+    resumen.append(["Diferencia", caja["diferencia"]])
+    resumen.append(["Observaciones", caja["observaciones_cierre"] or ""])
+    for hoja in libro.worksheets:
+        hoja.freeze_panes = "A2"
+
+    definiciones = (
+        ("Pagos", ["Fecha", "Recibo", "Alumno", "Categoría", "Concepto", "Medio", "Valor", "Estado", "Motivo"],
+         datos["pagos"],
+         lambda r: (r["momento"], r["numero_recibo"], r["alumno"], r["categoria"], r["concepto"],
+                    r["metodo_pago"], r["valor"], "Anulado" if r["anulado"] else "Válido",
+                    r["motivo_anulacion"])),
+        ("Ingresos", ["Fecha", "Recibo", "Categoría", "Concepto", "Valor", "Estado", "Motivo"],
+         datos["ingresos"],
+         lambda r: (r["momento"], r["numero_recibo"], r["categoria"], r["concepto"], r["valor"],
+                    "Anulado" if r["anulado"] else "Válido", r["motivo_anulacion"])),
+        ("Salidas", ["Fecha", "Recibo", "Categoría", "Concepto", "Valor", "Estado", "Motivo"],
+         datos["salidas"],
+         lambda r: (r["momento"], r["numero_recibo"], r["categoria"], r["concepto"], r["valor"],
+                    "Anulado" if r["anulado"] else "Válido", r["motivo_anulacion"])),
+    )
+    for nombre, encabezados, registros, convertir in definiciones:
+        hoja = libro.create_sheet(nombre)
+        hoja.append(encabezados)
+        for fila in registros:
+            hoja.append(list(convertir(fila)))
+        hoja.freeze_panes = "A2"
+        hoja.auto_filter.ref = hoja.dimensions
+
+    for hoja in libro.worksheets:
+        for fila in hoja.iter_rows():
+            for celda in fila:
+                if isinstance(celda.value, str):
+                    celda.data_type = "s"
+        for celda in hoja[1]:
+            celda.font = Font(bold=True, color="FFFFFF")
+            celda.fill = PatternFill("solid", fgColor="253449")
+            celda.alignment = Alignment(vertical="center")
+        for columna in hoja.columns:
+            letra = columna[0].column_letter
+            ancho = min(max(max(len(str(c.value or "")) for c in columna) + 2, 12), 42)
+            hoja.column_dimensions[letra].width = ancho
+        if hoja.title == "Resumen":
+            hoja.column_dimensions["A"].width = 28
+            hoja.column_dimensions["B"].width = 34
+
+    salida = BytesIO()
+    libro.save(salida)
+    return Response(
+        salida.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="cierre-{caja_id}.xlsx"'},
+    )
+
+
 @bp.route("/caja")
 @login_required
 @permiso_requerido("ver_caja")
@@ -63,6 +291,7 @@ def resumen():
     historial_anterior = pagina_historial > 1
     historial_siguiente = False
     busqueda_recibos = []
+    categorias_caja = []
     totales = {"efectivo": 0.0, "otros": 0.0, "ingresos": 0.0, "salidas": 0.0,
                "apertura": 0.0, "esperado": 0.0, "contado": 0.0, "diferencia": 0.0}
     try:
@@ -82,7 +311,7 @@ def resumen():
             SELECT 'pago' AS tipo, p.numero_recibo AS recibo, p.fecha_pago AS momento,
                    COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
                        || ' — ' || p.concepto AS detalle,
-                   p.metodo_pago AS metodo, p.valor, u.nombre AS cajero,
+                   p.metodo_pago AS metodo, m.categoria, p.valor, u.nombre AS cajero,
                    p.anulado, p.motivo_anulacion
             FROM pagos p
             LEFT JOIN matriculas m ON m.id = p.id_matricula
@@ -92,13 +321,13 @@ def resumen():
               AND p.concepto <> 'Abono histórico previo'{filtro_pago}
             UNION ALL
             SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
-                   'Efectivo', i.valor, u.nombre, i.anulado, i.motivo_anulacion
+                   'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion
             FROM ingresos_caja i
             LEFT JOIN usuarios u ON u.id = i.usuario_id
             WHERE i.fecha_ingreso >= %s AND i.fecha_ingreso < %s{filtro_ingreso}
             UNION ALL
             SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
-                   'Efectivo', s.valor, u.nombre, s.anulado, s.motivo_anulacion
+                   'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion
             FROM salidas_caja s
             LEFT JOIN usuarios u ON u.id = s.usuario_id
             WHERE s.fecha_salida >= %s AND s.fecha_salida < %s{filtro_salida}
@@ -116,6 +345,7 @@ def resumen():
             movs.append({
                 "tipo": tipo, "recibo": movimiento["recibo"], "momento": movimiento["momento"],
                 "detalle": movimiento["detalle"] or "Sin alumno", "metodo": movimiento["metodo"],
+                "categoria": movimiento["categoria"],
                 "valor": -valor if tipo == "salida" else valor,
                 "cajero": movimiento["cajero"] or "—", "anulado": anulado,
                 "motivo_anulacion": movimiento["motivo_anulacion"],
@@ -186,7 +416,7 @@ def resumen():
                     SELECT 'pago' AS tipo, p.numero_recibo AS recibo, p.fecha_pago AS momento,
                            COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
                                || ' — ' || p.concepto AS detalle,
-                           p.metodo_pago AS metodo, p.valor, u.nombre AS cajero,
+                           p.metodo_pago AS metodo, m.categoria, p.valor, u.nombre AS cajero,
                            p.anulado, p.motivo_anulacion
                     FROM pagos p
                     LEFT JOIN matriculas m ON m.id = p.id_matricula
@@ -195,13 +425,13 @@ def resumen():
                     WHERE p.concepto <> 'Abono histórico previo'{filtro_pago_todos}
                     UNION ALL
                     SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
-                           'Efectivo', i.valor, u.nombre, i.anulado, i.motivo_anulacion
+                           'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion
                     FROM ingresos_caja i
                     LEFT JOIN usuarios u ON u.id = i.usuario_id
                     WHERE 1 = 1{filtro_ingreso_todos}
                     UNION ALL
                     SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
-                           'Efectivo', s.valor, u.nombre, s.anulado, s.motivo_anulacion
+                           'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion
                     FROM salidas_caja s
                     LEFT JOIN usuarios u ON u.id = s.usuario_id
                     WHERE 1 = 1{filtro_salida_todos}
@@ -213,6 +443,7 @@ def resumen():
             movs = [{
                 "tipo": fila["tipo"], "recibo": fila["recibo"], "momento": fila["momento"],
                 "detalle": fila["detalle"] or "Sin alumno", "metodo": fila["metodo"],
+                "categoria": fila["categoria"],
                 "valor": -float(fila["valor"]) if fila["tipo"] == "salida" else float(fila["valor"]),
                 "cajero": fila["cajero"] or "—", "anulado": bool(fila["anulado"]),
                 "motivo_anulacion": fila["motivo_anulacion"],
@@ -242,6 +473,14 @@ def resumen():
             error = error or "No se pudo buscar el recibo."
 
     totales["en_caja"] = totales["esperado"]
+    try:
+        categorias_caja = db.fetchall(
+            "SELECT categoria FROM categorias_caja WHERE activo = 1 ORDER BY categoria"
+        )
+    except Exception:
+        current_app.logger.exception("No se pudieron consultar las categorías de caja")
+        error = error or "No se pudieron cargar las categorías de movimientos."
+
     admin_cajeros = []
     if admin:
         try:
@@ -282,7 +521,8 @@ def resumen():
                            busqueda_recibos=busqueda_recibos, recibo_nuevo=recibo_nuevo,
                            historial_modo=historial_modo, pagina_historial=pagina_historial,
                            historial_anterior=historial_anterior,
-                           historial_siguiente=historial_siguiente)
+                           historial_siguiente=historial_siguiente,
+                           categorias_caja=categorias_caja)
 
 
 @bp.route("/caja/abrir", methods=["POST"])
@@ -379,12 +619,16 @@ def registrar_movimiento(tipo):
         return "Tipo de movimiento no válido.", 404
 
     concepto = " ".join(request.form.get("concepto", "").split())
+    categoria = " ".join(request.form.get("categoria", "").upper().split()) or None
     valor = _entero_form("valor")
     if not concepto or len(concepto) > 200:
         flash("El concepto es obligatorio y admite hasta 200 caracteres.", "error")
         return redirect(url_for("caja.resumen"))
     if valor is None or valor <= 0 or valor > 100_000_000:
         flash("El valor debe estar entre $1 y $100.000.000.", "error")
+        return redirect(url_for("caja.resumen"))
+    if categoria and not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
+        flash("La categoría de caja no es válida.", "error")
         return redirect(url_for("caja.resumen"))
 
     tabla, etiqueta = tablas[tipo]
@@ -394,11 +638,17 @@ def registrar_movimiento(tipo):
             if not caja:
                 flash("Abre tu caja antes de registrar un movimiento.", "error")
                 return redirect(url_for("caja.resumen"))
+            if categoria and not cur.execute(
+                "SELECT categoria FROM categorias_caja WHERE categoria = %s AND activo = 1",
+                (categoria,),
+            ).fetchone():
+                flash("Selecciona una categoría activa o deja el campo sin categoría.", "error")
+                return redirect(url_for("caja.resumen"))
             recibo = numero_recibo(cur)
             cur.execute(
-                f"INSERT INTO {tabla} (numero_recibo, concepto, valor, usuario_id, caja_id) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (recibo, concepto, valor, session["uid"], caja["id"]),
+                f"INSERT INTO {tabla} (numero_recibo, concepto, valor, usuario_id, caja_id, categoria) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (recibo, concepto, valor, session["uid"], caja["id"], categoria),
             )
     except Exception:
         current_app.logger.exception("Error registrando %s en caja", tipo)

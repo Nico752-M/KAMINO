@@ -138,6 +138,12 @@ a{color:inherit;text-decoration:none}
 .form-grid{display:grid;gap:1.1rem 1.25rem}
 .form-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .form-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tariff-create-form,.tariff-row-form{display:grid;grid-template-columns:minmax(120px,1fr) minmax(150px,1fr) auto;align-items:end;gap:.8rem;margin:1rem 0}
+.tariff-row-form{grid-template-columns:minmax(120px,180px) auto auto auto;margin:0}
+.tariff-row-form .field{margin:0}
+.tariff-row-form .hint{display:flex;align-items:center;gap:.35rem;white-space:nowrap;margin:0}
+.tariff-table td[colspan="3"]{min-width:400px}
+.payment-progress{display:block;width:min(180px,100%);height:.55rem;accent-color:var(--accent-green)}
 .form-section .field{min-width:0}
 .form-section .field{margin-bottom:0}
 .form-section .input-clean{border-radius:10px;padding:.7rem .85rem}
@@ -199,6 +205,13 @@ a{color:inherit;text-decoration:none}
 .cash-close-expected{display:flex;justify-content:space-between;align-items:center;padding:1rem;margin-bottom:1.25rem;background:var(--bg-app);border:1px solid var(--border-color);border-radius:12px}
 .cash-close-expected span{font-size:.8rem;color:var(--text-muted);font-weight:700}
 .cash-close-expected strong{font-size:1.15rem}
+.cash-denomination-tool{margin-bottom:1rem;border:1px solid var(--border-color);border-radius:12px}
+.cash-denomination-tool>summary{padding:.75rem 1rem;cursor:pointer;font-size:.82rem;font-weight:700;color:var(--text-muted)}
+.cash-denominations{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;padding:0 1rem 1rem}
+.cash-denomination{display:flex;align-items:center;justify-content:space-between;gap:.45rem;padding:.4rem .55rem;border-radius:8px;background:var(--bg-app);font-size:.76rem}
+.cash-denomination input{width:4.5rem;padding:.35rem;border:1px solid var(--border-color);border-radius:6px;background:var(--input-bg);color:var(--text-main);text-align:center}
+.cash-denomination-total{grid-column:1/-1;display:flex;justify-content:space-between;padding:.65rem .2rem 0;font-size:.82rem}
+.cash-denomination-total strong{font-size:.95rem}
 .cash-block-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
 .cash-block-heading h3{font-size:1.05rem}
 .cash-block-heading p{color:var(--text-muted);font-size:.8rem;margin-top:3px}
@@ -262,6 +275,7 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
   .cash-history-filter .input-clean{width:100%;min-width:0}
   .cash-history-toolbar>.cash-receipt-search{width:100%;max-width:none}
   .cash-history-pagination{align-items:flex-start}
+  .cash-denominations{grid-template-columns:repeat(2,minmax(0,1fr))}
   .student-filters .field,.student-filters .student-filter-search{min-width:100%;width:100%}
   .student-pagination{align-items:flex-start;flex-direction:column}
   .matricula-dialog{padding:1rem}
@@ -282,6 +296,8 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
 }
 @media (max-width:460px){
   .form-grid.two,.form-grid.three,.cash-summary{grid-template-columns:1fr}
+  .tariff-create-form,.tariff-row-form{grid-template-columns:1fr}
+  .tariff-table td[colspan="3"]{min-width:280px}
   .section-title{font-size:1.35rem}
   .modal-overlay{padding:.5rem}
   .form-stepper{gap:.3rem}

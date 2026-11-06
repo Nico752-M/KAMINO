@@ -8,12 +8,20 @@ from werkzeug.security import generate_password_hash
 import db
 from auth import login_required, permiso_requerido
 from permisos import PERMISOS, ROLES
+from utils import entero
 
 bp = Blueprint("usuarios", __name__, url_prefix="/admin/usuarios")
 
 
 class DatosInvalidos(Exception):
     pass
+
+
+def _precio_tarifa(valor: str) -> int | None:
+    texto = (valor or "").strip()
+    if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto):
+        return None
+    return entero(texto, -1)
 
 
 def _permisos_enviados() -> set[str]:
@@ -97,8 +105,158 @@ def lista():
         if f["codigo"]:
             usuario["permisos"].add(f["codigo"])
     usuarios = list(usuarios_por_id.values())
+    tarifas = db.fetchall("""
+        SELECT categoria, precio_base, activo, fecha_actualizacion
+        FROM tarifas_categoria
+        ORDER BY categoria
+    """)
+    categorias_caja = db.fetchall("""
+        SELECT categoria, activo, fecha_actualizacion
+        FROM categorias_caja
+        ORDER BY categoria
+    """)
     return render_template("admin_usuarios.html", usuarios=usuarios,
-                           catalogo=PERMISOS, roles=ROLES)
+                           catalogo=PERMISOS, roles=ROLES, tarifas=tarifas,
+                           categorias_caja=categorias_caja)
+
+
+@bp.route("/tarifas", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_usuarios")
+def crear_tarifa():
+    categoria = " ".join(request.form.get("categoria", "").upper().split())
+    precio = _precio_tarifa(request.form.get("precio_base"))
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
+        flash("La categoría es obligatoria y solo admite letras, números, espacios, puntos y guiones.", "error")
+        return redirect(url_for("usuarios.lista"))
+    if precio is None or precio <= 0 or precio > 999_999_999_999:
+        flash("El precio debe estar entre $1 y $999.999.999.999.", "error")
+        return redirect(url_for("usuarios.lista"))
+    try:
+        db.execute(
+            """INSERT INTO tarifas_categoria (categoria, precio_base, activo)
+               VALUES (%s, %s, 1)""",
+            (categoria, precio),
+        )
+    except oracledb.IntegrityError as e:
+        if getattr(e.args[0] if e.args else None, "code", None) == 1:
+            flash("Ya existe esa categoría. Puedes actualizar su precio en la lista.", "error")
+        else:
+            current_app.logger.exception("Error de integridad creando tarifa %s", categoria)
+            flash("No se pudo guardar la tarifa.", "error")
+    except Exception:
+        current_app.logger.exception("Error creando tarifa %s", categoria)
+        flash("No se pudo guardar la tarifa.", "error")
+    else:
+        flash(f"Tarifa de {categoria} creada.", "ok")
+    return redirect(url_for("usuarios.lista"))
+
+
+@bp.route("/tarifas/<path:categoria>", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_usuarios")
+def actualizar_tarifa(categoria: str):
+    categoria_clave = " ".join(categoria.upper().split())
+    accion = request.form.get("accion")
+    if accion == "desactivar":
+        try:
+            afectadas = db.execute(
+                """UPDATE tarifas_categoria SET activo = 0,
+                          fecha_actualizacion = CURRENT_TIMESTAMP
+                   WHERE categoria = %s AND activo = 1""",
+                (categoria_clave,),
+            )
+        except Exception:
+            current_app.logger.exception("Error desactivando tarifa %s", categoria_clave)
+            flash("No se pudo desactivar la categoría.", "error")
+        else:
+            flash("Categoría desactivada." if afectadas else "La categoría ya estaba desactivada.", "ok")
+        return redirect(url_for("usuarios.lista"))
+
+    if accion != "actualizar":
+        flash("La acción sobre la tarifa no es válida.", "error")
+        return redirect(url_for("usuarios.lista"))
+
+    precio = _precio_tarifa(request.form.get("precio_base"))
+    activo = 1 if request.form.get("activo") == "1" else 0
+    if precio is None or precio <= 0 or precio > 999_999_999_999:
+        flash("El precio debe estar entre $1 y $999.999.999.999.", "error")
+        return redirect(url_for("usuarios.lista"))
+    try:
+        afectadas = db.execute(
+            """UPDATE tarifas_categoria SET precio_base = %s, activo = %s,
+                      fecha_actualizacion = CURRENT_TIMESTAMP
+               WHERE categoria = %s""",
+            (precio, activo, categoria_clave),
+        )
+        if not afectadas:
+            flash("La categoría ya no existe.", "error")
+            return redirect(url_for("usuarios.lista"))
+    except Exception:
+        current_app.logger.exception("Error actualizando tarifa %s", categoria_clave)
+        flash("No se pudo actualizar la tarifa.", "error")
+    else:
+        flash(f"Tarifa de {categoria_clave} actualizada.", "ok")
+    return redirect(url_for("usuarios.lista"))
+
+
+@bp.route("/categorias-caja", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_usuarios")
+def crear_categoria_caja():
+    categoria = " ".join(request.form.get("categoria", "").upper().split())
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
+        flash("La categoría es obligatoria y solo admite letras, números, espacios, puntos y guiones.", "error")
+        return redirect(url_for("usuarios.lista"))
+    try:
+        db.execute(
+            "INSERT INTO categorias_caja (categoria, activo) VALUES (%s, 1)",
+            (categoria,),
+        )
+    except oracledb.IntegrityError as e:
+        if getattr(e.args[0] if e.args else None, "code", None) == 1:
+            flash("Ya existe esa categoría de caja.", "error")
+        else:
+            current_app.logger.exception("Error de integridad creando categoría de caja")
+            flash("No se pudo guardar la categoría.", "error")
+    except Exception:
+        current_app.logger.exception("Error creando categoría de caja")
+        flash("No se pudo guardar la categoría.", "error")
+    else:
+        flash(f"Categoría de caja {categoria} creada.", "ok")
+    return redirect(url_for("usuarios.lista"))
+
+
+@bp.route("/categorias-caja/<path:categoria>", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_usuarios")
+def actualizar_categoria_caja(categoria: str):
+    categoria_clave = " ".join(categoria.upper().split())
+    accion = request.form.get("accion")
+    if accion not in ("actualizar", "desactivar"):
+        flash("La acción sobre la categoría no es válida.", "error")
+        return redirect(url_for("usuarios.lista"))
+    activo = 0 if accion == "desactivar" else (
+        1 if request.form.get("activo") == "1" else 0
+    )
+    try:
+        afectadas = db.execute(
+            """UPDATE categorias_caja SET activo = %s,
+                      fecha_actualizacion = CURRENT_TIMESTAMP
+               WHERE categoria = %s""",
+            (activo, categoria_clave),
+        )
+    except Exception:
+        current_app.logger.exception("Error actualizando categoría de caja %s", categoria_clave)
+        flash("No se pudo actualizar la categoría.", "error")
+    else:
+        if not afectadas:
+            flash("La categoría ya no existe.", "error")
+        elif activo:
+            flash(f"Categoría {categoria_clave} activada.", "ok")
+        else:
+            flash(f"Categoría {categoria_clave} desactivada.", "ok")
+    return redirect(url_for("usuarios.lista"))
 
 
 @bp.route("", methods=["POST"])

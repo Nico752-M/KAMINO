@@ -1,9 +1,10 @@
 """Login, sesiones, roles y protección CSRF."""
+import hashlib
 import hmac
 import secrets
-import time
 from functools import wraps
 
+import oracledb
 from flask import (Blueprint, abort, current_app, flash, g, jsonify, redirect,
                    render_template, request, session, url_for)
 from werkzeug.security import check_password_hash
@@ -15,8 +16,7 @@ bp = Blueprint("auth", __name__)
 
 # Freno básico contra adivinar contraseñas (por IP + usuario, en memoria)
 _MAX_INTENTOS = 5
-_VENTANA_SEG = 300
-_intentos: dict[str, list[float]] = {}
+_VENTANA_MIN = 5
 
 
 # ───────────── CSRF ─────────────
@@ -121,10 +121,52 @@ def permiso_requerido(codigo: str):
 
 # ───────────── Rutas ─────────────
 def _bloqueado(clave: str) -> bool:
-    ahora = time.time()
-    recientes = [t for t in _intentos.get(clave, []) if ahora - t < _VENTANA_SEG]
-    _intentos[clave] = recientes
-    return len(recientes) >= _MAX_INTENTOS
+    fila = db.fetchone("""
+        SELECT CASE WHEN bloqueado_hasta > CURRENT_TIMESTAMP THEN 1 ELSE 0 END AS bloqueado
+        FROM login_intentos WHERE clave = %s
+    """, (clave,))
+    return bool(fila and fila["bloqueado"])
+
+
+def _actualizar_intento(cur, clave: str) -> None:
+    ventana_vencida = f"""(inicio_ventana <= CURRENT_TIMESTAMP - INTERVAL '{_VENTANA_MIN}' MINUTE
+        OR (bloqueado_hasta IS NOT NULL AND bloqueado_hasta <= CURRENT_TIMESTAMP))"""
+    cur.execute(f"""
+        UPDATE login_intentos
+        SET intentos = CASE WHEN {ventana_vencida} THEN 1 ELSE intentos + 1 END,
+            inicio_ventana = CASE WHEN {ventana_vencida} THEN CURRENT_TIMESTAMP ELSE inicio_ventana END,
+            bloqueado_hasta = CASE WHEN {ventana_vencida} THEN NULL
+                                   WHEN intentos + 1 >= {_MAX_INTENTOS}
+                                   THEN CURRENT_TIMESTAMP + INTERVAL '{_VENTANA_MIN}' MINUTE
+                                   ELSE bloqueado_hasta END,
+            actualizado_en = CURRENT_TIMESTAMP
+        WHERE clave = %s
+    """, (clave,))
+    if cur.rowcount == 0:
+        cur.execute(
+            """INSERT INTO login_intentos (clave, intentos, inicio_ventana)
+               VALUES (%s, 1, CURRENT_TIMESTAMP)""",
+            (clave,),
+        )
+
+
+def _registrar_fallo(clave: str) -> None:
+    try:
+        with db.transaccion() as cur:
+            cur.execute(
+                "DELETE FROM login_intentos "
+                "WHERE actualizado_en < CURRENT_TIMESTAMP - INTERVAL '1' DAY"
+            )
+            _actualizar_intento(cur, clave)
+    except oracledb.IntegrityError as error:
+        causa = error.args[0] if error.args else None
+        if getattr(causa, "code", None) != 1:
+            raise
+        with db.transaccion() as cur:
+            cur.execute("SELECT clave FROM login_intentos WHERE clave = %s FOR UPDATE", (clave,))
+            if not cur.fetchone():
+                raise
+            _actualizar_intento(cur, clave)
 
 
 def _destino_seguro(destino: str | None) -> str:
@@ -170,11 +212,17 @@ def login():
         session.clear()
 
     if request.method == "POST":
-        usuario = request.form.get("usuario", "").strip().lower()
+        usuario = request.form.get("usuario", "").strip().lower()[:50]
         password = request.form.get("password", "")
-        clave = f"{request.remote_addr}|{usuario}"
+        clave = hashlib.sha256(f"{request.remote_addr}|{usuario}".encode()).hexdigest()
 
-        if _bloqueado(clave):
+        try:
+            bloqueado = _bloqueado(clave)
+        except Exception:
+            current_app.logger.exception("No se pudo consultar el bloqueo de inicio de sesión")
+            flash("No hay conexión con la base de datos. Intenta de nuevo.", "error")
+            return render_template("login.html"), 503
+        if bloqueado:
             flash("Demasiados intentos. Espera unos minutos e intenta de nuevo.", "error")
             return render_template("login.html"), 429
 
@@ -188,7 +236,10 @@ def login():
             return render_template("login.html"), 503
 
         if fila and check_password_hash(fila["password_hash"], password):
-            _intentos.pop(clave, None)
+            try:
+                db.execute("DELETE FROM login_intentos WHERE clave = %s", (clave,))
+            except Exception:
+                current_app.logger.exception("No se pudieron limpiar los intentos del inicio de sesión")
             destino = request.args.get("next")
             session.clear()
             session.permanent = True
@@ -202,7 +253,12 @@ def login():
                 current_app.logger.exception("No se pudo actualizar el último acceso")
             return redirect(_destino_seguro(destino))
 
-        _intentos.setdefault(clave, []).append(time.time())
+        try:
+            _registrar_fallo(clave)
+        except Exception:
+            current_app.logger.exception("No se pudo registrar el intento de inicio de sesión")
+            flash("No se pudo verificar el acceso. Intenta de nuevo.", "error")
+            return render_template("login.html"), 503
         flash("Usuario o contraseña incorrectos.", "error")
 
     return render_template("login.html")

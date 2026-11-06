@@ -6,6 +6,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, session, u
 import db
 from auth import login_required, permiso_requerido
 from rutas.caja import caja_abierta
+from servicios.matriculas import estado_matricula
 from servicios.recibos import (generar_recibo_movimiento_pdf, generar_recibo_pago_pdf,
                                numero_recibo)
 from utils import ahora, cop, entero
@@ -18,15 +19,6 @@ MAX_PAGO = 100_000_000
 
 class PagoInvalido(Exception):
     """Error de negocio: se muestra tal cual al cajero."""
-
-
-def _estado_nuevo(estado_actual: str, precio: int, total_pagado: float) -> str:
-    # Misma regla del sistema de escritorio. Las matrículas históricas no se tocan.
-    if estado_actual == "Histórico":
-        return estado_actual
-    if precio > 0 and total_pagado >= precio:
-        return "Cancelado"
-    return "Pendiente Pago" if total_pagado > 0 else "Activo"
 
 
 @bp.route("/pagos/registrar", methods=["POST"])
@@ -77,15 +69,16 @@ def registrar():
                 raise PagoInvalido("Abre tu caja antes de registrar un pago.")
 
             numero = numero_recibo(cur)
+            cambio = max(recibido - valor, 0) if metodo == "Efectivo" else 0
             cur.execute("""
                 INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago,
-                                   numero_recibo, usuario_id, observaciones, acompanante, caja_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                   numero_recibo, usuario_id, observaciones, acompanante, caja_id, cambio)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (mid, concepto, valor, metodo, numero,
-                  session["uid"], observaciones, acompanante, caja["id"]))
+                  session["uid"], observaciones, acompanante, caja["id"], cambio))
 
             cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
-                        (_estado_nuevo(mat["estado"], precio, pagado + valor), mid))
+                        (estado_matricula(mat["estado"], precio, pagado + valor), mid))
 
     except PagoInvalido as e:
         return jsonify(ok=False, error=str(e)), 400
@@ -93,8 +86,7 @@ def registrar():
         current_app.logger.exception("Error registrando pago")
         return jsonify(ok=False, error="No se pudo guardar el pago. Intenta de nuevo."), 500
 
-    cambio = max(recibido - valor, 0) if metodo == "Efectivo" and recibido else 0
-    url = url_for("pagos.recibo", numero=numero) + (f"?cambio={cambio}" if cambio else "")
+    url = url_for("pagos.recibo", numero=numero)
     return jsonify(ok=True, numero_recibo=numero, saldo=max(saldo - valor, 0),
                    cambio=cambio, recibo_url=url)
 
@@ -108,7 +100,7 @@ def recibo(numero):
 
     copia = request.args.get("copia") == "1"
     fila = db.fetchone("""
-        SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.observaciones,
+        SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.observaciones, p.cambio,
                p.acompanante, p.fecha_pago,
                a.nombres, a.apellidos, a.numero_documento,
                u.nombre AS cajero, p.anulado, p.motivo_anulacion
@@ -160,7 +152,7 @@ def recibo(numero):
             "metodo_pago": fila["metodo_pago"],
             "acompanante": fila["acompanante"] or "",
             "observaciones": fila["observaciones"] or "",
-            "cambio": max(entero(request.args.get("cambio")), 0),
+            "cambio": int(fila["cambio"] or 0),
         })
         pdf = generar_recibo_pago_pdf(detalles)
     else:
