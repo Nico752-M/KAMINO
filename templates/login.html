@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#b48a3d">
   <title>Ingresar — CEA Practicar</title>
-  <link rel="manifest" href="{{ url_for('manifest') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=asset_v) }}">
   <script>(function(){try{var t=localStorage.getItem('tema');if(t==='night'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
@@ -30,6 +30,6 @@
     </div>
     <button class="btn-action red" type="submit" style="width:100%;margin-top:.5rem">Ingresar al sistema</button>
   </form>
-  <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(function(){});</script>
+  <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js",{scope:"/"}).catch(function(){});</script>
 </body>
 </html>

@@ -214,7 +214,8 @@ def crear_matricula():
         "email": request.form.get("responsable_email", "").strip() or None,
         "relacion": request.form.get("responsable_relacion", "").strip(),
     }
-    if any(responsable.values()):
+    responsable_informado = any(responsable.values())
+    if responsable_informado:
         if (responsable["tipo_documento"] not in TIPOS_DOCUMENTO
                 or not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", responsable["numero_documento"])
                 or not responsable["nombres"] or len(responsable["nombres"]) > 100
@@ -288,7 +289,7 @@ def crear_matricula():
                       round((precio_base - precio) * 100 / precio_base, 2)))
                 matricula_id = cur.execute("SELECT id FROM matriculas WHERE anio = %s AND numero_orden = %s",
                                            (anio, orden)).fetchone()["id"]
-                if responsable:
+                if responsable_informado:
                     cur.execute("""
                         INSERT INTO responsables_matricula
                             (id_matricula, tipo_documento, numero_documento, nombres, apellidos,

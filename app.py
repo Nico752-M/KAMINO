@@ -20,7 +20,10 @@ def create_app() -> Flask:
 
     @app.route("/static/<path:filename>", endpoint="static")
     def static_file(filename):
-        return send_from_directory(STATIC_DIR, filename)
+        response = send_from_directory(STATIC_DIR, filename)
+        if filename == "sw.js":
+            response.headers["Service-Worker-Allowed"] = "/"
+        return response
 
     if Config.TRUST_PROXY:  # detrás del proxy de Vercel, Railway, Render o Nginx
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
