@@ -38,8 +38,10 @@ class Config:
     # Colombia (UTC-5, sin horario de verano). El servidor en la nube suele estar en UTC.
     ZONA_HORARIA = "America/Bogota"
     DB_TIMEZONE = "-05:00"
+    CEA_NIT = os.environ.get("CEA_NIT", "").strip()
+    CEA_CIUDAD = os.environ.get("CEA_CIUDAD", "").strip()
 
     TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 
     # Súbelo cuando cambies CSS/JS para forzar recarga en los celulares
-    ASSET_V = "14"
+    ASSET_V = "15"

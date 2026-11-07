@@ -2,6 +2,7 @@
 from datetime import datetime
 from io import BytesIO
 
+from config import Config
 from utils import cop
 
 MM = 72 / 25.4
@@ -137,21 +138,29 @@ def _datos_finales(t: _Ticket, d: dict) -> None:
             t.par("Motivo:", d["motivo_anulacion"])
 
 
+def _datos_escuela(t: _Ticket) -> None:
+    t.texto("PRACTICAR", F_TITULO, "C", ROJO)
+    t.texto("Centro de Enseñanza Automovilística", F_PEQUE, "C", GRIS)
+    ubicacion = " · ".join(valor for valor in (
+        Config.CEA_CIUDAD, f"NIT: {Config.CEA_NIT}" if Config.CEA_NIT else ""
+    ) if valor)
+    if ubicacion:
+        t.texto(ubicacion, F_PEQUE, "C", GRIS)
+
+
 def generar_recibo_pago_pdf(d: dict) -> bytes:
     """d: numero_recibo, alumno_nombre, alumno_doc, concepto, valor, metodo_pago,
     cajero, acompanante, observaciones, cambio, fecha (datetime)."""
     t = _Ticket()
     t.espacio(3)
-    t.texto("PRACTICAR", F_TITULO, "C", ROJO)
-    t.texto("Centro de Enseñanza Automovilística", F_PEQUE, "C", GRIS)
-    t.texto("Cali, Colombia  ·  NIT: 66708630", F_PEQUE, "C", GRIS)
+    _datos_escuela(t)
     t.espacio(2); t.linea(0.8); t.espacio(2)
 
     t.texto("RECIBO DE PAGO", F_SUBTIT, "C")
     t.espacio(2); t.linea(0.3); t.espacio(1.5)
     t.texto("DATOS DEL ALUMNO", F_ETIQ, "L", GRIS); t.espacio(1)
     t.par("Nombre:", d["alumno_nombre"])
-    t.par("C.C.:", d["alumno_doc"])
+    t.par(f"Documento ({d['alumno_tipo_documento']}):", d["alumno_doc"])
     if (d.get("acompanante") or "").strip():
         t.par("Acompañante:", d["acompanante"].strip())
 
@@ -182,9 +191,7 @@ def generar_recibo_movimiento_pdf(d: dict) -> bytes:
     """Genera comprobantes de ingresos y egresos de caja."""
     t = _Ticket()
     t.espacio(3)
-    t.texto("PRACTICAR", F_TITULO, "C", ROJO)
-    t.texto("Centro de Enseñanza Automovilística", F_PEQUE, "C", GRIS)
-    t.texto("Cali, Colombia  ·  NIT: 66708630", F_PEQUE, "C", GRIS)
+    _datos_escuela(t)
     t.espacio(2); t.linea(0.8); t.espacio(2)
     t.texto("COMPROBANTE DE INGRESO" if d["tipo"] == "INGRESO"
             else "COMPROBANTE DE EGRESO", F_SUBTIT, "C")

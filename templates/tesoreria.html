@@ -26,6 +26,13 @@
 </div>
 {% endif %}
 
+<div class="tabs-scope cash-tabs">
+  <div class="internal-tabs" role="tablist" aria-label="Secciones de caja">
+    <button type="button" class="active" data-tab="caja-turno">Mi turno</button>
+    <button type="button" data-tab="caja-cierres">Cierres</button>
+    <button type="button" data-tab="caja-historial">Historial</button>
+  </div>
+  <div id="caja-turno" class="subtab-content active">
 {% if puede_cobrar %}
   {% if caja_actual %}
   <section class="cash-session-card">
@@ -63,6 +70,25 @@
   {% endif %}
 {% endif %}
 
+<details class="cash-details">
+  <summary><i class="ri-time-line"></i> Movimientos de hoy ({{ movimientos_hoy|length }})</summary>
+  <div class="cash-details-content">
+    {% if movimientos_hoy %}
+    <div class="table-wrap"><table class="table-clean">
+      <thead><tr><th>Hora</th><th>Tipo</th><th>Detalle</th><th>Valor</th></tr></thead>
+      <tbody>{% for m in movimientos_hoy %}
+      <tr><td>{{ m.momento.strftime('%H:%M') }}</td>
+        <td>{{ 'Salida' if m.tipo == 'salida' else 'Ingreso' if m.tipo == 'ingreso' else 'Pago' }}</td>
+        <td>{{ m.detalle }}<br><small>{{ m.recibo }}</small></td>
+        <td>{{ m.valor|cop }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="hint">Aún no hay movimientos registrados hoy.</p>{% endif %}
+  </div>
+</details>
+
+  </div>
+  <div id="caja-cierres" class="subtab-content">
 {% if admin %}
 <div class="grid-stats cash-admin-stats">
   <div class="stat-card green"><div class="stat-label">Efectivo recibido</div><div class="stat-value">{{ t.efectivo|cop }}</div></div>
@@ -137,6 +163,8 @@
   </div>
 </details>
 
+  </div>
+  <div id="caja-historial" class="subtab-content">
 <section class="card-bento cash-history">
   <div class="cash-block-heading">
     <div><h3>Historial de caja</h3><p>Consulta movimientos y reimprime sus recibos.</p></div>
@@ -210,6 +238,21 @@
   </table></div>
   {% else %}<div class="vacio">No hay movimientos para esta consulta.</div>{% endif %}
 
+  <details class="cash-details">
+    <summary><i class="ri-pie-chart-line"></i> Resumen por categoría</summary>
+    <div class="cash-details-content">
+      {% if reporte_categorias %}
+      <div class="table-wrap"><table class="table-clean">
+        <thead><tr><th>Categoría</th><th>Ingresos</th><th>Salidas</th><th>Neto</th></tr></thead>
+        <tbody>{% for fila in reporte_categorias %}
+        <tr><td>{{ fila.categoria }}</td><td>{{ fila.ingresos|cop }}</td>
+          <td>{{ fila.salidas|cop }}</td><td><strong>{{ (fila.ingresos - fila.salidas)|cop }}</strong></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="hint">No hay movimientos con categoría para esta consulta.</p>{% endif %}
+    </div>
+  </details>
+
   {% if historial_modo == 'todos' and (historial_anterior or historial_siguiente) %}
   <nav class="cash-history-pagination" aria-label="Páginas del historial">
     {% if historial_anterior %}<a class="btn-action sm" href="{{ url_for('caja.resumen', fecha=dia.isoformat(), cajero=cajero_filtro, historial='todos', pagina=pagina_historial-1) }}"><i class="ri-arrow-left-line"></i> Anterior</a>{% else %}<span></span>{% endif %}
@@ -218,6 +261,8 @@
   </nav>
   {% endif %}
 </section>
+  </div>
+</div>
 
 {% if puede_cobrar and caja_actual %}
 <div class="modal-overlay cash-modal-overlay" id="cierreCajaModal" aria-hidden="true">
@@ -237,7 +282,8 @@
           <label class="cash-denomination">
             <span>{{ denominacion|cop }}</span>
             <input type="number" min="0" step="1" value="0" inputmode="numeric"
-                   data-denomination="{{ denominacion }}" aria-label="Cantidad de {{ denominacion|cop }}">
+                   name="denominacion_{{ denominacion }}" data-denomination="{{ denominacion }}"
+                   aria-label="Cantidad de {{ denominacion|cop }}">
           </label>
           {% endfor %}
           <div class="cash-denomination-total">

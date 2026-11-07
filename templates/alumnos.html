@@ -144,7 +144,8 @@
                         data-tariff-select required {{ 'disabled' if not tarifas }}>
                   <option value="">Selecciona</option>
                   {% for tarifa in tarifas %}
-                  <option value="{{ tarifa.categoria }}" data-price="{{ tarifa.precio_base }}">{{ tarifa.categoria }}</option>
+                  <option value="{{ tarifa.categoria }}" data-price="{{ tarifa.precio_base }}"
+                          data-tariff-type="{{ tarifa.tipo }}">{{ tarifa.categoria }}</option>
                   {% endfor %}
                 </select>
                 {% if not tarifas %}

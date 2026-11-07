@@ -4,7 +4,7 @@ import re
 from flask import Blueprint, Response, current_app, jsonify, request, session, url_for
 
 import db
-from auth import login_required, permiso_requerido
+from auth import login_required, permiso_requerido, permisos_actuales
 from rutas.caja import caja_abierta
 from servicios.matriculas import estado_matricula
 from servicios.recibos import (generar_recibo_movimiento_pdf, generar_recibo_pago_pdf,
@@ -98,39 +98,71 @@ def recibo(numero):
     if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
         return Response("Recibo no válido", status=404)
 
-    copia = request.args.get("copia") == "1"
-    fila = db.fetchone("""
-        SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.observaciones, p.cambio,
-               p.acompanante, p.fecha_pago,
-               a.nombres, a.apellidos, a.numero_documento,
-               u.nombre AS cajero, p.anulado, p.motivo_anulacion
-        FROM pagos p
-        JOIN matriculas m ON m.id = p.id_matricula
-        JOIN alumnos a ON a.numero_documento = m.numero_documento
-        LEFT JOIN usuarios u ON u.id = p.usuario_id
-        WHERE p.numero_recibo = %s
-    """, (numero,))
-    tipo = "PAGO"
-    if not fila:
-        fila = db.fetchone("""
-            SELECT i.numero_recibo, i.concepto, i.valor, i.fecha_ingreso AS fecha,
-                   i.usuario_id, i.anulado, i.motivo_anulacion, u.nombre AS cajero
-            FROM ingresos_caja i
-            LEFT JOIN usuarios u ON u.id = i.usuario_id
-            WHERE i.numero_recibo = %s
-        """, (numero,))
-        tipo = "INGRESO"
-    if not fila:
-        fila = db.fetchone("""
-            SELECT s.numero_recibo, s.concepto, s.valor, s.fecha_salida AS fecha,
-                   s.usuario_id, s.anulado, s.motivo_anulacion, u.nombre AS cajero
-            FROM salidas_caja s
-            LEFT JOIN usuarios u ON u.id = s.usuario_id
-            WHERE s.numero_recibo = %s
-        """, (numero,))
-        tipo = "EGRESO"
-    if not fila:
-        return Response("Recibo no encontrado", status=404)
+    ver_todas = "ver_todas_cajas" in permisos_actuales()
+    solicitud_copia = request.args.get("copia") == "1"
+    fila = None
+    tipo = None
+    tabla_movimiento = None
+    with db.transaccion() as cur:
+        for tabla, clase in (
+            ("pagos", "PAGO"),
+            ("ingresos_caja", "INGRESO"),
+            ("salidas_caja", "EGRESO"),
+        ):
+            filtro_usuario = "" if ver_todas else " AND usuario_id = %s"
+            parametros = (numero,) if ver_todas else (numero, session["uid"])
+            movimiento = cur.execute(
+                f"SELECT usuario_id, fecha_impresion_original FROM {tabla} "
+                f"WHERE numero_recibo = %s{filtro_usuario} FOR UPDATE",
+                parametros,
+            ).fetchone()
+            if not movimiento:
+                continue
+            tipo, tabla_movimiento = clase, tabla
+            if clase == "PAGO":
+                fila = cur.execute("""
+                    SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago,
+                           p.observaciones, p.cambio, p.acompanante, p.fecha_pago,
+                           a.nombres, a.apellidos, a.tipo_documento, a.numero_documento,
+                           u.nombre AS cajero, p.anulado, p.motivo_anulacion
+                    FROM pagos p
+                    JOIN matriculas m ON m.id = p.id_matricula
+                    JOIN alumnos a ON a.numero_documento = m.numero_documento
+                    LEFT JOIN usuarios u ON u.id = p.usuario_id
+                    WHERE p.numero_recibo = %s
+                """, (numero,)).fetchone()
+            else:
+                fecha_col = "fecha_ingreso" if clase == "INGRESO" else "fecha_salida"
+                fila = cur.execute(
+                    f"SELECT numero_recibo, concepto, valor, {fecha_col} AS fecha, "
+                    f"anulado, motivo_anulacion, usuario_id FROM {tabla} "
+                    "WHERE numero_recibo = %s",
+                    (numero,),
+                ).fetchone()
+                if fila:
+                    cajero = cur.execute(
+                        "SELECT nombre FROM usuarios WHERE id = %s",
+                        (fila["usuario_id"],),
+                    ).fetchone()
+                    fila["cajero"] = cajero["nombre"] if cajero else None
+            break
+        if not fila or not tipo or not tabla_movimiento:
+            return Response("Recibo no encontrado", status=404)
+
+        copia = solicitud_copia or movimiento["fecha_impresion_original"] is not None
+        if movimiento["fecha_impresion_original"] is None:
+            cur.execute(
+                f"UPDATE {tabla_movimiento} "
+                "SET impreso_original_por = %s, fecha_impresion_original = CURRENT_TIMESTAMP "
+                "WHERE numero_recibo = %s AND fecha_impresion_original IS NULL",
+                (session["uid"], numero),
+            )
+        if copia:
+            cur.execute(
+                "INSERT INTO reimpresiones_recibos (tipo, numero_recibo, usuario_id) "
+                "VALUES (%s, %s, %s)",
+                (tipo, numero, session["uid"]),
+            )
 
     fecha_reimpresion = ahora() if copia else None
     detalles = {
@@ -149,6 +181,7 @@ def recibo(numero):
         detalles.update({
             "alumno_nombre": f"{fila['nombres']} {fila['apellidos']}",
             "alumno_doc": fila["numero_documento"],
+            "alumno_tipo_documento": fila["tipo_documento"],
             "metodo_pago": fila["metodo_pago"],
             "acompanante": fila["acompanante"] or "",
             "observaciones": fila["observaciones"] or "",
@@ -158,11 +191,5 @@ def recibo(numero):
     else:
         detalles["tipo"] = tipo
         pdf = generar_recibo_movimiento_pdf(detalles)
-    if copia:
-        db.execute(
-            "INSERT INTO reimpresiones_recibos (tipo, numero_recibo, usuario_id) "
-            "VALUES (%s, %s, %s)",
-            (tipo, numero, session["uid"]),
-        )
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{numero}.pdf"'})

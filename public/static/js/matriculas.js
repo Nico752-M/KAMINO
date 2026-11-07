@@ -6,6 +6,7 @@
 
   const precioBase = document.getElementById("precioBase");
   const categoria = document.getElementById("matriculaCategoria");
+  const tipoMatricula = document.getElementById("tipoMatricula");
   const documento = document.getElementById("matriculaDocumento");
   const lookupMessage = document.getElementById("matriculaLookupMessage");
   const descuentoPesos = document.getElementById("descuentoPesos");
@@ -58,11 +59,22 @@
     precioTotal.value = base ? window.formatearMiles(Math.max(base - descuento, 0)) : "";
   }
 
+  function filtrarTarifas() {
+    const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
+    [...categoria.options].forEach((opcion) => {
+      if (opcion.value) opcion.hidden = opcion.dataset.tariffType !== tipo;
+    });
+    if (categoria.selectedOptions[0]?.dataset.tariffType !== tipo) categoria.value = "";
+    precioBase.value = "";
+    calcularTotal();
+  }
   categoria.addEventListener("change", () => {
     const precio = categoria.selectedOptions[0]?.dataset.price;
     precioBase.value = precio ? window.formatearMiles(precio) : "";
     calcularTotal();
   });
+  tipoMatricula.addEventListener("change", filtrarTarifas);
+  filtrarTarifas();
 
   const camposAlumno = {
     tipo_documento: document.getElementById("matriculaTipoDocumento"),
@@ -140,6 +152,7 @@
     descuentoPesos.value = "";
     descuentoPorcentaje.value = "";
     form.querySelectorAll("[data-money-input]").forEach(window.formatearCampoMoneda);
+    filtrarTarifas();
     mostrarPaso(0);
     modal.classList.add("open");
     document.getElementById("matriculaDocumento").focus();

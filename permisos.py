@@ -8,8 +8,10 @@ PERMISOS = {
     "eliminar_alumnos": "Anular o archivar matrículas",
     "ver_historial_pagos": "Ver historial de pagos por alumno",
     "registrar_pagos": "Registrar pagos",
+    "anular_pagos": "Anular pagos",
     "ver_recibos": "Ver e imprimir recibos",
     "ver_caja": "Ver caja y tesorería",
+    "ver_todas_cajas": "Ver todas las cajas",
     "gestionar_caja": "Registrar ingresos y salidas manuales",
     "ver_tramites": "Ver trámites y pendientes RUNT",
     "marcar_runt": "Marcar registros RUNT",
@@ -17,6 +19,19 @@ PERMISOS = {
 }
 
 ROLES = ("admin", "cajera", "secretaria", "contadora")
+
+GRUPOS_PERMISOS = {
+    "Alumnos": (
+        "ver_alumnos", "crear_matricula", "editar_alumnos",
+        "eliminar_alumnos", "ver_historial_pagos",
+    ),
+    "Caja": (
+        "ver_caja", "registrar_pagos", "anular_pagos",
+        "ver_recibos", "gestionar_caja", "ver_todas_cajas",
+    ),
+    "Trámites": ("ver_tramites", "marcar_runt"),
+    "Administración": ("ver_dashboard", "gestionar_usuarios"),
+}
 
 _PANTALLAS = {
     "ver_dashboard",

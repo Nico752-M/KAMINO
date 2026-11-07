@@ -1,5 +1,6 @@
 """Helpers pequeños compartidos."""
 from datetime import date, datetime
+import re
 from zoneinfo import ZoneInfo
 
 from config import Config
@@ -40,6 +41,15 @@ def entero(valor, defecto: int = 0) -> int:
         return int(float(valor))
     except (TypeError, ValueError):
         return defecto
+
+
+def parsear_pesos(valor: str | int | None) -> int | None:
+    """Convierte pesos enteros (dígitos o grupos con puntos) sin aceptar decimales."""
+    texto = str("" if valor is None else valor).strip()
+    if (not texto.isascii()
+            or not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto)):
+        return None
+    return int(texto.replace(".", ""))
 
 
 def a_fecha(valor) -> date | None:

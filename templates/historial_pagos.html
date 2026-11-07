@@ -33,7 +33,7 @@
           <a class="btn-action sm" target="_blank" rel="noopener"
              href="{{ url_for('pagos.recibo', numero=pago.numero_recibo, copia=1) }}"><i class="ri-printer-line"></i> Reimprimir</a>
           {% endif %}
-          {% if 'registrar_pagos' in permisos and not pago.anulado %}
+          {% if 'anular_pagos' in permisos and not pago.anulado %}
           <form method="post" action="{{ url_for('alumnos.anular_pago', numero=pago.numero_recibo) }}"
                 data-reason-confirm
                 data-reason-prompt="Escribe el motivo obligatorio para anular este pago."

@@ -1,6 +1,7 @@
 """Apertura, cierre y consulta de cajas individuales."""
 from datetime import date, timedelta
 from io import BytesIO
+import json
 import re
 
 import oracledb
@@ -9,7 +10,7 @@ from flask import Blueprint, Response, abort, current_app, flash, redirect, rend
 import db
 from auth import login_required, permiso_requerido, permisos_actuales, usuario_actual
 from servicios.recibos import numero_recibo
-from utils import cop, entero, hoy
+from utils import cop, hoy, parsear_pesos
 
 bp = Blueprint("caja", __name__)
 MAX_CAJA = 999_999_999_999
@@ -32,20 +33,19 @@ def caja_abierta(cur, usuario_id):
 
 
 def _entero_form(nombre: str, defecto: str = "") -> int | None:
-    valor = request.form.get(nombre, defecto).strip()
-    if not valor.isascii() or not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", valor):
-        return None
-    return entero(valor, -1)
+    valor = request.form.get(nombre, defecto)
+    return parsear_pesos(valor)
 
 
 def _datos_cierre(caja_id: int) -> dict | None:
-    admin = usuario_actual()["rol"] == "admin"
-    filtro_usuario = "" if admin else " AND c.usuario_id = %s"
-    params = (caja_id,) if admin else (caja_id, session["uid"])
+    ver_todas = "ver_todas_cajas" in permisos_actuales()
+    filtro_usuario = "" if ver_todas else " AND c.usuario_id = %s"
+    params = (caja_id,) if ver_todas else (caja_id, session["uid"])
     caja = db.fetchone(f"""
         SELECT c.id, c.usuario_id, u.nombre AS cajero, c.fecha_apertura, c.fecha_cierre,
                c.monto_apertura, c.monto_cierre, c.efectivo_esperado, c.diferencia,
-               c.observaciones_cierre
+               c.observaciones_cierre,
+               DBMS_LOB.SUBSTR(c.conteo_denominaciones, 4000, 1) AS conteo_denominaciones
         FROM cajas c
         JOIN usuarios u ON u.id = c.usuario_id
         WHERE c.id = %s AND c.estado = 'CERRADA'{filtro_usuario}
@@ -140,6 +140,19 @@ def exportar_cierre_pdf(caja_id: int):
     ]
     story.extend([Table(resumen, hAlign="LEFT", colWidths=[90 * mm, 42 * mm]),
                   Spacer(1, 10)])
+    conteo = json.loads(caja["conteo_denominaciones"] or "{}")
+    if conteo:
+        story.append(Paragraph("Conteo de billetes y monedas", estilos["Heading2"]))
+        story.append(Table(
+            [["Denominación", "Cantidad", "Subtotal"]] + [
+                [cop(int(denominacion)), cantidad,
+                 cop(int(denominacion) * int(cantidad))]
+                for denominacion, cantidad in sorted(
+                    conteo.items(), key=lambda item: int(item[0]), reverse=True)
+            ],
+            hAlign="LEFT", colWidths=[45 * mm, 30 * mm, 45 * mm],
+        ))
+        story.append(Spacer(1, 10))
 
     def tabla_movimientos(titulo, encabezados, registros, filas):
         story.append(Paragraph(titulo, estilos["Heading2"]))
@@ -213,6 +226,15 @@ def exportar_cierre_excel(caja_id: int):
     resumen.append(["Efectivo contado", caja["monto_cierre"]])
     resumen.append(["Diferencia", caja["diferencia"]])
     resumen.append(["Observaciones", caja["observaciones_cierre"] or ""])
+    conteo = json.loads(caja["conteo_denominaciones"] or "{}")
+    if conteo:
+        conteo_hoja = libro.create_sheet("Conteo")
+        conteo_hoja.append(["Denominación", "Cantidad", "Subtotal"])
+        for denominacion, cantidad in sorted(
+                conteo.items(), key=lambda item: int(item[0]), reverse=True):
+            conteo_hoja.append(
+                [int(denominacion), int(cantidad), int(denominacion) * int(cantidad)])
+        conteo_hoja.freeze_panes = "A2"
     for hoja in libro.worksheets:
         hoja.freeze_panes = "A2"
 
@@ -272,7 +294,7 @@ def resumen():
     dia = _fecha_param()
     sig = dia + timedelta(days=1)
     uid = session["uid"]
-    admin = usuario_actual()["rol"] == "admin"
+    admin = "ver_todas_cajas" in permisos_actuales()
     cajero_filtro = request.args.get("cajero", "").strip()
     if not admin or not cajero_filtro.isdecimal():
         cajero_filtro = ""
@@ -398,6 +420,7 @@ def resumen():
         error = "No se pudo consultar la caja del día."
         current_app.logger.exception("No se pudo consultar la caja del día")
 
+    movimientos_hoy = list(movs)
     if historial_modo == "todos":
         try:
             filtro_pago_todos = " AND p.usuario_id = %s" if filtro_usuario is not None else ""
@@ -472,6 +495,53 @@ def resumen():
             current_app.logger.exception("No se pudo buscar el recibo")
             error = error or "No se pudo buscar el recibo."
 
+    reporte_categorias = []
+    try:
+        filtro_fecha_pago = filtro_fecha_ingreso = filtro_fecha_salida = ""
+        parametros_categoria = []
+        if historial_modo != "todos":
+            filtro_fecha_pago = " AND p.fecha_pago >= %s AND p.fecha_pago < %s"
+            filtro_fecha_ingreso = " AND i.fecha_ingreso >= %s AND i.fecha_ingreso < %s"
+            filtro_fecha_salida = " AND s.fecha_salida >= %s AND s.fecha_salida < %s"
+        filtro_usuario_pago = " AND p.usuario_id = %s" if filtro_usuario is not None else ""
+        filtro_usuario_ingreso = " AND i.usuario_id = %s" if filtro_usuario is not None else ""
+        filtro_usuario_salida = " AND s.usuario_id = %s" if filtro_usuario is not None else ""
+        if historial_modo != "todos":
+            parametros_categoria.extend((dia, sig))
+        if filtro_usuario is not None:
+            parametros_categoria.append(filtro_usuario)
+        if historial_modo != "todos":
+            parametros_categoria.extend((dia, sig))
+        if filtro_usuario is not None:
+            parametros_categoria.append(filtro_usuario)
+        if historial_modo != "todos":
+            parametros_categoria.extend((dia, sig))
+        if filtro_usuario is not None:
+            parametros_categoria.append(filtro_usuario)
+        reporte_categorias = db.fetchall(f"""
+            SELECT categoria, SUM(ingresos) AS ingresos, SUM(salidas) AS salidas
+            FROM (
+                SELECT COALESCE(m.categoria, 'SIN CATEGORÍA') AS categoria,
+                       p.valor AS ingresos, 0 AS salidas
+                FROM pagos p
+                LEFT JOIN matriculas m ON m.id = p.id_matricula
+                WHERE p.anulado = 0 AND p.concepto <> 'Abono histórico previo'
+                    {filtro_fecha_pago}{filtro_usuario_pago}
+                UNION ALL
+                SELECT COALESCE(i.categoria, 'SIN CATEGORÍA'), i.valor, 0
+                FROM ingresos_caja i
+                WHERE i.anulado = 0{filtro_fecha_ingreso}{filtro_usuario_ingreso}
+                UNION ALL
+                SELECT COALESCE(s.categoria, 'SIN CATEGORÍA'), 0, s.valor
+                FROM salidas_caja s
+                WHERE s.anulado = 0{filtro_fecha_salida}{filtro_usuario_salida}
+            )
+            GROUP BY categoria ORDER BY categoria
+        """, tuple(parametros_categoria))
+    except Exception:
+        current_app.logger.exception("No se pudo consultar el reporte por categoría de caja")
+        error = error or "No se pudo cargar el reporte por categoría."
+
     totales["en_caja"] = totales["esperado"]
     try:
         categorias_caja = db.fetchall(
@@ -516,13 +586,15 @@ def resumen():
 
     return render_template("tesoreria.html", dia=dia, movs=movs, cajas=cajas,
                            t=totales, error=error, admin=admin, cajeros=admin_cajeros,
+                           movimientos_hoy=movimientos_hoy,
                            cajero_filtro=cajero_filtro, caja_actual=caja_actual,
                            puede_cobrar=puede_cobrar, recibo_q=recibo_q,
                            busqueda_recibos=busqueda_recibos, recibo_nuevo=recibo_nuevo,
                            historial_modo=historial_modo, pagina_historial=pagina_historial,
                            historial_anterior=historial_anterior,
                            historial_siguiente=historial_siguiente,
-                           categorias_caja=categorias_caja)
+                           categorias_caja=categorias_caja,
+                           reporte_categorias=reporte_categorias)
 
 
 @bp.route("/caja/abrir", methods=["POST"])
@@ -568,6 +640,22 @@ def cerrar():
     if observaciones and len(observaciones) > 1000:
         flash("Las observaciones admiten hasta 1.000 caracteres.", "error")
         return redirect(url_for("caja.resumen"))
+    denominaciones = (100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50)
+    conteo = {}
+    for denominacion in denominaciones:
+        cantidad_texto = request.form.get(f"denominacion_{denominacion}", "0").strip()
+        if not cantidad_texto.isascii() or not cantidad_texto.isdecimal():
+            flash("El conteo de billetes y monedas debe contener cantidades enteras no negativas.", "error")
+            return redirect(url_for("caja.resumen"))
+        cantidad = int(cantidad_texto)
+        if cantidad > MAX_CAJA // denominacion:
+            flash("La cantidad ingresada para una denominación es demasiado alta.", "error")
+            return redirect(url_for("caja.resumen"))
+        if cantidad:
+            conteo[str(denominacion)] = cantidad
+    if conteo and sum(int(d) * n for d, n in conteo.items()) != monto:
+        flash("El total del conteo de denominaciones debe coincidir con el efectivo contado.", "error")
+        return redirect(url_for("caja.resumen"))
 
     try:
         with db.transaccion() as cur:
@@ -597,9 +685,10 @@ def cerrar():
                 UPDATE cajas
                 SET estado = 'CERRADA', fecha_cierre = CURRENT_TIMESTAMP,
                     monto_cierre = %s, efectivo_esperado = %s, diferencia = %s,
-                    observaciones_cierre = %s
+                    observaciones_cierre = %s, conteo_denominaciones = %s
                 WHERE id = %s AND usuario_id = %s AND estado = 'ABIERTA'
-            """, (monto, esperado, diferencia, observaciones, caja["id"], session["uid"]))
+            """, (monto, esperado, diferencia, observaciones,
+                  json.dumps(conteo) if conteo else None, caja["id"], session["uid"]))
     except Exception:
         current_app.logger.exception("Error cerrando caja")
         flash("No se pudo cerrar la caja. Intenta de nuevo.", "error")

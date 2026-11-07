@@ -133,7 +133,8 @@ def _actualizar_intento(cur, clave: str) -> None:
         OR (bloqueado_hasta IS NOT NULL AND bloqueado_hasta <= CURRENT_TIMESTAMP))"""
     cur.execute(f"""
         UPDATE login_intentos
-        SET intentos = CASE WHEN {ventana_vencida} THEN 1 ELSE intentos + 1 END,
+        SET intentos = CASE WHEN {ventana_vencida} THEN 1
+                            ELSE LEAST(intentos + 1, {_MAX_INTENTOS}) END,
             inicio_ventana = CASE WHEN {ventana_vencida} THEN CURRENT_TIMESTAMP ELSE inicio_ventana END,
             bloqueado_hasta = CASE WHEN {ventana_vencida} THEN NULL
                                    WHEN intentos + 1 >= {_MAX_INTENTOS}
@@ -174,6 +175,9 @@ def _destino_seguro(destino: str | None) -> str:
     if (destino and destino.startswith("/") and not destino.startswith("//")
             and "\\" not in destino):
         path = destino.split("?", 1)[0]
+        if (path == "/" and "registrar_pagos" in permisos_actuales()
+                and "ver_caja" in permisos_actuales()):
+            return url_for("caja.resumen")
         permisos_por_ruta = {
             "/": "ver_dashboard",
             "/alumnos": "ver_alumnos",
@@ -191,9 +195,9 @@ def _destino_seguro(destino: str | None) -> str:
 def _primer_destino_permitido() -> str:
     permisos = permisos_actuales()
     destinos = (
+        ("ver_caja", "caja.resumen"),
         ("ver_dashboard", "dashboard.index"),
         ("ver_alumnos", "alumnos.lista"),
-        ("ver_caja", "caja.resumen"),
         ("ver_tramites", "tramites.lista"),
         ("gestionar_usuarios", "usuarios.lista"),
     )

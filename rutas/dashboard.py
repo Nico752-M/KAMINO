@@ -31,7 +31,7 @@ def index():
         r = db.fetchone("""
             SELECT
                 (SELECT COUNT(*) FROM matriculas
-                 WHERE archivado = 0 AND estado NOT IN ('Cancelado', 'Histórico')) AS activos,
+                 WHERE archivado = 0 AND estado <> 'Histórico') AS activos,
                 (SELECT COUNT(*) FROM matriculas
                  WHERE archivado = 0 AND fecha_registro >= %s AND fecha_registro < %s) AS matriculas_mes,
                 (SELECT COUNT(*) FROM matriculas
@@ -42,7 +42,7 @@ def index():
                     SELECT COALESCE(m.precio_total, 0) - COALESCE(SUM(p.valor), 0) AS saldo
                     FROM matriculas m
                     LEFT JOIN pagos p ON p.id_matricula = m.id AND p.anulado = 0
-                    WHERE m.archivado = 0 AND m.estado NOT IN ('Cancelado', 'Histórico')
+                    WHERE m.archivado = 0 AND m.estado <> 'Histórico'
                     GROUP BY m.id, m.precio_total
                     HAVING COALESCE(m.precio_total, 0) > COALESCE(SUM(p.valor), 0)
                 )) AS pendiente_total

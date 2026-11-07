@@ -1,6 +1,5 @@
 import json
 import re
-import time
 import unicodedata
 from datetime import date, timedelta
 
@@ -11,7 +10,8 @@ import db
 from auth import login_required, permiso_requerido, permisos_actuales
 from servicios.matriculas import estado_matricula
 from servicios.recibos import numero_recibo
-from utils import entero, hoy
+from servicios.validaciones import validar_datos_alumno, validar_responsable
+from utils import hoy, parsear_pesos
 
 bp = Blueprint("alumnos", __name__)
 
@@ -23,13 +23,11 @@ class DatosMatriculaInvalidos(Exception):
 ESTADO_CLASE = {
     "Activo": "active",
     "Pendiente Pago": "pending",
-    "Cancelado": "paid",      # en el sistema actual "Cancelado" = pagó todo
+    "Cancelado": "paid",
+    "Pagado": "paid",
     "Completado": "paid",
     "Histórico": "muted",
 }
-TIPOS_DOCUMENTO = {"CC", "CE", "TI", "RC", "Pasaporte", "PPT", "Otro"}
-
-
 def _like(texto: str) -> str:
     texto = texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{texto}%"
@@ -52,12 +50,6 @@ def _siguiente_orden_matricula(cur, anio: int) -> int:
         "FROM matriculas WHERE anio = %s",
         (anio,),
     ).fetchone()["siguiente"]
-
-
-def _pesos(texto: str) -> int | None:
-    if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto):
-        return None
-    return entero(texto, -1)
 
 
 def _auditar(cur, entidad, entidad_id, accion, usuario_id, antes, despues, motivo=None):
@@ -95,8 +87,8 @@ def lista():
 
     try:
         tarifas = db.fetchall(
-            "SELECT categoria, precio_base FROM tarifas_categoria "
-            "WHERE activo = 1 ORDER BY categoria"
+            "SELECT categoria, tipo, precio_base FROM tarifas_categoria "
+            "WHERE activo = 1 ORDER BY tipo, categoria"
         )
     except Exception:
         error_tarifas = "No se pudieron cargar las tarifas por categoría."
@@ -136,7 +128,8 @@ def lista():
             params.extend(((pagina - 1) * 10, 11))
             filas = db.fetchall(f"""
                 SELECT m.id AS matricula_id, m.numero_orden, m.anio, m.categoria,
-                       CASE WHEN m.archivado = 1 THEN 'Archivado' ELSE m.estado END AS estado,
+                       CASE WHEN m.archivado = 1 THEN 'Archivado'
+                            WHEN m.estado = 'Cancelado' THEN 'Pagado' ELSE m.estado END AS estado,
                        COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
                        a.numero_documento, a.nombres, a.apellidos,
                        COALESCE((SELECT SUM(p.valor) FROM pagos p
@@ -219,6 +212,7 @@ def crear_matricula():
     apellidos = " ".join(request.form.get("apellidos", "").split())
     categoria_base = " ".join(request.form.get("categoria", "").upper().split())
     tipo_matricula = request.form.get("tipo_matricula", "curso")
+    tipo_tarifa = "RENOVACION" if tipo_matricula == "renovacion" else "CURSO"
     categoria = f"Renovación - {categoria_base}" if tipo_matricula == "renovacion" else categoria_base
     fecha_texto = request.form.get("fecha_nacimiento", "").strip()
     fecha_nacimiento = None
@@ -246,40 +240,33 @@ def crear_matricula():
     observaciones_abono = " ".join(request.form.get("observaciones", "").split()) or None
     acompanante = " ".join(request.form.get("acompanante", "").split()) or None
 
-    if not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", documento):
-        flash("El documento debe tener hasta 20 caracteres válidos.", "error")
-        return redirect(url_for("alumnos.lista"))
-    if tipo_documento not in TIPOS_DOCUMENTO:
-        flash("Selecciona un tipo de documento válido.", "error")
-        return redirect(url_for("alumnos.lista"))
-    if not nombres or len(nombres) > 100 or not apellidos or len(apellidos) > 100:
-        flash("Escribe nombres y apellidos de hasta 100 caracteres.", "error")
+    try:
+        validar_datos_alumno(
+            documento, tipo_documento, nombres, apellidos,
+            {"lugar_nacimiento": lugar_nacimiento, "sexo": sexo,
+             "estado_civil": estado_civil, "grupo_sanguineo": grupo_sanguineo,
+             "ocupacion": ocupacion, "celular": celular, "email": email},
+        )
+    except ValueError as e:
+        flash(str(e), "error")
         return redirect(url_for("alumnos.lista"))
     if tipo_matricula not in ("curso", "renovacion") or not categoria_base or len(categoria) > 60:
         flash("Selecciona el tipo de matrícula y una categoría de hasta 60 caracteres.", "error")
         return redirect(url_for("alumnos.lista"))
     if any(value and len(value) > limit for value, limit in (
-        (lugar_nacimiento, 120), (sexo, 20), (estado_civil, 30),
-        (grupo_sanguineo, 5), (ocupacion, 120), (celular, 30), (email, 254),
         (observaciones_abono, 1000), (acompanante, 100),
     )):
         flash("Uno de los datos personales o de contacto supera el largo permitido.", "error")
         return redirect(url_for("alumnos.lista"))
-    if (sexo not in (None, "F", "M", "Otro")
-            or estado_civil not in (None, "Soltero/a", "Casado/a", "Unión libre", "Separado/a", "Viudo/a")
-            or grupo_sanguineo not in (None, "O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-")
-            or (email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))):
-        flash("Revisa el sexo, estado civil, grupo sanguíneo o correo electrónico.", "error")
-        return redirect(url_for("alumnos.lista"))
-    precio_base = _pesos(precio_base_texto)
-    precio = _pesos(precio_texto)
+    precio_base = parsear_pesos(precio_base_texto)
+    precio = parsear_pesos(precio_texto)
     if precio_base is None or precio is None:
         flash("El precio base y el total deben ser valores enteros en pesos.", "error")
         return redirect(url_for("alumnos.lista"))
     if precio_base <= 0 or precio_base > 999_999_999_999 or precio <= 0 or precio > precio_base:
         flash("El total debe ser mayor a $0 y no puede superar el precio base.", "error")
         return redirect(url_for("alumnos.lista"))
-    abono = _pesos(abono_texto)
+    abono = parsear_pesos(abono_texto)
     if abono is None:
         flash("El abono inicial debe ser un valor entero en pesos.", "error")
         return redirect(url_for("alumnos.lista"))
@@ -300,20 +287,11 @@ def crear_matricula():
         "email": request.form.get("responsable_email", "").strip() or None,
         "relacion": request.form.get("responsable_relacion", "").strip(),
     }
-    responsable_informado = any(responsable.values())
-    if responsable_informado:
-        if (responsable["tipo_documento"] not in TIPOS_DOCUMENTO
-                or not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", responsable["numero_documento"])
-                or not responsable["nombres"] or len(responsable["nombres"]) > 100
-                or not responsable["apellidos"] or len(responsable["apellidos"]) > 100
-                or responsable["relacion"] not in
-                ("Padre", "Madre", "Cónyuge", "Hijo/a", "Hermano/a", "Acudiente", "Otro")
-                or (responsable["celular"] and len(responsable["celular"]) > 30)
-                or (responsable["email"] and
-                    (len(responsable["email"]) > 254
-                     or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", responsable["email"])))):
-            flash("Completa documento, nombres, apellidos y relación del responsable; teléfono y correo son opcionales.", "error")
-            return redirect(url_for("alumnos.lista"))
+    try:
+        responsable_informado = validar_responsable(responsable)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("alumnos.lista"))
 
     anio = hoy().year
     creada = False
@@ -323,8 +301,8 @@ def crear_matricula():
             with db.transaccion() as cur:
                 tarifa = cur.execute(
                     """SELECT categoria FROM tarifas_categoria
-                       WHERE categoria = %s AND activo = 1""",
-                    (categoria_base,),
+                       WHERE categoria = %s AND tipo = %s AND activo = 1""",
+                    (categoria_base, tipo_tarifa),
                 ).fetchone()
                 if not tarifa:
                     raise DatosMatriculaInvalidos(
@@ -488,26 +466,17 @@ def editar_matricula(matricula_id):
             "celular": request.form.get("celular", "").strip() or None,
             "email": request.form.get("email", "").strip() or None,
         }
-        limites = {"lugar_nacimiento": 120, "sexo": 20, "estado_civil": 30,
-                   "grupo_sanguineo": 5, "ocupacion": 120, "celular": 30, "email": 254}
-        if (not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", documento)
-                or tipo_documento not in TIPOS_DOCUMENTO
-                or not nombres or len(nombres) > 100 or not apellidos or len(apellidos) > 100
-                or not categoria or len(categoria) > 60):
-            raise DatosMatriculaInvalidos("Revisa documento, tipo, nombres, apellidos y categoría.")
-        if any(value and len(value) > limites[campo] for campo, value in opcionales.items()):
-            raise DatosMatriculaInvalidos("Uno de los datos personales o de contacto supera el largo permitido.")
-        if (opcionales["sexo"] not in (None, "F", "M", "Otro")
-                or opcionales["estado_civil"] not in
-                (None, "Soltero/a", "Casado/a", "Unión libre", "Separado/a", "Viudo/a")
-                or opcionales["grupo_sanguineo"] not in
-                (None, "O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-")
-                or (opcionales["email"] and
-                    not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", opcionales["email"]))):
-            raise DatosMatriculaInvalidos("Revisa sexo, estado civil, grupo sanguíneo o correo electrónico.")
+        if not categoria or len(categoria) > 60:
+            raise DatosMatriculaInvalidos("La categoría es obligatoria y admite hasta 60 caracteres.")
+        try:
+            validar_datos_alumno(
+                documento, tipo_documento, nombres, apellidos, opcionales,
+            )
+        except ValueError as e:
+            raise DatosMatriculaInvalidos(str(e)) from e
 
-        base = _pesos(request.form.get("precio_base", "").strip())
-        descuento_valor = _pesos(request.form.get("descuento_valor", "").strip() or "0")
+        base = parsear_pesos(request.form.get("precio_base", "").strip())
+        descuento_valor = parsear_pesos(request.form.get("descuento_valor", "").strip() or "0")
         porcentaje_texto = request.form.get("descuento_porcentaje", "").strip() or "0"
         if (base is None or descuento_valor is None
                 or not re.fullmatch(r"(?:[0-9]+(?:\.[0-9]{1,2})?)", porcentaje_texto)):
@@ -534,20 +503,10 @@ def editar_matricula(matricula_id):
             "email": request.form.get("responsable_email", "").strip() or None,
             "relacion": request.form.get("responsable_relacion", "").strip(),
         }
-        if any(responsable.values()) and (
-                responsable["tipo_documento"] not in TIPOS_DOCUMENTO
-                or not re.fullmatch(r"[A-Za-z0-9.-]{1,20}", responsable["numero_documento"])
-                or not responsable["nombres"] or len(responsable["nombres"]) > 100
-                or not responsable["apellidos"] or len(responsable["apellidos"]) > 100
-                or responsable["relacion"] not in
-                ("Padre", "Madre", "Cónyuge", "Hijo/a", "Hermano/a", "Acudiente", "Otro")
-                or (responsable["celular"] and len(responsable["celular"]) > 30)
-                or (responsable["email"] and
-                    (len(responsable["email"]) > 254
-                     or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", responsable["email"])))):
-            raise DatosMatriculaInvalidos(
-                "Completa documento, nombres, apellidos y relación del responsable; teléfono y correo son opcionales."
-            )
+        try:
+            validar_responsable(responsable)
+        except ValueError as e:
+            raise DatosMatriculaInvalidos(str(e)) from e
 
         with db.transaccion() as cur:
             actual = cur.execute("""
@@ -724,7 +683,7 @@ def historial(matricula_id):
 
 @bp.route("/pagos/<numero>/anular", methods=["POST"])
 @login_required
-@permiso_requerido("registrar_pagos")
+@permiso_requerido("anular_pagos")
 def anular_pago(numero):
     motivo = " ".join(request.form.get("motivo", "").split())
     if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
@@ -736,7 +695,7 @@ def anular_pago(numero):
         with db.transaccion() as cur:
             pago = cur.execute("""
                 SELECT id, id_matricula, numero_recibo, concepto, valor, metodo_pago,
-                       anulado, motivo_anulacion
+                       anulado, motivo_anulacion, caja_id
                 FROM pagos WHERE numero_recibo = %s FOR UPDATE
             """, (numero,)).fetchone()
             if not pago:
@@ -745,6 +704,14 @@ def anular_pago(numero):
             if pago["anulado"]:
                 flash("Este pago ya fue anulado.", "error")
                 return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+            if pago["caja_id"]:
+                caja_pago = cur.execute(
+                    "SELECT estado FROM cajas WHERE id = %s FOR UPDATE",
+                    (pago["caja_id"],),
+                ).fetchone()
+                if caja_pago and caja_pago["estado"] == "CERRADA":
+                    flash("No se puede anular un pago de una caja cerrada.", "error")
+                    return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
             cur.execute("""
                 UPDATE pagos SET anulado = 1, motivo_anulacion = %s,
                     anulado_por = %s, fecha_anulacion = CURRENT_TIMESTAMP

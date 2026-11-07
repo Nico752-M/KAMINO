@@ -7,8 +7,8 @@ from werkzeug.security import generate_password_hash
 
 import db
 from auth import login_required, permiso_requerido
-from permisos import PERMISOS, ROLES
-from utils import entero
+from permisos import GRUPOS_PERMISOS, PERMISOS, PERMISOS_POR_ROL, ROLES
+from utils import parsear_pesos
 
 bp = Blueprint("usuarios", __name__, url_prefix="/admin/usuarios")
 
@@ -18,10 +18,7 @@ class DatosInvalidos(Exception):
 
 
 def _precio_tarifa(valor: str) -> int | None:
-    texto = (valor or "").strip()
-    if not re.fullmatch(r"(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)", texto):
-        return None
-    return entero(texto, -1)
+    return parsear_pesos(valor)
 
 
 def _permisos_enviados() -> set[str]:
@@ -49,8 +46,10 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         "eliminar_alumnos": "ver_alumnos",
         "ver_historial_pagos": "ver_alumnos",
         "registrar_pagos": "ver_alumnos",
+        "anular_pagos": "ver_alumnos",
         "gestionar_caja": "ver_caja",
         "marcar_runt": "ver_tramites",
+        "ver_todas_cajas": "ver_caja",
     }
     for accion, pantalla in dependencias.items():
         if accion in permisos and pantalla not in permisos:
@@ -106,9 +105,9 @@ def lista():
             usuario["permisos"].add(f["codigo"])
     usuarios = list(usuarios_por_id.values())
     tarifas = db.fetchall("""
-        SELECT categoria, precio_base, activo, fecha_actualizacion
+        SELECT categoria, tipo, precio_base, activo, fecha_actualizacion
         FROM tarifas_categoria
-        ORDER BY categoria
+        ORDER BY categoria, tipo
     """)
     categorias_caja = db.fetchall("""
         SELECT categoria, activo, fecha_actualizacion
@@ -117,7 +116,10 @@ def lista():
     """)
     return render_template("admin_usuarios.html", usuarios=usuarios,
                            catalogo=PERMISOS, roles=ROLES, tarifas=tarifas,
-                           categorias_caja=categorias_caja)
+                           categorias_caja=categorias_caja,
+                           grupos_permisos=GRUPOS_PERMISOS,
+                           permisos_por_rol={rol: sorted(permisos)
+                                             for rol, permisos in PERMISOS_POR_ROL.items()})
 
 
 @bp.route("/tarifas", methods=["POST"])
@@ -125,22 +127,26 @@ def lista():
 @permiso_requerido("gestionar_usuarios")
 def crear_tarifa():
     categoria = " ".join(request.form.get("categoria", "").upper().split())
+    tipo = request.form.get("tipo", "")
     precio = _precio_tarifa(request.form.get("precio_base"))
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
         flash("La categoría es obligatoria y solo admite letras, números, espacios, puntos y guiones.", "error")
+        return redirect(url_for("usuarios.lista"))
+    if tipo not in ("CURSO", "RENOVACION"):
+        flash("Selecciona si la tarifa corresponde a un curso o una renovación.", "error")
         return redirect(url_for("usuarios.lista"))
     if precio is None or precio <= 0 or precio > 999_999_999_999:
         flash("El precio debe estar entre $1 y $999.999.999.999.", "error")
         return redirect(url_for("usuarios.lista"))
     try:
         db.execute(
-            """INSERT INTO tarifas_categoria (categoria, precio_base, activo)
-               VALUES (%s, %s, 1)""",
-            (categoria, precio),
+            """INSERT INTO tarifas_categoria (categoria, tipo, precio_base, activo)
+               VALUES (%s, %s, %s, 1)""",
+            (categoria, tipo, precio),
         )
     except oracledb.IntegrityError as e:
         if getattr(e.args[0] if e.args else None, "code", None) == 1:
-            flash("Ya existe esa categoría. Puedes actualizar su precio en la lista.", "error")
+            flash("Ya existe una tarifa para esa categoría y tipo de matrícula.", "error")
         else:
             current_app.logger.exception("Error de integridad creando tarifa %s", categoria)
             flash("No se pudo guardar la tarifa.", "error")
@@ -148,14 +154,17 @@ def crear_tarifa():
         current_app.logger.exception("Error creando tarifa %s", categoria)
         flash("No se pudo guardar la tarifa.", "error")
     else:
-        flash(f"Tarifa de {categoria} creada.", "ok")
+        flash(f"Tarifa de {categoria} ({tipo.lower()}) creada.", "ok")
     return redirect(url_for("usuarios.lista"))
 
 
-@bp.route("/tarifas/<path:categoria>", methods=["POST"])
+@bp.route("/tarifas/<tipo>/<path:categoria>", methods=["POST"])
 @login_required
 @permiso_requerido("gestionar_usuarios")
-def actualizar_tarifa(categoria: str):
+def actualizar_tarifa(tipo: str, categoria: str):
+    if tipo not in ("CURSO", "RENOVACION"):
+        flash("El tipo de tarifa no es válido.", "error")
+        return redirect(url_for("usuarios.lista"))
     categoria_clave = " ".join(categoria.upper().split())
     accion = request.form.get("accion")
     if accion == "desactivar":
@@ -163,8 +172,8 @@ def actualizar_tarifa(categoria: str):
             afectadas = db.execute(
                 """UPDATE tarifas_categoria SET activo = 0,
                           fecha_actualizacion = CURRENT_TIMESTAMP
-                   WHERE categoria = %s AND activo = 1""",
-                (categoria_clave,),
+                   WHERE categoria = %s AND tipo = %s AND activo = 1""",
+                (categoria_clave, tipo),
             )
         except Exception:
             current_app.logger.exception("Error desactivando tarifa %s", categoria_clave)
@@ -186,8 +195,8 @@ def actualizar_tarifa(categoria: str):
         afectadas = db.execute(
             """UPDATE tarifas_categoria SET precio_base = %s, activo = %s,
                       fecha_actualizacion = CURRENT_TIMESTAMP
-               WHERE categoria = %s""",
-            (precio, activo, categoria_clave),
+               WHERE categoria = %s AND tipo = %s""",
+            (precio, activo, categoria_clave, tipo),
         )
         if not afectadas:
             flash("La categoría ya no existe.", "error")
@@ -196,7 +205,7 @@ def actualizar_tarifa(categoria: str):
         current_app.logger.exception("Error actualizando tarifa %s", categoria_clave)
         flash("No se pudo actualizar la tarifa.", "error")
     else:
-        flash(f"Tarifa de {categoria_clave} actualizada.", "ok")
+        flash(f"Tarifa de {categoria_clave} ({tipo.lower()}) actualizada.", "ok")
     return redirect(url_for("usuarios.lista"))
 
 

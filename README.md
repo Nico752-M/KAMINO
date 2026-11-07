@@ -19,9 +19,10 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
 8. Después de `003`, ejecuta una vez `migrations/004_matriculas_concurrentes.sql` como `CEA_APP` y antes de desplegar la versión nueva de la app.
 9. Después de `004`, ejecuta una vez `migrations/005_tarifas_categoria.sql` como `CEA_APP` y antes de desplegar la versión que configura tarifas.
 10. Después de `005`, ejecuta una vez `migrations/006_seguridad_y_categorias_caja.sql` como `CEA_APP` y antes de desplegar seguridad persistente y categorías de movimientos.
-11. Si la base todavía no tiene un administrador, crea el primero:
+11. Después de `006`, ejecuta `migrations/007_permisos_cierres_y_tarifas.sql` como `CEA_APP` y antes de desplegar la versión que usa permisos ampliados, tarifas por tipo y conteo de cierre.
+12. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-12. Ejecuta `flask --app app run --debug`.
+13. Ejecuta `flask --app app run --debug`.
 
 ## Oracle
 
@@ -42,8 +43,8 @@ individuales por usuario. Los pagos y movimientos nuevos quedan enlazados a la
 caja abierta del usuario; los registros históricos conservan `CAJA_ID` nulo.
 La caja calcula efectivo esperado como base inicial + pagos en efectivo +
 ingresos manuales - salidas. Los demás métodos se auditan aparte. Cada usuario
-con permiso de registrar pagos abre y cierra su propia caja; solo un usuario
-con rol `admin` consulta todas las cajas y el consolidado diario.
+con permiso de registrar pagos abre y cierra su propia caja; quienes tengan el
+permiso `ver_todas_cajas` consultan todas las cajas y el consolidado diario.
 
 La migración `migrations/003_recibos_unificados.sql` se ejecuta después de
 `002`, conectada como `CEA_APP`. Crea la secuencia única `SEQ_RECIBOS`,
@@ -70,10 +71,18 @@ inicio de sesión y crea las categorías opcionales de ingresos y salidas,
 administrables desde **Usuarios y permisos**. También guarda el cambio devuelto
 en cada pago para que las reimpresiones usen el valor original.
 
+La migración `migrations/007_permisos_cierres_y_tarifas.sql` se ejecuta después
+de `006`, conectada como `CEA_APP`. Otorga `DELETE` a `CEA_WEB` para las tablas
+de alumnos/responsables, agrega los permisos `anular_pagos` y
+`ver_todas_cajas`, habilita tarifas separadas para cursos y renovaciones, y
+guarda el conteo de denominaciones en cierres. Asigna los dos permisos nuevos
+a los perfiles de usuarios cuyo rol existente es `admin`; los demás permisos
+se editan individualmente en **Administración → Usuarios**.
+
 Cada perfil pertenece a una única persona: varios usuarios pueden tener la
 misma categoría (`admin`, `cajera`, `secretaria` o `contadora`), pero no
 comparten perfil ni permisos. El administrador puede cambiar individualmente
-los permisos de cada cuenta desde **Usuarios y permisos**. El campo `ROL` se
+los permisos de cada cuenta desde **Administración → Usuarios**. El campo `ROL` se
 mantiene por compatibilidad y como categoría; la autorización usa el perfil.
 
 El consecutivo de matrícula empieza de nuevo cada año. La app bloquea la fila
@@ -102,6 +111,7 @@ En **Project → Settings → Environment Variables**, configura para Production
 - `WALLET_PEM_B64`: contenido base64 del archivo `ewallet.pem`.
 - `WALLET_TNS_B64`: contenido base64 de `tnsnames.ora`.
 - `TRUST_PROXY=1`
+- Opcionales para los comprobantes: `CEA_CIUDAD` y `CEA_NIT`.
 
 En PowerShell, desde la raíz del proyecto, puedes generar los dos valores del
 wallet localmente (no los publiques ni los pegues en el repositorio):
@@ -132,15 +142,16 @@ región para funciones; `gru1` se configura como esa única región.
   opcional, precio/descuento y abono inicial opcional.
 - Creación de matrículas con consecutivo anual.
 - Tarifas administrables por categoría y autocompletado de alumno por documento
-  al registrar cursos y renovaciones.
+  al registrar cursos y renovaciones, con precios diferenciados para cada tipo.
 - Apertura/cierre individual de caja, consulta/reimpresión de movimientos y
   registro autorizado de ingresos/salidas manuales con recibos PDF.
-- Exportación a PDF y Excel de cierres cerrados, con resumen y detalle de
-  pagos, ingresos y salidas.
+- Exportación a PDF y Excel de cierres cerrados desde Caja → Cierres, con
+  resumen, conteo de efectivo y detalle de pagos, ingresos y salidas.
 - Categorías opcionales para clasificar ingresos y salidas manuales de caja.
 - Dashboard con matrículas del mes, comparación con el mes anterior,
   distribución por categoría y avance de pago de las matrículas recientes.
-- Navegación principal horizontal y registro de alumnos guiado en cuatro pasos;
+- Menú lateral con Dashboard, Alumnos, Caja, Trámites y Administración; Caja
+  tiene tres pestañas y Administración dos. El registro de alumnos se guía en cuatro pasos;
   acciones de caja y movimientos se muestran por contexto para reducir ruido.
 - Seguimiento RUNT.
 - Administración de cuentas y perfiles de permisos individuales.
