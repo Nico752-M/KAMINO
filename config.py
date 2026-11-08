@@ -1,4 +1,5 @@
 """Configuración central. Todo lo sensible viene de variables de entorno (.env)."""
+import logging
 import os
 from dotenv import load_dotenv
 
@@ -41,7 +42,10 @@ class Config:
     CEA_NIT = os.environ.get("CEA_NIT", "").strip()
     CEA_CIUDAD = os.environ.get("CEA_CIUDAD", "").strip()
 
+    if EN_PRODUCCION and not CEA_NIT:
+        logging.warning("CEA_NIT no está configurado: los recibos saldrán sin NIT.")
+
     TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 
     # Súbelo cuando cambies CSS/JS para forzar recarga en los celulares
-    ASSET_V = "15"
+    ASSET_V = "16"

@@ -37,7 +37,8 @@ def index():
                 (SELECT COUNT(*) FROM matriculas
                  WHERE archivado = 0 AND fecha_registro >= %s AND fecha_registro < %s) AS matriculas_mes_anterior,
                 (SELECT COALESCE(SUM(valor), 0) FROM pagos
-                 WHERE fecha_pago >= %s AND fecha_pago < %s AND anulado = 0) AS ingresos_mes,
+                 WHERE fecha_pago >= %s AND fecha_pago < %s AND anulado = 0
+                   AND concepto <> 'Abono histórico previo') AS ingresos_mes,
                 (SELECT COALESCE(SUM(saldo), 0) FROM (
                     SELECT COALESCE(m.precio_total, 0) - COALESCE(SUM(p.valor), 0) AS saldo
                     FROM matriculas m

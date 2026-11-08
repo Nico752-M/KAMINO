@@ -2,6 +2,7 @@
 {% set nav = 'caja' %}
 {% block titulo %}Caja — CEA Practicar{% endblock %}
 {% block contenido %}
+{% set tab_inicial = 'caja-historial' if (recibo_q or request.args.get('historial') or request.args.get('pagina')) else ('caja-turno' if puede_cobrar else 'caja-cierres') %}
 <div class="section-header cash-page-header">
   <div>
     <span class="eyebrow">OPERACIÓN</span>
@@ -28,11 +29,11 @@
 
 <div class="tabs-scope cash-tabs">
   <div class="internal-tabs" role="tablist" aria-label="Secciones de caja">
-    <button type="button" class="active" data-tab="caja-turno">Mi turno</button>
-    <button type="button" data-tab="caja-cierres">Cierres</button>
-    <button type="button" data-tab="caja-historial">Historial</button>
+    <button type="button" class="{{ 'active' if tab_inicial == 'caja-turno' else '' }}" data-tab="caja-turno">Mi turno</button>
+    <button type="button" class="{{ 'active' if tab_inicial == 'caja-cierres' else '' }}" data-tab="caja-cierres">Cierres</button>
+    <button type="button" class="{{ 'active' if tab_inicial == 'caja-historial' else '' }}" data-tab="caja-historial">Historial</button>
   </div>
-  <div id="caja-turno" class="subtab-content active">
+  <div id="caja-turno" class="subtab-content {{ 'active' if tab_inicial == 'caja-turno' else '' }}">
 {% if puede_cobrar %}
   {% if caja_actual %}
   <section class="cash-session-card">
@@ -88,7 +89,7 @@
 </details>
 
   </div>
-  <div id="caja-cierres" class="subtab-content">
+  <div id="caja-cierres" class="subtab-content {{ 'active' if tab_inicial == 'caja-cierres' else '' }}">
 {% if admin %}
 <div class="grid-stats cash-admin-stats">
   <div class="stat-card green"><div class="stat-label">Efectivo recibido</div><div class="stat-value">{{ t.efectivo|cop }}</div></div>
@@ -164,7 +165,7 @@
 </details>
 
   </div>
-  <div id="caja-historial" class="subtab-content">
+  <div id="caja-historial" class="subtab-content {{ 'active' if tab_inicial == 'caja-historial' else '' }}">
 <section class="card-bento cash-history">
   <div class="cash-block-heading">
     <div><h3>Historial de caja</h3><p>Consulta movimientos y reimprime sus recibos.</p></div>

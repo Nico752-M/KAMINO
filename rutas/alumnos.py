@@ -1,5 +1,6 @@
 import json
 import re
+import time
 import unicodedata
 from datetime import date, timedelta
 
@@ -292,6 +293,9 @@ def crear_matricula():
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("alumnos.lista"))
+    if any((valor or "") for valor in responsable.values()) and not responsable_informado:
+        flash("Completa documento, nombres, apellidos y relación del responsable; teléfono y correo son opcionales.", "error")
+        return redirect(url_for("alumnos.lista"))
 
     anio = hoy().year
     creada = False
@@ -434,12 +438,26 @@ def editar_matricula(matricula_id):
             """, (matricula_id,))
             if not fila:
                 return "Matrícula no encontrada.", 404
+            categoria_actual = (fila["categoria"] or "").strip()
+            tipo_matricula = "RENOVACION" if str(categoria_actual).startswith("Renovación") else "CURSO"
+            categoria_base = categoria_actual.replace("Renovación - ", "", 1) if tipo_matricula == "RENOVACION" else categoria_actual
+            tarifas = db.fetchall(
+                "SELECT categoria FROM tarifas_categoria WHERE activo = 1 AND tipo = %s ORDER BY categoria",
+                (tipo_matricula,),
+            )
             pagado = db.fetchone(
                 "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
                 "WHERE id_matricula = %s AND anulado = 0",
                 (matricula_id,),
             )["total"]
-            return render_template("editar_alumno.html", alumno=fila, pagado=pagado)
+            return render_template(
+                "editar_alumno.html",
+                alumno=fila,
+                pagado=pagado,
+                tarifas=tarifas,
+                tipo_matricula=tipo_matricula,
+                categoria_base=categoria_base,
+            )
 
         documento_original = request.form.get("documento_original", "").strip()
         documento = request.form.get("numero_documento", "").strip()
@@ -522,6 +540,17 @@ def editar_matricula(matricula_id):
                 raise DatosMatriculaInvalidos("La matrícula no existe o ya fue archivada.")
             if documento_original != actual["numero_documento"]:
                 raise DatosMatriculaInvalidos("Los datos cambiaron. Recarga la página e intenta de nuevo.")
+            tipo_matricula = "RENOVACION" if str(actual["categoria"]).startswith("Renovación") else "CURSO"
+            categoria_base = " ".join(request.form.get("categoria", "").upper().split())
+            categoria_final = f"Renovación - {categoria_base}" if tipo_matricula == "RENOVACION" else categoria_base
+            if not categoria_base or len(categoria_final) > 60:
+                raise DatosMatriculaInvalidos("La categoría es obligatoria y admite hasta 60 caracteres.")
+            tarifa_activa = cur.execute(
+                "SELECT categoria FROM tarifas_categoria WHERE categoria = %s AND tipo = %s AND activo = 1",
+                (categoria_base, tipo_matricula),
+            ).fetchone()
+            if not tarifa_activa and categoria_final != actual["categoria"]:
+                raise DatosMatriculaInvalidos("Selecciona una categoría activa del mismo tipo.")
             pagado = cur.execute(
                 "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
                 "WHERE id_matricula = %s AND anulado = 0",
@@ -576,7 +605,7 @@ def editar_matricula(matricula_id):
                 SET categoria = %s, precio_base = %s, precio_total = %s,
                     descuento_valor = %s, descuento_porcentaje = %s, estado = %s
                 WHERE id = %s
-            """, (categoria, base, total, descuento_valor, porcentaje, estado, matricula_id))
+            """, (categoria_final, base, total, descuento_valor, porcentaje, estado, matricula_id))
 
             if any(responsable.values()):
                 if responsable_actual:
@@ -602,7 +631,7 @@ def editar_matricula(matricula_id):
 
             despues = {"documento": documento, "tipo_documento": tipo_documento,
                        "nombres": nombres, "apellidos": apellidos, **opcionales,
-                       "categoria": categoria, "precio_base": base, "precio_total": total,
+                       "categoria": categoria_final, "precio_base": base, "precio_total": total,
                        "descuento_valor": descuento_valor, "descuento_porcentaje": porcentaje,
                        "estado": estado,
                        "responsable": responsable if any(responsable.values()) else None}

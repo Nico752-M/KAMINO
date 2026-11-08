@@ -59,12 +59,34 @@
     precioTotal.value = base ? window.formatearMiles(Math.max(base - descuento, 0)) : "";
   }
 
+  const opcionesTarifas = [...categoria.options].map((opcion) => ({
+    value: opcion.value,
+    text: opcion.textContent,
+    price: opcion.dataset.price || "",
+    type: opcion.dataset.tariffType || "",
+  })).filter((opcion) => opcion.value);
+
   function filtrarTarifas() {
     const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
-    [...categoria.options].forEach((opcion) => {
-      if (opcion.value) opcion.hidden = opcion.dataset.tariffType !== tipo;
+    const seleccion = categoria.value;
+    categoria.innerHTML = "";
+
+    const opcionVacia = document.createElement("option");
+    opcionVacia.value = "";
+    opcionVacia.textContent = "Selecciona";
+    categoria.appendChild(opcionVacia);
+
+    const filtradas = opcionesTarifas.filter((opcion) => opcion.type === tipo);
+    filtradas.forEach((opcion) => {
+      const elemento = document.createElement("option");
+      elemento.value = opcion.value;
+      elemento.textContent = opcion.text;
+      elemento.dataset.price = opcion.price;
+      elemento.dataset.tariffType = opcion.type;
+      categoria.appendChild(elemento);
     });
-    if (categoria.selectedOptions[0]?.dataset.tariffType !== tipo) categoria.value = "";
+
+    categoria.value = filtradas.some((opcion) => opcion.value === seleccion) ? seleccion : "";
     precioBase.value = "";
     calcularTotal();
   }

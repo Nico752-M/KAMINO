@@ -61,7 +61,14 @@
     <h4>Matrícula y valor</h4>
     <div class="form-grid two">
       <div class="field"><label class="lbl" for="editCategoria">Categoría <span class="required-mark">*</span></label>
-        <input class="input-clean" id="editCategoria" name="categoria" value="{{ alumno.categoria }}" maxlength="60" required></div>
+        <select class="input-clean" id="editCategoria" name="categoria" required>
+          {% for tarifa in tarifas %}
+          <option value="{{ tarifa.categoria }}" {{ 'selected' if tarifa.categoria == categoria_base }}>{{ tarifa.categoria }}</option>
+          {% endfor %}
+          {% if categoria_base and categoria_base not in (tarifa.categoria for tarifa in tarifas) %}
+          <option value="{{ categoria_base }}" selected>{{ categoria_base }}</option>
+          {% endif %}
+        </select></div>
       <div class="field"><label class="lbl" for="editBase">Precio base (COP) <span class="required-mark">*</span></label>
         <input class="input-clean" id="editBase" name="precio_base" type="text" inputmode="numeric"
                data-money-input value="{{ alumno.precio_base|int }}" required></div>
