@@ -27,7 +27,14 @@ async function limpiarCache() {
 }
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(limpiarCache().then(() => self.clients.claim()));
+  e.waitUntil(
+    Promise.all([
+      limpiarCache(),
+      self.registration.navigationPreload
+        ? self.registration.navigationPreload.enable()
+        : null,
+    ]).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener("fetch", (e) => {
@@ -50,6 +57,13 @@ self.addEventListener("fetch", (e) => {
   }
 
   if (req.mode === "navigate") {
-    e.respondWith(fetch(req).catch(() => caches.match("/offline")));
+    e.respondWith((async () => {
+      try {
+        const precargada = await e.preloadResponse;
+        return precargada || await fetch(req);
+      } catch (err) {
+        return caches.match("/offline");
+      }
+    })());
   }
 });

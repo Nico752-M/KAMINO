@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from flask import Blueprint, current_app, render_template
@@ -98,13 +97,9 @@ def index():
             )
             FETCH FIRST 5 ROWS ONLY
         """
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            f_cat = pool.submit(db.fetchall, sql_categoria, (inicio, fin))
-            f_rec = pool.submit(db.fetchall, sql_recientes)
-            f_deu = pool.submit(db.fetchall, sql_deudores)
-            datos["por_categoria"] = f_cat.result()
-            datos["recientes"] = f_rec.result()
-            datos["deudores"] = f_deu.result()
+        datos["por_categoria"] = db.fetchall(sql_categoria, (inicio, fin))
+        datos["recientes"] = db.fetchall(sql_recientes)
+        datos["deudores"] = db.fetchall(sql_deudores)
 
         for matricula in datos["recientes"]:
             total = float(matricula["precio_total"] or 0)
