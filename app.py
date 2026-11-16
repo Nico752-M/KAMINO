@@ -7,6 +7,7 @@ from flask import Flask, abort, g, render_template, request, send_from_directory
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
+import db
 from config import Config
 from utils import cop, fecha_larga
 
@@ -17,6 +18,7 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
     app.config.from_object(Config)
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=Config.SESSION_HOURS)
+    app.teardown_appcontext(db.cerrar_conexion_request)
 
     @app.route("/static/<path:filename>", endpoint="static")
     def static_file(filename):

@@ -67,8 +67,8 @@ def _get_pool():
             config_dir=carpeta,
             wallet_location=carpeta,
             wallet_password=Config.WALLET_PASSWORD,
-            min=2,
-            max=max(Config.DB_POOL_SIZE, 3),
+            min=1,
+            max=max(Config.DB_POOL_SIZE, 5),
             increment=1,
             timeout=300,
             ping_interval=60,
@@ -82,7 +82,30 @@ def _get_pool():
 
 
 def _conectar():
-    return _get_pool().acquire()
+    inicio = time.perf_counter()
+    try:
+        return _get_pool().acquire()
+    finally:
+        _registrar_medicion(inicio)
+
+
+def _obtener():
+    """Una sola conexión por petición. Devuelve (conexión, es_propia)."""
+    if has_request_context():
+        cnx = getattr(g, "db_cnx", None)
+        if cnx is None:
+            cnx = g.db_cnx = _conectar()
+        return cnx, False
+    return _conectar(), True
+
+
+def cerrar_conexion_request(exc=None):
+    cnx = g.pop("db_cnx", None)
+    if cnx is not None:
+        try:
+            cnx.close()
+        except Exception:
+            pass
 
 
 def _registrar_medicion(inicio: float, consulta: bool = False) -> None:
@@ -136,11 +159,12 @@ class _Cursor:
 
 @contextmanager
 def _conexion():
-    cnx = _conectar()
+    cnx, propia = _obtener()
     try:
         yield cnx
     finally:
-        cnx.close()  # devuelve la conexión al pool
+        if propia:
+            cnx.close()  # devuelve la conexión al pool
 
 
 def fetchall(sql: str, params: tuple = ()) -> list[dict]:
@@ -177,7 +201,7 @@ def transaccion():
             cur.execute(...)
     Si ocurre un error dentro del bloque se hace rollback automático.
     """
-    cnx = _conectar()
+    cnx, propia = _obtener()
     cur = _Cursor(cnx.cursor())
     try:
         yield cur
@@ -187,4 +211,5 @@ def transaccion():
         raise
     finally:
         cur.close()
-        cnx.close()
+        if propia:
+            cnx.close()

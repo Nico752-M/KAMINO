@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import secrets
+import time
 from functools import wraps
 
 import oracledb
@@ -60,6 +61,10 @@ def login_required(f=None, *, roles=None):
     return decorador(f) if f else decorador
 
 
+_CACHE_SESION: dict = {}
+_TTL_SESION = 30  # segundos
+
+
 def _cargar_sesion():
     if "usuario_actual" in g:
         return
@@ -67,6 +72,10 @@ def _cargar_sesion():
     g.permisos_actuales = set()
     uid = session.get("uid")
     if not uid:
+        return
+    guardado = _CACHE_SESION.get(uid)
+    if guardado and time.monotonic() - guardado[0] < _TTL_SESION:
+        g.usuario_actual, g.permisos_actuales = guardado[1], guardado[2]
         return
     filas = db.fetchall("""
         SELECT u.id, u.nombre, u.rol, u.activo, pp.codigo
@@ -84,6 +93,7 @@ def _cargar_sesion():
             "activo": fila["activo"],
         }
         g.permisos_actuales = {f["codigo"] for f in filas if f["codigo"]}
+        _CACHE_SESION[uid] = (time.monotonic(), g.usuario_actual, g.permisos_actuales)
 
 
 def _usuario_actual():
