@@ -48,4 +48,4 @@ class Config:
     TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 
     # Súbelo cuando cambies CSS/JS para forzar recarga en los celulares
-    ASSET_V = "17"
+    ASSET_V = "18"
