@@ -18,6 +18,13 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+  <div class="update-banner" id="update-banner" hidden role="status">
+    <span><i class="ri-download-cloud-2-line"></i> Hay una actualización disponible</span>
+    <div>
+      <button class="btn-action sm" id="update-later" type="button">Después</button>
+      <button class="btn-action green sm" id="update-btn" type="button">Actualizar</button>
+    </div>
+  </div>
   <aside class="preview-sidebar" id="sidebar">
     <a class="preview-brand" href="{{ url_for('caja.resumen') if 'ver_caja' in permisos else url_for('dashboard.index') if 'ver_dashboard' in permisos else url_for('alumnos.lista') if 'ver_alumnos' in permisos else url_for('tramites.lista') if 'ver_tramites' in permisos else url_for('usuarios.lista') }}">
       <span class="preview-brand-badge"></span> CEA PRACTICAR

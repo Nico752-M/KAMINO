@@ -3,12 +3,16 @@
    - Las páginas y los datos (pagos, alumnos, caja) NUNCA se guardan: siempre vienen del servidor.
    - Sin internet muestra una pantalla "sin conexión".
    Cuando cambies CSS/JS, sube VERSION para que los celulares se actualicen. */
-const VERSION = "cea-v16";
+const VERSION = "cea-v17";
 const CACHE_FILES = ["/offline", "/static/css/app.css", "/static/js/app.js", "/static/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
+  // Sin skipWaiting(): la versión nueva espera hasta que el usuario acepte.
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CACHE_FILES)));
-  self.skipWaiting();
+});
+
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {

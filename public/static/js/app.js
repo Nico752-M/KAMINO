@@ -122,8 +122,45 @@
     return { ok: resp.ok && cuerpo.ok !== false, ...cuerpo, error: cuerpo.error };
   };
 
-  // ── Registrar el service worker (PWA) ──
+  // ── Service worker (PWA) con aviso de actualización ──
   if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => navigator.serviceWorker.register("/static/sw.js", { scope: "/" }).catch(() => {}));
+    const teniaControlador = !!navigator.serviceWorker.controller;
+
+    function mostrarActualizacion(reg) {
+      const banner = document.getElementById("update-banner");
+      const boton = document.getElementById("update-btn");
+      if (!banner || !boton) return;
+      banner.hidden = false;
+      boton.onclick = () => {
+        boton.disabled = true;
+        boton.textContent = "Actualizando...";
+        if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      };
+      document.getElementById("update-later").onclick = () => { banner.hidden = true; };
+    }
+
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/static/sw.js", { scope: "/" }).then((reg) => {
+        if (reg.waiting && navigator.serviceWorker.controller) mostrarActualizacion(reg);
+        reg.addEventListener("updatefound", () => {
+          const nuevo = reg.installing;
+          if (!nuevo) return;
+          nuevo.addEventListener("statechange", () => {
+            if (nuevo.state === "installed" && navigator.serviceWorker.controller) mostrarActualizacion(reg);
+          });
+        });
+        // Buscar versión nueva al volver a la app y cada 30 min
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update(); });
+        setInterval(() => reg.update(), 30 * 60 * 1000);
+      }).catch(() => {});
+    });
+
+    // Cuando el usuario acepta, la versión nueva toma el control: recargar una sola vez
+    let recargando = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (recargando || !teniaControlador) return;
+      recargando = true;
+      window.location.reload();
+    });
   }
 })();

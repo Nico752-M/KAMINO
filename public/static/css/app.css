@@ -311,3 +311,8 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
   .matricula-dialog .modal-footer{flex-wrap:wrap}
   .matricula-dialog .modal-footer>#btnCancelarMatricula,.matricula-dialog .step-actions{flex:1 1 100%}
 }
+
+/* ===== Aviso de actualización ===== */
+.update-banner{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);z-index:2000;display:flex;align-items:center;justify-content:space-between;gap:1rem;width:min(460px,calc(100vw - 1.5rem));padding:.8rem 1rem;background:var(--bg-card);border:1px solid var(--accent-gold);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.28);font-size:.85rem;font-weight:700}
+.update-banner[hidden]{display:none}
+.update-banner>div{display:flex;gap:.5rem}
