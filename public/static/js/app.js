@@ -125,18 +125,34 @@
   // ── Service worker (PWA) con aviso de actualización ──
   if ("serviceWorker" in navigator) {
     const teniaControlador = !!navigator.serviceWorker.controller;
+    const esIngreso = document.body.dataset.login === "1";
+
+    function aplicarActualizacion(reg) {
+      const boton = document.getElementById("update-btn");
+      if (boton) { boton.disabled = true; boton.textContent = "Actualizando..."; }
+      const item = document.getElementById("update-nav");
+      if (item) item.firstChild.nextSibling.textContent = " Actualizando... ";
+      if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
 
     function mostrarActualizacion(reg) {
+      // 1) Apartado fijo en el menú (siempre que haya versión nueva)
+      const item = document.getElementById("update-nav");
+      if (item) {
+        item.hidden = false;
+        item.onclick = (e) => { e.preventDefault(); aplicarActualizacion(reg); };
+      }
+      document.getElementById("menu-btn")?.classList.add("has-update");
+
+      // 2) Aviso grande: solo en la pantalla que sigue al inicio de sesión
       const banner = document.getElementById("update-banner");
-      const boton = document.getElementById("update-btn");
-      if (!banner || !boton) return;
+      if (!esIngreso || !banner || banner.dataset.cerrado) return;
       banner.hidden = false;
-      boton.onclick = () => {
-        boton.disabled = true;
-        boton.textContent = "Actualizando...";
-        if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      document.getElementById("update-btn").onclick = () => aplicarActualizacion(reg);
+      document.getElementById("update-later").onclick = () => {
+        banner.hidden = true;
+        banner.dataset.cerrado = "1";
       };
-      document.getElementById("update-later").onclick = () => { banner.hidden = true; };
     }
 
     window.addEventListener("load", () => {

@@ -250,6 +250,7 @@ def login():
             session["uid"] = fila["id"]
             session["nombre"] = fila["nombre"]
             session["rol"] = fila["rol"]
+            session["aviso_login"] = True  # el aviso de actualización solo sale al ingresar
             token_csrf()
             try:
                 db.execute("UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = %s", (fila["id"],))

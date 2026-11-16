@@ -316,3 +316,9 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
 .update-banner{position:fixed;left:50%;bottom:1rem;transform:translateX(-50%);z-index:2000;display:flex;align-items:center;justify-content:space-between;gap:1rem;width:min(460px,calc(100vw - 1.5rem));padding:.8rem 1rem;background:var(--bg-card);border:1px solid var(--accent-gold);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.28);font-size:.85rem;font-weight:700}
 .update-banner[hidden]{display:none}
 .update-banner>div{display:flex;gap:.5rem}
+
+.preview-menu a[hidden]{display:none}
+.update-nav{border-color:var(--accent-gold)!important;color:var(--text-main)!important}
+.update-nav i{color:var(--accent-gold)}
+.menu-btn{position:relative}
+.menu-btn.has-update::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--accent-red);border:2px solid var(--bg-card)}

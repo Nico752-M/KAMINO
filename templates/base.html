@@ -17,7 +17,7 @@
   </script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body data-login="{{ '1' if aviso_login else '0' }}">
   <div class="update-banner" id="update-banner" hidden role="status">
     <span><i class="ri-download-cloud-2-line"></i> Hay una actualización disponible</span>
     <div>
@@ -39,6 +39,7 @@
         {% if runt_pendientes %}<span class="nav-badge">{{ runt_pendientes if runt_pendientes < 100 else '99+' }}</span>{% endif %}
       </a>{% endif %}
       {% if 'gestionar_usuarios' in permisos %}<a href="{{ url_for('usuarios.lista') }}" class="{{ 'active' if nav == 'usuarios' }}"><i class="ri-settings-3-line"></i> Administración</a>{% endif %}
+      <a href="#" id="update-nav" class="update-nav" hidden><i class="ri-download-cloud-2-line"></i> Actualización disponible <span class="nav-badge">1</span></a>
     </nav>
     <div class="sidebar-user">
       <strong>{{ session.nombre }}</strong>{{ session.rol|capitalize }}

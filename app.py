@@ -41,7 +41,8 @@ def create_app() -> Flask:
     def contexto_global():
         datos = {"csrf_token": auth.token_csrf, "asset_v": Config.ASSET_V,
                  "fecha_hoy": fecha_larga(), "runt_pendientes": 0,
-                 "permisos": auth.permisos_actuales()}
+                 "permisos": auth.permisos_actuales(),
+                 "aviso_login": session.pop("aviso_login", False)}
         if "uid" in session and "ver_tramites" in datos["permisos"]:
             from rutas.tramites import contar_pendientes_cacheado
             datos["runt_pendientes"] = contar_pendientes_cacheado()
