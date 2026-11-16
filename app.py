@@ -40,7 +40,7 @@ def create_app() -> Flask:
     @app.context_processor
     def contexto_global():
         aceptada = request.cookies.get("cea_v", "")
-        if not aceptada.isdigit():
+        if not (aceptada.isalnum() and aceptada.isascii() and len(aceptada) <= 12):
             aceptada = ""
         datos = {"csrf_token": auth.token_csrf,
                  "asset_v": aceptada or Config.ASSET_V,   # versión que ese dispositivo aceptó

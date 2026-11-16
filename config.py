@@ -47,5 +47,8 @@ class Config:
 
     TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 
-    # Súbelo cuando cambies CSS/JS para forzar recarga en los celulares
-    ASSET_V = "22"
+       # Versión de la app (solo letras y números, máx. 12). Orden de prioridad:
+    # 1) APP_VERSION manual en Vercel, 2) commit desplegado, 3) "dev" en local.
+    ASSET_V = (os.environ.get("APP_VERSION")
+               or os.environ.get("VERCEL_GIT_COMMIT_SHA")
+               or "dev").strip()[:12]

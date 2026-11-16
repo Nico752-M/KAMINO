@@ -133,6 +133,10 @@
   if (!/(?:^|; )cea_v=/.test(document.cookie)) guardarVersion(versionServidor);
 
   function aplicarActualizacion() {
+    const modalAbierto = document.querySelector(".modal-overlay.open");
+    if (modalAbierto && !confirm("Tienes una ventana abierta. Si actualizas ahora se perderá lo que estés escribiendo. ¿Actualizar de todas formas?")) {
+      return;
+    }
     guardarVersion(versionServidor);
     window.location.reload();
   }
