@@ -122,61 +122,41 @@
     return { ok: resp.ok && cuerpo.ok !== false, ...cuerpo, error: cuerpo.error };
   };
 
-  // ── Service worker (PWA) con aviso de actualización ──
-  if ("serviceWorker" in navigator) {
-    const teniaControlador = !!navigator.serviceWorker.controller;
-    const esIngreso = document.body.dataset.login === "1";
+  // ── Actualizaciones: versión aceptada en este dispositivo vs. versión del servidor ──
+  const versionServidor = document.body.dataset.version;
+  const hayNueva = document.body.dataset.nueva === "1";
+  const esIngreso = document.body.dataset.login === "1";
+  const guardarVersion = (v) => {
+    document.cookie = "cea_v=" + v + "; path=/; max-age=31536000; SameSite=Lax";
+  };
+  // Primera vez en este dispositivo: se queda con la versión actual
+  if (!/(?:^|; )cea_v=/.test(document.cookie)) guardarVersion(versionServidor);
 
-    function aplicarActualizacion(reg) {
-      const boton = document.getElementById("update-btn");
-      if (boton) { boton.disabled = true; boton.textContent = "Actualizando..."; }
-      const item = document.getElementById("update-nav");
-      if (item) item.firstChild.nextSibling.textContent = " Actualizando... ";
-      if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+  function aplicarActualizacion() {
+    guardarVersion(versionServidor);
+    window.location.reload();
+  }
+
+  if (hayNueva) {
+    // Apartado fijo en el menú
+    const item = document.getElementById("update-nav");
+    if (item) {
+      item.hidden = false;
+      item.onclick = (e) => { e.preventDefault(); aplicarActualizacion(); };
     }
+    document.getElementById("menu-btn")?.classList.add("has-update");
 
-    function mostrarActualizacion(reg) {
-      // 1) Apartado fijo en el menú (siempre que haya versión nueva)
-      const item = document.getElementById("update-nav");
-      if (item) {
-        item.hidden = false;
-        item.onclick = (e) => { e.preventDefault(); aplicarActualizacion(reg); };
-      }
-      document.getElementById("menu-btn")?.classList.add("has-update");
-
-      // 2) Aviso grande: solo en la pantalla que sigue al inicio de sesión
-      const banner = document.getElementById("update-banner");
-      if (!esIngreso || !banner || banner.dataset.cerrado) return;
+    // Aviso grande: solo justo después de iniciar sesión
+    const banner = document.getElementById("update-banner");
+    if (esIngreso && banner) {
       banner.hidden = false;
-      document.getElementById("update-btn").onclick = () => aplicarActualizacion(reg);
-      document.getElementById("update-later").onclick = () => {
-        banner.hidden = true;
-        banner.dataset.cerrado = "1";
-      };
+      document.getElementById("update-btn").onclick = aplicarActualizacion;
+      document.getElementById("update-later").onclick = () => { banner.hidden = true; };
     }
+  }
 
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/static/sw.js", { scope: "/" }).then((reg) => {
-        if (reg.waiting && navigator.serviceWorker.controller) mostrarActualizacion(reg);
-        reg.addEventListener("updatefound", () => {
-          const nuevo = reg.installing;
-          if (!nuevo) return;
-          nuevo.addEventListener("statechange", () => {
-            if (nuevo.state === "installed" && navigator.serviceWorker.controller) mostrarActualizacion(reg);
-          });
-        });
-        // Buscar versión nueva al volver a la app y cada 30 min
-        document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update(); });
-        setInterval(() => reg.update(), 30 * 60 * 1000);
-      }).catch(() => {});
-    });
-
-    // Cuando el usuario acepta, la versión nueva toma el control: recargar una sola vez
-    let recargando = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (recargando || !teniaControlador) return;
-      recargando = true;
-      window.location.reload();
-    });
+  // ── Service worker (PWA) ──
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("/static/sw.js", { scope: "/" }).catch(() => {}));
   }
 })();

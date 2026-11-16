@@ -1,26 +1,18 @@
 /* Service worker.
-   - Guarda en caché SOLO archivos estáticos (CSS, JS, iconos) para que la app abra rápido.
-   - Las páginas y los datos (pagos, alumnos, caja) NUNCA se guardan: siempre vienen del servidor.
-   - Sin internet muestra una pantalla "sin conexión".
-   Cuando cambies CSS/JS, sube VERSION para que los celulares se actualicen. */
-const VERSION = "cea-v20";
-const CACHE_FILES = ["/offline", "/static/css/app.css", "/static/js/app.js", "/static/icons/icon-192.png"];
+   - Guarda en caché SOLO archivos estáticos (CSS, JS, iconos). Cada archivo se pide con ?v=NN,
+     así cada versión queda guardada aparte y el dispositivo sigue con la que aceptó.
+   - Las páginas y los datos (pagos, alumnos, caja) NUNCA se guardan.
+   - Sin internet muestra la pantalla "sin conexión". */
+const VERSION = "cea-v22";
+const CACHE = "cea-static";
 
 self.addEventListener("install", (e) => {
-  // Sin skipWaiting(): la versión nueva espera hasta que el usuario acepte.
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CACHE_FILES)));
-});
-
-self.addEventListener("message", (e) => {
-  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then((c) => c.add("/offline")));
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((ks) => Promise.all(ks.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("fetch", (e) => {
@@ -31,13 +23,10 @@ self.addEventListener("fetch", (e) => {
 
   if (url.pathname.startsWith("/static/")) {
     e.respondWith(
-      caches.match(req).then((guardado) => {
-        const red = fetch(req).then((r) => {
-          if (r.ok) { const copia = r.clone(); caches.open(VERSION).then((c) => c.put(req, copia)); }
-          return r;
-        }).catch(() => guardado);
-        return guardado || red;
-      })
+      caches.match(req).then((guardado) => guardado || fetch(req).then((r) => {
+        if (r.ok) { const copia = r.clone(); caches.open(CACHE).then((c) => c.put(req, copia)); }
+        return r;
+      }))
     );
     return;
   }

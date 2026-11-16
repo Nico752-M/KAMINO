@@ -39,7 +39,13 @@ def create_app() -> Flask:
 
     @app.context_processor
     def contexto_global():
-        datos = {"csrf_token": auth.token_csrf, "asset_v": Config.ASSET_V,
+        aceptada = request.cookies.get("cea_v", "")
+        if not aceptada.isdigit():
+            aceptada = ""
+        datos = {"csrf_token": auth.token_csrf,
+                 "asset_v": aceptada or Config.ASSET_V,   # versión que ese dispositivo aceptó
+                 "version_actual": Config.ASSET_V,
+                 "hay_version_nueva": bool(aceptada) and aceptada != Config.ASSET_V,
                  "fecha_hoy": fecha_larga(), "runt_pendientes": 0,
                  "permisos": auth.permisos_actuales(),
                  "aviso_login": session.pop("aviso_login", False)}
