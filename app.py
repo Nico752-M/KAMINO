@@ -47,7 +47,7 @@ def create_app() -> Flask:
                  "version_actual": Config.ASSET_V,
                  "hay_version_nueva": bool(aceptada) and aceptada != Config.ASSET_V,
                  "fecha_hoy": fecha_larga(), "runt_pendientes": 0,
-                 "permisos": auth.permisos_actuales(),
+                 "permisos": auth.permisos_actuales() if "uid" in session else set(),
                  "aviso_login": session.pop("aviso_login", False)}
         if "uid" in session and "ver_tramites" in datos["permisos"]:
             from rutas.tramites import contar_pendientes_cacheado

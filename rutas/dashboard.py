@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from flask import Blueprint, current_app, render_template
@@ -55,16 +56,15 @@ def index():
         datos["ingresos_mes"] = float(r["ingresos_mes"]) if r else 0
         datos["pendiente_total"] = float(r["pendiente_total"]) if r else 0
 
-        datos["por_categoria"] = db.fetchall("""
+        sql_categoria = """
             SELECT categoria, COUNT(*) AS cantidad
             FROM matriculas
             WHERE archivado = 0 AND fecha_registro >= %s AND fecha_registro < %s
             GROUP BY categoria
             ORDER BY cantidad DESC, categoria
             FETCH FIRST 8 ROWS ONLY
-        """, (inicio, fin))
-
-        datos["recientes"] = db.fetchall("""
+        """
+        sql_recientes = """
             SELECT * FROM (
                 SELECT m.id, m.fecha_registro, m.categoria,
                        CASE WHEN m.estado = 'Cancelado' THEN 'Pagado' ELSE m.estado END AS estado,
@@ -79,14 +79,8 @@ def index():
                 ORDER BY m.fecha_registro DESC, m.id DESC
             )
             FETCH FIRST 8 ROWS ONLY
-        """)
-        for matricula in datos["recientes"]:
-            total = float(matricula["precio_total"] or 0)
-            pagado = float(matricula["pagado"] or 0)
-            matricula["progreso"] = min(100, round(pagado * 100 / total)) if total else 0
-            matricula["saldo"] = max(total - pagado, 0)
-
-        filas = db.fetchall("""
+        """
+        sql_deudores = """
             SELECT *
             FROM (
                 SELECT m.id, a.nombres, a.apellidos, a.numero_documento, m.categoria,
@@ -103,8 +97,20 @@ def index():
                 ORDER BY saldo DESC
             )
             FETCH FIRST 5 ROWS ONLY
-        """)
-        datos["deudores"] = filas
+        """
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_cat = pool.submit(db.fetchall, sql_categoria, (inicio, fin))
+            f_rec = pool.submit(db.fetchall, sql_recientes)
+            f_deu = pool.submit(db.fetchall, sql_deudores)
+            datos["por_categoria"] = f_cat.result()
+            datos["recientes"] = f_rec.result()
+            datos["deudores"] = f_deu.result()
+
+        for matricula in datos["recientes"]:
+            total = float(matricula["precio_total"] or 0)
+            pagado = float(matricula["pagado"] or 0)
+            matricula["progreso"] = min(100, round(pagado * 100 / total)) if total else 0
+            matricula["saldo"] = max(total - pagado, 0)
     except Exception as e:
         error = "No se pudieron cargar las métricas. Revisa la conexión con la base de datos."
         current_app.logger.exception("No se pudieron cargar las métricas del dashboard: %s", e)
