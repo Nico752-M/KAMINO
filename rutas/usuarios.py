@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash
 import db
 from auth import login_required, permiso_requerido
 from permisos import GRUPOS_PERMISOS, PERMISOS, PERMISOS_POR_ROL, ROLES
-from utils import parsear_pesos
+from utils import invalidar_cache, parsear_pesos
 
 bp = Blueprint("usuarios", __name__, url_prefix="/admin/usuarios")
 
@@ -126,6 +126,7 @@ def lista():
 @login_required
 @permiso_requerido("gestionar_usuarios")
 def crear_tarifa():
+    invalidar_cache("tarifas_activas")
     categoria = " ".join(request.form.get("categoria", "").upper().split())
     tipo = request.form.get("tipo", "")
     precio = _precio_tarifa(request.form.get("precio_base"))
@@ -162,6 +163,7 @@ def crear_tarifa():
 @login_required
 @permiso_requerido("gestionar_usuarios")
 def actualizar_tarifa(tipo: str, categoria: str):
+    invalidar_cache("tarifas_activas")
     if tipo not in ("CURSO", "RENOVACION"):
         flash("El tipo de tarifa no es válido.", "error")
         return redirect(url_for("usuarios.lista"))
@@ -213,6 +215,7 @@ def actualizar_tarifa(tipo: str, categoria: str):
 @login_required
 @permiso_requerido("gestionar_usuarios")
 def crear_categoria_caja():
+    invalidar_cache("categorias_caja_activas")
     categoria = " ".join(request.form.get("categoria", "").upper().split())
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
         flash("La categoría es obligatoria y solo admite letras, números, espacios, puntos y guiones.", "error")
@@ -240,6 +243,7 @@ def crear_categoria_caja():
 @login_required
 @permiso_requerido("gestionar_usuarios")
 def actualizar_categoria_caja(categoria: str):
+    invalidar_cache("categorias_caja_activas")
     categoria_clave = " ".join(categoria.upper().split())
     accion = request.form.get("accion")
     if accion not in ("actualizar", "desactivar"):

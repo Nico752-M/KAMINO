@@ -58,3 +58,22 @@ def a_fecha(valor) -> date | None:
     if isinstance(valor, date):
         return valor
     return None
+
+import time as _time
+
+_CACHE: dict = {}
+
+
+def cacheado(clave: str, ttl: int, consulta):
+    """Devuelve el resultado guardado si tiene menos de `ttl` segundos."""
+    guardado = _CACHE.get(clave)
+    if guardado and _time.monotonic() - guardado[0] < ttl:
+        return guardado[1]
+    valor = consulta()
+    _CACHE[clave] = (_time.monotonic(), valor)
+    return valor
+
+
+def invalidar_cache(*claves: str) -> None:
+    for clave in claves:
+        _CACHE.pop(clave, None)

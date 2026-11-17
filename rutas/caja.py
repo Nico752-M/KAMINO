@@ -10,7 +10,7 @@ from flask import Blueprint, Response, abort, current_app, flash, redirect, rend
 import db
 from auth import login_required, permiso_requerido, permisos_actuales, usuario_actual
 from servicios.recibos import numero_recibo
-from utils import cop, hoy, parsear_pesos
+from utils import cacheado, cop, hoy, parsear_pesos
 
 bp = Blueprint("caja", __name__)
 MAX_CAJA = 999_999_999_999
@@ -544,9 +544,9 @@ def resumen():
 
     totales["en_caja"] = totales["esperado"]
     try:
-        categorias_caja = db.fetchall(
+        categorias_caja = cacheado("categorias_caja_activas", 60, lambda: db.fetchall(
             "SELECT categoria FROM categorias_caja WHERE activo = 1 ORDER BY categoria"
-        )
+        ))
     except Exception:
         current_app.logger.exception("No se pudieron consultar las categorías de caja")
         error = error or "No se pudieron cargar las categorías de movimientos."

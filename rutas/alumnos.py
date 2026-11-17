@@ -12,7 +12,7 @@ from auth import login_required, permiso_requerido, permisos_actuales
 from servicios.matriculas import estado_matricula
 from servicios.recibos import numero_recibo
 from servicios.validaciones import validar_datos_alumno, validar_responsable
-from utils import hoy, parsear_pesos
+from utils import cacheado, hoy, parsear_pesos
 
 bp = Blueprint("alumnos", __name__)
 
@@ -87,10 +87,10 @@ def lista():
     tarifas, error_tarifas = [], None
 
     try:
-        tarifas = db.fetchall(
+        tarifas = cacheado("tarifas_activas", 60, lambda: db.fetchall(
             "SELECT categoria, tipo, precio_base FROM tarifas_categoria "
             "WHERE activo = 1 ORDER BY tipo, categoria"
-        )
+        ))
     except Exception:
         error_tarifas = "No se pudieron cargar las tarifas por categoría."
         current_app.logger.exception("No se pudieron cargar las tarifas")
