@@ -48,14 +48,10 @@ def _wallet_dir() -> str:
 
 
 def _init_sesion(cnx, requested_tag):
-    if requested_tag == "cea":
-        return
     with cnx.cursor() as c:
         if Config.DB_SCHEMA:
-            c.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {Config.DB_SCHEMA} TIME_ZONE = '{Config.DB_TIMEZONE}'")
-        else:
-            c.execute(f"ALTER SESSION SET TIME_ZONE = '{Config.DB_TIMEZONE}'")
-    cnx.tag = "cea"
+            c.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {Config.DB_SCHEMA}")
+        c.execute(f"ALTER SESSION SET TIME_ZONE = '{Config.DB_TIMEZONE}'")
 
 
 def _get_pool():
@@ -88,7 +84,7 @@ def _get_pool():
 def _conectar():
     inicio = time.perf_counter()
     try:
-        return _get_pool().acquire(tag="cea")
+        return _get_pool().acquire()
     finally:
         _registrar_medicion(inicio)
 
