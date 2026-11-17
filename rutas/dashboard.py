@@ -64,20 +64,20 @@ def index():
             FETCH FIRST 8 ROWS ONLY
         """
         sql_recientes = """
-            SELECT * FROM (
-                SELECT m.id, m.fecha_registro, m.categoria,
-                       CASE WHEN m.estado = 'Cancelado' THEN 'Pagado' ELSE m.estado END AS estado,
-                       a.nombres, a.apellidos, m.precio_total,
-                       COALESCE(SUM(p.valor), 0) AS pagado
-                FROM matriculas m
-                JOIN alumnos a ON a.numero_documento = m.numero_documento
-                LEFT JOIN pagos p ON p.id_matricula = m.id AND p.anulado = 0
-                WHERE m.archivado = 0
-                GROUP BY m.id, m.fecha_registro, m.categoria, m.estado,
-                         a.nombres, a.apellidos, m.precio_total
-                ORDER BY m.fecha_registro DESC, m.id DESC
-            )
-            FETCH FIRST 8 ROWS ONLY
+            SELECT m.id, m.fecha_registro, m.categoria,
+                   CASE WHEN m.estado = 'Cancelado' THEN 'Pagado' ELSE m.estado END AS estado,
+                   a.nombres, a.apellidos, m.precio_total,
+                   COALESCE((SELECT SUM(p.valor) FROM pagos p
+                             WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado
+            FROM (
+                SELECT id, fecha_registro, categoria, estado, numero_documento, precio_total
+                FROM matriculas
+                WHERE archivado = 0
+                ORDER BY fecha_registro DESC, id DESC
+                FETCH FIRST 8 ROWS ONLY
+            ) m
+            JOIN alumnos a ON a.numero_documento = m.numero_documento
+            ORDER BY m.fecha_registro DESC, m.id DESC
         """
         sql_deudores = """
             SELECT *
