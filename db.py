@@ -94,7 +94,7 @@ def _conectar():
 
 
 def _obtener():
-    """Una sola conexión por petición. Devuelve (conexión, es_propia)."""
+    """Una sola conexión por petición.Devuelve (conexión, es_propia)."""
     if has_request_context():
         cnx = getattr(g, "db_cnx", None)
         if cnx is None:
