@@ -362,6 +362,11 @@ def crear_matricula():
                       round((precio_base - precio) * 100 / precio_base, 2)))
                 matricula_id = cur.execute("SELECT id FROM matriculas WHERE anio = %s AND numero_orden = %s",
                                            (anio, orden)).fetchone()["id"]
+                cur.execute("""
+                    INSERT INTO matricula_costos (id_matricula, concepto, valor, usuario_id)
+                    SELECT %s, concepto, valor, %s FROM costos_plantilla
+                    WHERE tipo = %s AND categoria = %s AND activo = 1
+                """, (matricula_id, session["uid"], tipo_tarifa, categoria_base))
                 if responsable_informado:
                     cur.execute("""
                         INSERT INTO responsables_matricula
