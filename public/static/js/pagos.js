@@ -75,11 +75,11 @@
       '<input class="input-clean" type="text" inputmode="numeric" autocomplete="off" data-money-input ' +
       'data-reparto="' + c.id + '" data-restante="' + c.restante + '" placeholder="0"></div>'
     );
-    filas.push('<div class="distrib-row"><div><strong>Ganancia</strong><small>Lo que queda para el CEA</small></div>' +
-      '<input class="input-clean" type="text" inputmode="numeric" autocomplete="off" data-money-input ' +
-      'data-reparto="ganancia" placeholder="0"></div>');
+    filas.push('<div class="distrib-row"><div><strong>Ganancia</strong><small>Automática: lo que sobra después de los costos</small></div>' +
+      '<input class="input-clean" type="text" autocomplete="off" readonly tabindex="-1" ' +
+      'data-reparto="ganancia" placeholder="0" style="opacity:.85"></div>');
     $("distribFilas").innerHTML = filas.join("");
-    $("distribFilas").querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => {
+    $("distribFilas").querySelectorAll("input:not([readonly])").forEach((inp) => inp.addEventListener("input", () => {
       window.formatearCampoMoneda(inp);
       ctx.editado = true;
       actualizarPendiente();
@@ -105,8 +105,6 @@
       campo.value = parte ? window.formatearMiles(parte) : "";
       resto -= parte;
     });
-    const g = campoReparto("ganancia");
-    if (g) g.value = resto ? window.formatearMiles(resto) : "";
     actualizarPendiente();
   }
 
@@ -119,10 +117,26 @@
     return partes;
   }
 
+  // Suma de lo asignado a costos (todo menos la ganancia, que es automática).
+  function sumaCostos() {
+    let total = 0;
+    document.querySelectorAll("#distribFilas [data-reparto]:not([data-reparto='ganancia'])").forEach((inp) => {
+      total += soloDigitos(inp.value);
+    });
+    return total;
+  }
+
+  // La ganancia es lo que sobra del pago después de los costos. Devuelve lo que
+  // falta por cuadrar: 0 si todo bien, negativo si los costos superan el pago.
   function actualizarPendiente() {
     const caja = $("distribSection");
     if (!caja) return 0;
-    const pendiente = soloDigitos($("inputAmount").value) - leerReparto().reduce((a, p) => a + p.valor, 0);
+    const abono = soloDigitos($("inputAmount").value);
+    const costos = sumaCostos();
+    const ganancia = Math.max(abono - costos, 0);
+    const g = campoReparto("ganancia");
+    if (g) g.value = ganancia ? window.formatearMiles(ganancia) : "";
+    const pendiente = abono - costos - ganancia;   // 0, o negativo si los costos se pasan
     $("distribPendiente").textContent = fmt(pendiente);
     $("distribPendiente").parentElement.className = "distrib-total " + (pendiente === 0 ? "ok" : "falta");
     return pendiente;
@@ -141,9 +155,10 @@
     if (ctx.saldo > 0 && valor > ctx.saldo)
       return error("El abono no puede superar el saldo pendiente (" + fmt(ctx.saldo) + ").");
 
-    const reparto = $("distribSection") && $("distribSection").style.display !== "none" ? leerReparto() : [];
-    if (reparto.length && actualizarPendiente() !== 0)
-      return error("El reparto debe sumar exactamente " + fmt(valor) + ". Ajusta los valores.");
+    const hayReparto = $("distribSection") && $("distribSection").style.display !== "none";
+    if (hayReparto && actualizarPendiente() !== 0)
+      return error("Los costos asignados superan el valor del pago (" + fmt(valor) + "). Ajusta los valores.");
+    const reparto = hayReparto ? leerReparto() : [];
     for (const p of reparto) {
       const campo = p.costo_id === null ? null : campoReparto(p.costo_id);
       if (campo && p.valor > Number(campo.dataset.restante))
