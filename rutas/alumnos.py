@@ -653,41 +653,81 @@ def editar_matricula(matricula_id):
     return redirect(url_for("alumnos.lista"))
 
 
-@bp.route("/alumnos/matricula/<int:matricula_id>/archivar", methods=["POST"])
+@bp.route("/alumnos/matricula/<int:matricula_id>/borrar", methods=["POST"])
 @login_required
 @permiso_requerido("eliminar_alumnos")
-def archivar_matricula(matricula_id):
+def borrar_matricula(matricula_id):
+    """Borra de verdad la matrícula con sus pagos, costos y reparto. Si el alumno no
+    tiene otras matrículas, también borra al alumno. Deja una copia en la auditoría."""
     motivo = " ".join(request.form.get("motivo", "").split())
     if not motivo or len(motivo) > 500:
         flash("El motivo es obligatorio y admite hasta 500 caracteres.", "error")
         return redirect(url_for("alumnos.lista"))
     try:
         with db.transaccion() as cur:
-            actual = cur.execute(
-                """SELECT id, numero_documento, categoria, estado, precio_total, archivado,
-                          motivo_archivo, archivado_por, fecha_archivo
+            mat = cur.execute(
+                """SELECT id, numero_orden, anio, numero_documento, categoria, estado,
+                          precio_total, archivado
                    FROM matriculas WHERE id = %s FOR UPDATE""",
                 (matricula_id,),
             ).fetchone()
-            if not actual:
+            if not mat:
                 flash("La matrícula ya no existe.", "error")
                 return redirect(url_for("alumnos.lista"))
-            if actual["archivado"]:
-                flash("La matrícula ya está archivada.", "error")
+
+            pagos = cur.execute(
+                """SELECT p.id, p.numero_recibo, p.concepto, p.valor, p.metodo_pago, p.anulado,
+                          p.caja_id, c.estado AS estado_caja
+                   FROM pagos p LEFT JOIN cajas c ON c.id = p.caja_id
+                   WHERE p.id_matricula = %s""",
+                (matricula_id,),
+            ).fetchall()
+            if any(p["estado_caja"] == "CERRADA" for p in pagos):
+                flash("No se puede borrar: tiene pagos en una caja que ya fue cerrada.", "error")
                 return redirect(url_for("alumnos.lista"))
-            cur.execute("""
-                UPDATE matriculas SET archivado = 1, motivo_archivo = %s,
-                    archivado_por = %s, fecha_archivo = CURRENT_TIMESTAMP
-                WHERE id = %s AND archivado = 0
-            """, (motivo, session["uid"], matricula_id))
-            _auditar(cur, "MATRICULA", matricula_id, "ARCHIVO", session["uid"],
-                     dict(actual), {**actual, "archivado": 1, "motivo_archivo": motivo,
-                                    "archivado_por": session["uid"]}, motivo)
+
+            costos = cur.execute(
+                "SELECT id, concepto, valor, pagado, anulado FROM matricula_costos WHERE id_matricula = %s",
+                (matricula_id,),
+            ).fetchall()
+            alumno = cur.execute(
+                "SELECT numero_documento, tipo_documento, nombres, apellidos "
+                "FROM alumnos WHERE numero_documento = %s",
+                (mat["numero_documento"],),
+            ).fetchone()
+
+            # Copia de lo que se borra, para que quede rastro de quién y por qué.
+            _auditar(cur, "MATRICULA", matricula_id, "BORRADO", session["uid"],
+                     {"matricula": dict(mat), "alumno": dict(alumno) if alumno else None,
+                      "pagos": [{k: p[k] for k in ("numero_recibo", "concepto", "valor",
+                                                   "metodo_pago", "anulado")} for p in pagos],
+                      "costos": [dict(c) for c in costos]},
+                     None, motivo)
+
+            # Orden: primero lo que depende de otras filas.
+            cur.execute("""DELETE FROM pago_distribucion
+                           WHERE id_pago IN (SELECT id FROM pagos WHERE id_matricula = %s)""",
+                        (matricula_id,))
+            cur.execute("""DELETE FROM pago_distribucion
+                           WHERE id_costo IN (SELECT id FROM matricula_costos WHERE id_matricula = %s)""",
+                        (matricula_id,))
+            cur.execute("DELETE FROM pagos WHERE id_matricula = %s", (matricula_id,))
+            cur.execute("DELETE FROM matricula_costos WHERE id_matricula = %s", (matricula_id,))
+            cur.execute("DELETE FROM responsables_matricula WHERE id_matricula = %s", (matricula_id,))
+            cur.execute("DELETE FROM matriculas WHERE id = %s", (matricula_id,))
+
+            otras = cur.execute(
+                "SELECT COUNT(*) AS n FROM matriculas WHERE numero_documento = %s",
+                (mat["numero_documento"],),
+            ).fetchone()["n"]
+            if not otras:
+                cur.execute("DELETE FROM alumnos WHERE numero_documento = %s",
+                            (mat["numero_documento"],))
     except Exception:
-        current_app.logger.exception("Error archivando matrícula %s", matricula_id)
-        flash("No se pudo archivar la matrícula. Intenta de nuevo.", "error")
+        current_app.logger.exception("Error borrando matrícula %s", matricula_id)
+        flash("No se pudo borrar. Intenta de nuevo.", "error")
         return redirect(url_for("alumnos.lista"))
-    flash("Matrícula archivada. Sus pagos y recibos se conservaron.", "ok")
+    flash("Alumno borrado definitivamente junto con sus pagos y costos.", "ok")
     return redirect(url_for("alumnos.lista"))
 
 
