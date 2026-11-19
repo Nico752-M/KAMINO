@@ -5,7 +5,7 @@ PERMISOS = {
     "ver_alumnos": "Ver alumnos y matrículas",
     "crear_matricula": "Crear alumnos y matrículas",
     "editar_alumnos": "Editar datos de alumnos y matrículas",
-    "eliminar_alumnos": "Anular o archivar matrículas",
+    "eliminar_alumnos": "Borrar alumnos y matrículas",
     "ver_historial_pagos": "Ver historial de pagos por alumno",
     "registrar_pagos": "Registrar pagos",
     "anular_pagos": "Anular pagos",
