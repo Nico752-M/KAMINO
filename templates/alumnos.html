@@ -22,12 +22,15 @@
                   data-saldo="{{ f.saldo|int }}"
                   data-concepto="{{ f.concepto }}"><i class="ri-hand-coin-line"></i> Cobrar</button>
           {% endif %}
-          {% if 'ver_historial_pagos' in permisos or ('editar_alumnos' in permisos and f.estado != 'Archivado') or ('eliminar_alumnos' in permisos and f.estado != 'Archivado') %}
+          {% if 'ver_historial_pagos' in permisos or 'ver_ganancias' in permisos or ('editar_alumnos' in permisos and f.estado != 'Archivado') or ('eliminar_alumnos' in permisos and f.estado != 'Archivado') %}
           <details class="student-actions-menu">
             <summary class="btn-action sm"><i class="ri-more-2-fill"></i> Más</summary>
             <div class="student-actions-list">
               {% if 'ver_historial_pagos' in permisos %}
               <a href="{{ url_for('alumnos.historial', matricula_id=f.matricula_id) }}"><i class="ri-history-line"></i> Historial</a>
+              {% endif %}
+              {% if 'ver_ganancias' in permisos %}
+              <a href="{{ url_for('costos.cuenta', matricula_id=f.matricula_id) }}"><i class="ri-money-dollar-circle-line"></i> Cuenta y ganancia</a>
               {% endif %}
               {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
               <a href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
