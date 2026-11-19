@@ -76,7 +76,7 @@ class _Ticket:
         alto = self._altura() + 10 * MM
         buf = BytesIO()
         c = canvas.Canvas(buf, pagesize=(ANCHO, alto))
-        c.setTitle("Recibo PRACTICAR")
+        c.setTitle("Recibo CEA La 30")
         util = ANCHO - 2 * MARGEN
         y = alto
         for cmd in self.cmds:
@@ -139,7 +139,7 @@ def _datos_finales(t: _Ticket, d: dict) -> None:
 
 
 def _datos_escuela(t: _Ticket) -> None:
-    t.texto("PRACTICAR", F_TITULO, "C", ROJO)
+    t.texto("CEA LA 30", F_TITULO, "C", ROJO)
     t.texto("Centro de Enseñanza Automovilística", F_PEQUE, "C", GRIS)
     ubicacion = " · ".join(valor for valor in (
         Config.CEA_CIUDAD, f"NIT: {Config.CEA_NIT}" if Config.CEA_NIT else ""
