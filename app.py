@@ -31,9 +31,9 @@ def create_app() -> Flask:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # ── Blueprints ──
-    from rutas import alumnos, caja, dashboard, pagos, tramites, usuarios
+    from rutas import alumnos, caja, costos, dashboard, pagos, tramites, usuarios
     app.register_blueprint(auth.bp)
-    for modulo in (dashboard, alumnos, pagos, caja, tramites, usuarios):
+    for modulo in (dashboard, alumnos, pagos, caja, costos, tramites, usuarios):
         app.register_blueprint(modulo.bp)
 
     # ── Plantillas ──
