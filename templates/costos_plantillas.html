@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set nav = 'costos' %}
+{% block titulo %}Plantillas de costos — CEA La 30{% endblock %}
+{% block contenido %}
+<div class="section-header">
+  <div>
+    <span class="eyebrow">COSTOS POR CATEGORÍA</span>
+    <h2 class="section-title">Plantillas de costos</h2>
+    <p class="section-desc">Estos costos se copian solos a cada matrícula nueva de la categoría. Luego se pueden cambiar alumno por alumno. Cambiar la plantilla no modifica las matrículas ya creadas.</p>
+  </div>
+  <a class="btn-action" href="{{ url_for('alumnos.lista') }}"><i class="ri-arrow-left-line"></i> Volver a alumnos</a>
+</div>
+
+{% for grupo in grupos %}
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-price-tag-3-line"></i>
+    {{ grupo.categoria }} · {{ 'Renovación' if grupo.tipo == 'RENOVACION' else 'Curso' }}</div>
+  {% if grupo.precio is not none %}
+  <div class="payment-summary">
+    <div><span>Precio base</span><strong>{{ grupo.precio|cop }}</strong></div>
+    <div><span>Costos de la plantilla</span><strong>{{ grupo.total|cop }}</strong></div>
+    <div><span>Ganancia estimada</span>
+      <strong style="color:{{ 'var(--accent-green)' if grupo.ganancia >= 0 else 'var(--accent-red)' }}">{{ grupo.ganancia|cop }}</strong></div>
+  </div>
+  {% endif %}
+
+  {% if grupo.costos %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Concepto</th><th>Valor</th><th>Acciones</th></tr></thead>
+    <tbody>{% for i in grupo.costos %}
+      <tr>
+        <td colspan="2">
+          <form method="post" action="{{ url_for('costos.editar_plantilla', plantilla_id=i.id) }}"
+                style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input class="input-clean" name="concepto" value="{{ i.concepto }}" maxlength="100" required style="flex:2;min-width:160px;border-radius:10px">
+            <input class="input-clean" name="valor" value="{{ i.valor|int }}" inputmode="numeric" required style="flex:1;min-width:110px;border-radius:10px">
+            <button class="btn-action sm" type="submit"><i class="ri-save-line"></i> Guardar</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('costos.eliminar_plantilla', plantilla_id=i.id) }}"
+                data-confirm-message="¿Quitar este costo de la plantilla? Las matrículas ya creadas no cambian.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn-action red sm" type="submit"><i class="ri-delete-bin-line"></i> Quitar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">Esta categoría todavía no tiene costos en su plantilla.</div>{% endif %}
+
+  <form method="post" action="{{ url_for('costos.crear_plantilla') }}"
+        style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:1rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="tipo" value="{{ grupo.tipo }}">
+    <input type="hidden" name="categoria" value="{{ grupo.categoria }}">
+    <input class="input-clean" name="concepto" placeholder="Concepto (ej: Estampilla)" maxlength="100" required style="flex:2;min-width:160px;border-radius:10px">
+    <input class="input-clean" name="valor" placeholder="Valor" inputmode="numeric" required style="flex:1;min-width:110px;border-radius:10px">
+    <button class="btn-action green sm" type="submit"><i class="ri-add-line"></i> Agregar</button>
+  </form>
+</section>
+{% else %}
+<section class="card-bento"><div class="vacio">Primero configura las tarifas por categoría en Administración.</div></section>
+{% endfor %}
+{% endblock %}
