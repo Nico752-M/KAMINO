@@ -1,4 +1,4 @@
-# CEA Practicar
+# CEA La 30
 
 Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PWA.
 
