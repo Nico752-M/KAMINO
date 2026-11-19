@@ -322,3 +322,13 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
 .update-nav i{color:var(--accent-gold)}
 .menu-btn{position:relative}
 .menu-btn.has-update::after{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:var(--accent-red);border:2px solid var(--bg-card)}
+/* ===== Reparto del pago (costos y ganancia) ===== */
+.distrib-box{background:var(--bg-sidebar);border:1px solid var(--border-color);border-radius:14px;padding:1rem 1.15rem;margin-top:1rem}
+.distrib-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem}
+.distrib-title{font-size:.78rem;font-weight:800;color:var(--accent-gold);text-transform:uppercase}
+.distrib-row{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:.6rem;align-items:center;margin-bottom:.55rem}
+.distrib-row small{display:block;color:var(--text-muted);font-size:.72rem}
+.distrib-row .input-clean{text-align:right;font-weight:700;padding:.5rem .7rem}
+.distrib-total{display:flex;justify-content:space-between;align-items:center;font-weight:800;border-top:1px dashed var(--border-color);padding-top:8px;margin-top:6px}
+.distrib-total.ok strong{color:var(--accent-green)}
+.distrib-total.falta strong{color:var(--accent-red)}
