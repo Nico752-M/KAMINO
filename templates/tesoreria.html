@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set nav = 'caja' %}
-{% block titulo %}Caja — CEA Practicar{% endblock %}
+{% block titulo %}Caja — CEA La 30{% endblock %}
 {% block contenido %}
 {% set tab_inicial = 'caja-historial' if (recibo_q or request.args.get('historial') or request.args.get('pagina')) else ('caja-turno' if puede_cobrar else 'caja-cierres') %}
 <div class="section-header cash-page-header">
