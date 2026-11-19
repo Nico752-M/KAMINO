@@ -23,19 +23,21 @@
   <div><span>Costos ya pagados</span><strong>{{ resumen.costos_pagados|cop }}</strong></div>
   <div><span>Costos por pagar</span><strong>{{ resumen.costos_pendientes|cop }}</strong></div>
   <div><span>Disponible hoy (cobrado − costos pagados)</span><strong>{{ resumen.disponible|cop }}</strong></div>
+  <div><span>Ganancia ya repartida en pagos</span><strong>{{ resumen.ganancia_asignada|cop }}</strong></div>
 </div>
 
 <section class="card-bento">
   <div class="grupo-titulo"><i class="ri-money-dollar-circle-line"></i> Costos de esta matrícula</div>
   {% if costos %}
   <div class="table-wrap"><table class="table-clean">
-    <thead><tr><th>Concepto</th><th>Valor</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <thead><tr><th>Concepto</th><th>Valor</th><th>Cubierto con pagos</th><th>Estado</th><th>Acciones</th></tr></thead>
     <tbody>{% for c in costos %}
       <tr {% if c.anulado %}style="opacity:.55"{% endif %}>
         <td><strong {% if c.anulado %}style="text-decoration:line-through"{% endif %}>{{ c.concepto }}</strong>
           {% if c.observaciones %}<br><small>{{ c.observaciones }}</small>{% endif %}
           <br><small>{{ c.registrado_por or '' }}</small></td>
         <td><strong>{{ c.valor|cop }}</strong></td>
+        <td>{% if not c.anulado %}{{ c.cubierto|cop }}{% if c.cubierto >= c.valor %} <i class="ri-check-double-line" style="color:var(--accent-green)"></i>{% endif %}{% else %}—{% endif %}</td>
         <td>
           {% if c.anulado %}<span class="badge-status urgent">Anulado</span>
           {% elif c.pagado %}<span class="badge-status active">Pagado</span>
