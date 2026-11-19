@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#b48a3d">
-  <title>Ingresar — CEA Practicar</title>
+  <title>Ingresar — CEA La 30</title>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=asset_v) }}">
@@ -13,7 +13,7 @@
 <body class="login-page">
   <form class="login-card" method="post" autocomplete="on">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <h1>CEA PRACTICAR</h1>
+    <h1>CEA LA 30</h1>
     <p class="sub">Centro de Enseñanza Automovilística</p>
 
     {% with mensajes = get_flashed_messages(with_categories=true) %}
