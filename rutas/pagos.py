@@ -21,6 +21,61 @@ class PagoInvalido(Exception):
     """Error de negocio: se muestra tal cual al cajero."""
 
 
+def _costos_con_asignado(cur, matricula_id):
+    """Costos vigentes de la matrícula con lo ya asignado desde pagos no anulados."""
+    filas = cur.execute("""
+        SELECT c.id, c.concepto, c.valor,
+               COALESCE((SELECT SUM(d.valor) FROM pago_distribucion d
+                         JOIN pagos p ON p.id = d.id_pago
+                         WHERE d.id_costo = c.id AND p.anulado = 0), 0) AS asignado
+        FROM matricula_costos c
+        WHERE c.id_matricula = %s AND c.anulado = 0
+        ORDER BY c.fecha_registro, c.id
+    """, (matricula_id,)).fetchall()
+    return [{"id": f["id"], "concepto": f["concepto"], "valor": int(f["valor"]),
+             "asignado": int(f["asignado"]),
+             "restante": max(int(f["valor"]) - int(f["asignado"]), 0)} for f in filas]
+
+
+def _leer_distribucion(d):
+    """Normaliza [{costo_id, valor}] del navegador. costo_id nulo = ganancia."""
+    crudo = d.get("distribucion")
+    if not crudo:
+        return []
+    if not isinstance(crudo, list) or len(crudo) > 50:
+        raise PagoInvalido("La distribución del pago no es válida.")
+    partes, vistos = [], set()
+    for fila in crudo:
+        if not isinstance(fila, dict):
+            raise PagoInvalido("La distribución del pago no es válida.")
+        costo_id = fila.get("costo_id")
+        costo_id = entero(costo_id) if costo_id not in (None, "", "ganancia") else None
+        valor = entero(fila.get("valor"))
+        if costo_id is not None and costo_id <= 0:
+            raise PagoInvalido("La distribución del pago no es válida.")
+        if valor < 0 or valor > MAX_PAGO:
+            raise PagoInvalido("Los valores de la distribución no son válidos.")
+        if valor == 0:
+            continue
+        if costo_id in vistos:
+            raise PagoInvalido("Un costo aparece repetido en la distribución.")
+        vistos.add(costo_id)
+        partes.append((costo_id, valor))
+    return partes
+
+
+@bp.route("/pagos/distribucion/<int:matricula_id>")
+@login_required
+@permiso_requerido("registrar_pagos")
+def distribucion_matricula(matricula_id):
+    """Costos de la matrícula y cuánto de cada uno ya está cubierto, para repartir un pago."""
+    if "gestionar_costos" not in permisos_actuales():
+        return jsonify(ok=False, error="Sin permiso para repartir pagos."), 403
+    with db.transaccion() as cur:
+        costos = _costos_con_asignado(cur, matricula_id)
+    return jsonify(ok=True, costos=costos)
+
+
 @bp.route("/pagos/registrar", methods=["POST"])
 @login_required
 @permiso_requerido("registrar_pagos")
@@ -36,6 +91,9 @@ def registrar():
     acompanante = str(d.get("acompanante") or "").strip()[:100] or None
 
     try:
+        distribucion = _leer_distribucion(d)
+        if distribucion and "gestionar_costos" not in permisos_actuales():
+            raise PagoInvalido("No tienes permiso para repartir el pago entre costos y ganancia.")
         if mid <= 0:
             raise PagoInvalido("Matrícula no válida.")
         if metodo not in METODOS:
@@ -76,6 +134,25 @@ def registrar():
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (mid, concepto, valor, metodo, numero,
                   session["uid"], observaciones, acompanante, caja["id"], cambio))
+
+            if distribucion:
+                if sum(v for _, v in distribucion) != valor:
+                    raise PagoInvalido("El reparto debe sumar exactamente el valor del pago.")
+                costos = {c["id"]: c for c in _costos_con_asignado(cur, mid)}
+                for costo_id, parte in distribucion:
+                    if costo_id is None:
+                        continue
+                    costo = costos.get(costo_id)
+                    if not costo:
+                        raise PagoInvalido("Un costo del reparto no existe o fue anulado.")
+                    if parte > costo["restante"]:
+                        raise PagoInvalido(
+                            f"«{costo['concepto']}» solo admite {cop(costo['restante'])} más.")
+                pago_id = cur.execute("SELECT id FROM pagos WHERE numero_recibo = %s",
+                                      (numero,)).fetchone()["id"]
+                for costo_id, parte in distribucion:
+                    cur.execute("INSERT INTO pago_distribucion (id_pago, id_costo, valor) "
+                                "VALUES (%s, %s, %s)", (pago_id, costo_id, parte))
 
             cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
                         (estado_matricula(mat["estado"], precio, pagado + valor), mid))
