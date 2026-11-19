@@ -8,10 +8,10 @@
   const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
   const soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
 
-  let ctx = { matricula: 0, saldo: 0, guardando: false };
+  let ctx = { matricula: 0, saldo: 0, guardando: false, costos: [], editado: false };
 
   function abrir(btn) {
-    ctx = { matricula: btn.dataset.matricula, saldo: Number(btn.dataset.saldo) || 0, guardando: false };
+    ctx = { matricula: btn.dataset.matricula, saldo: Number(btn.dataset.saldo) || 0, guardando: false, costos: [], editado: false };
     $("modalStudentName").textContent = btn.dataset.nombre;
     $("modalStudentBalance").textContent = fmt(ctx.saldo);
     $("pagoConcepto").value = btn.dataset.concepto || "Pago curso de conducción";
@@ -27,6 +27,7 @@
     $("btnGuardarPago").disabled = false;
     cambioMetodo();
     recalcular();
+    cargarDistribucion();
     modal.classList.add("open");
     $("inputAmount").focus();
     $("inputAmount").select();
@@ -48,6 +49,83 @@
     const recibido = soloDigitos($("inputReceived").value);
     $("inputAmountFmt").textContent = abono ? fmt(abono) : "";
     $("lblChange").textContent = fmt(recibido > abono ? recibido - abono : 0);
+    if (!ctx.editado) sugerirReparto(); else actualizarPendiente();
+  }
+
+  // ── Reparto del pago entre costos y ganancia ──
+  const campoReparto = (clave) => document.querySelector('[data-reparto="' + clave + '"]');
+
+  async function cargarDistribucion() {
+    const caja = $("distribSection");
+    if (!caja) return;
+    caja.style.display = "none";
+    const matricula = ctx.matricula;
+    let datos;
+    try {
+      const resp = await fetch("/pagos/distribucion/" + encodeURIComponent(matricula), { credentials: "same-origin" });
+      datos = await resp.json();
+      if (!resp.ok || datos.ok === false) return;
+    } catch (e) { return; }
+    if (matricula !== ctx.matricula) return;   // se cerró o se abrió otro alumno
+    ctx.costos = datos.costos || [];
+    if (!ctx.costos.length) return;   // sin costos no hay nada que repartir
+    const filas = ctx.costos.map((c) =>
+      '<div class="distrib-row"><div><strong>' + escapar(c.concepto) + '</strong>' +
+      '<small>Costo ' + fmt(c.valor) + ' · cubierto ' + fmt(c.asignado) + ' · falta ' + fmt(c.restante) + '</small></div>' +
+      '<input class="input-clean" type="text" inputmode="numeric" autocomplete="off" data-money-input ' +
+      'data-reparto="' + c.id + '" data-restante="' + c.restante + '" placeholder="0"></div>'
+    );
+    filas.push('<div class="distrib-row"><div><strong>Ganancia</strong><small>Lo que queda para el CEA</small></div>' +
+      '<input class="input-clean" type="text" inputmode="numeric" autocomplete="off" data-money-input ' +
+      'data-reparto="ganancia" placeholder="0"></div>');
+    $("distribFilas").innerHTML = filas.join("");
+    $("distribFilas").querySelectorAll("input").forEach((inp) => inp.addEventListener("input", () => {
+      window.formatearCampoMoneda(inp);
+      ctx.editado = true;
+      actualizarPendiente();
+    }));
+    caja.style.display = "block";
+    sugerirReparto();
+  }
+
+  function escapar(t) {
+    const d = document.createElement("div");
+    d.textContent = t == null ? "" : String(t);
+    return d.innerHTML;
+  }
+
+  // Primero cubre los costos que faltan; lo que sobra queda como ganancia.
+  function sugerirReparto() {
+    if (!$("distribSection") || !ctx.costos.length && !campoReparto("ganancia")) return;
+    let resto = soloDigitos($("inputAmount").value);
+    ctx.costos.forEach((c) => {
+      const campo = campoReparto(c.id);
+      if (!campo) return;
+      const parte = Math.min(c.restante, resto);
+      campo.value = parte ? window.formatearMiles(parte) : "";
+      resto -= parte;
+    });
+    const g = campoReparto("ganancia");
+    if (g) g.value = resto ? window.formatearMiles(resto) : "";
+    actualizarPendiente();
+  }
+
+  function leerReparto() {
+    const partes = [];
+    document.querySelectorAll("#distribFilas [data-reparto]").forEach((inp) => {
+      const valor = soloDigitos(inp.value);
+      if (valor > 0) partes.push({ costo_id: inp.dataset.reparto === "ganancia" ? null : Number(inp.dataset.reparto), valor });
+    });
+    return partes;
+  }
+
+  function actualizarPendiente() {
+    const caja = $("distribSection");
+    if (!caja) return 0;
+    const pendiente = soloDigitos($("inputAmount").value) - leerReparto().reduce((a, p) => a + p.valor, 0);
+    $("distribPendiente").textContent = fmt(pendiente);
+    $("distribPendiente").parentElement.className = "distrib-total " + (pendiente === 0 ? "ok" : "falta");
+    return pendiente;
   }
 
   function error(msg) {
@@ -63,6 +141,15 @@
     if (ctx.saldo > 0 && valor > ctx.saldo)
       return error("El abono no puede superar el saldo pendiente (" + fmt(ctx.saldo) + ").");
 
+    const reparto = $("distribSection") && $("distribSection").style.display !== "none" ? leerReparto() : [];
+    if (reparto.length && actualizarPendiente() !== 0)
+      return error("El reparto debe sumar exactamente " + fmt(valor) + ". Ajusta los valores.");
+    for (const p of reparto) {
+      const campo = p.costo_id === null ? null : campoReparto(p.costo_id);
+      if (campo && p.valor > Number(campo.dataset.restante))
+        return error("Un costo recibe más de lo que le falta. Ajusta el reparto.");
+    }
+
     ctx.guardando = true;
     $("btnGuardarPago").disabled = true;
     $("pagoError").style.display = "none";
@@ -75,6 +162,7 @@
       observaciones: $("pagoNotas").value,
       acompanante: $("pagoAcompanante").value,
       recibido: soloDigitos($("inputReceived").value),
+      distribucion: reparto,
     });
 
     ctx.guardando = false;
@@ -98,6 +186,7 @@
   $("btnCancelarPago").addEventListener("click", () => cerrar(false));
   $("btnTerminar").addEventListener("click", () => cerrar(true));
   $("btnGuardarPago").addEventListener("click", guardar);
+  if ($("btnSugerirReparto")) $("btnSugerirReparto").addEventListener("click", () => { ctx.editado = false; sugerirReparto(); });
   $("selectPaymentMethod").addEventListener("change", cambioMetodo);
   $("inputAmount").addEventListener("input", recalcular);
   $("inputReceived").addEventListener("input", recalcular);
