@@ -87,7 +87,10 @@ def cuenta(matricula_id):
         return "Matrícula no encontrada.", 404
     costos = db.fetchall("""
         SELECT c.id, c.concepto, c.valor, c.pagado, c.fecha_pago, c.observaciones,
-               c.anulado, u.nombre AS registrado_por
+               c.anulado, u.nombre AS registrado_por,
+               COALESCE((SELECT SUM(d.valor) FROM pago_distribucion d
+                         JOIN pagos p ON p.id = d.id_pago
+                         WHERE d.id_costo = c.id AND p.anulado = 0), 0) AS cubierto
         FROM matricula_costos c LEFT JOIN usuarios u ON u.id = c.usuario_id
         WHERE c.id_matricula = %s
         ORDER BY c.anulado, c.fecha_registro, c.id
@@ -96,6 +99,12 @@ def cuenta(matricula_id):
         "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos WHERE id_matricula = %s AND anulado = 0",
         (matricula_id,),
     )["total"])
+    ganancia_asignada = int(db.fetchone("""
+        SELECT COALESCE(SUM(d.valor), 0) AS total
+        FROM pago_distribucion d
+        JOIN pagos p ON p.id = d.id_pago
+        WHERE p.id_matricula = %s AND p.anulado = 0 AND d.id_costo IS NULL
+    """, (matricula_id,))["total"])
     vigentes = [c for c in costos if not c["anulado"]]
     precio = int(alumno["precio_total"] or 0)
     total_costos = sum(int(c["valor"]) for c in vigentes)
@@ -110,6 +119,7 @@ def cuenta(matricula_id):
         "ganancia": ganancia,
         "margen": round(ganancia * 100 / precio, 1) if precio else 0,
         "disponible": cobrado - costos_pagados,
+        "ganancia_asignada": ganancia_asignada,
     }
     return render_template("cuenta_alumno.html", alumno=alumno, costos=costos, resumen=resumen)
 
