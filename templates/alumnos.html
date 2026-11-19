@@ -22,7 +22,7 @@
                   data-saldo="{{ f.saldo|int }}"
                   data-concepto="{{ f.concepto }}"><i class="ri-hand-coin-line"></i> Cobrar</button>
           {% endif %}
-          {% if 'ver_historial_pagos' in permisos or 'ver_ganancias' in permisos or ('editar_alumnos' in permisos and f.estado != 'Archivado') or ('eliminar_alumnos' in permisos and f.estado != 'Archivado') %}
+          {% if 'ver_historial_pagos' in permisos or 'ver_ganancias' in permisos or ('editar_alumnos' in permisos and f.estado != 'Archivado') or 'eliminar_alumnos' in permisos %}
           <details class="student-actions-menu">
             <summary class="btn-action sm"><i class="ri-more-2-fill"></i> Más</summary>
             <div class="student-actions-list">
@@ -35,14 +35,14 @@
               {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
               <a href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
               {% endif %}
-              {% if 'eliminar_alumnos' in permisos and f.estado != 'Archivado' %}
-              <form method="post" action="{{ url_for('alumnos.archivar_matricula', matricula_id=f.matricula_id) }}"
+              {% if 'eliminar_alumnos' in permisos %}
+              <form method="post" action="{{ url_for('alumnos.borrar_matricula', matricula_id=f.matricula_id) }}"
                     data-reason-confirm
-                    data-reason-prompt="Escribe el motivo obligatorio para archivar esta matrícula."
-                    data-confirm-message="¿Archivar esta matrícula? Los pagos y recibos se conservarán.">
+                    data-reason-prompt="Escribe el motivo obligatorio para borrar a este alumno."
+                    data-confirm-message="¿Borrar este alumno con todos sus pagos, costos y datos? Esta acción NO se puede deshacer.">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="motivo" maxlength="500">
-                <button type="submit"><i class="ri-archive-line"></i> Archivar</button>
+                <button type="submit"><i class="ri-delete-bin-line"></i> Borrar</button>
               </form>
               {% endif %}
             </div>
