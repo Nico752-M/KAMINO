@@ -45,6 +45,8 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         "editar_alumnos": "ver_alumnos",
         "eliminar_alumnos": "ver_alumnos",
         "ver_historial_pagos": "ver_alumnos",
+        "gestionar_costos": "ver_alumnos",
+        "ver_ganancias": "ver_alumnos",
         "registrar_pagos": "ver_alumnos",
         "anular_pagos": "ver_alumnos",
         "gestionar_caja": "ver_caja",
