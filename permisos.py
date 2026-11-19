@@ -15,6 +15,8 @@ PERMISOS = {
     "gestionar_caja": "Registrar ingresos y salidas manuales",
     "ver_tramites": "Ver trámites y pendientes RUNT",
     "marcar_runt": "Marcar registros RUNT",
+    "gestionar_costos": "Gestionar costos de las matrículas",
+    "ver_ganancias": "Ver ganancia de las matrículas",
     "gestionar_usuarios": "Gestionar usuarios y permisos",
 }
 
@@ -24,6 +26,7 @@ GRUPOS_PERMISOS = {
     "Alumnos": (
         "ver_alumnos", "crear_matricula", "editar_alumnos",
         "eliminar_alumnos", "ver_historial_pagos",
+        "gestionar_costos", "ver_ganancias",
     ),
     "Caja": (
         "ver_caja", "registrar_pagos", "anular_pagos",
