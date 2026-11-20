@@ -554,9 +554,9 @@ def resumen():
     admin_cajeros = []
     if admin:
         try:
-            admin_cajeros = db.fetchall(
+            admin_cajeros = cacheado("cajeros_activos", 60, lambda: db.fetchall(
                 "SELECT id, nombre FROM usuarios WHERE activo = 1 ORDER BY nombre"
-            )
+            ))
         except Exception:
             current_app.logger.exception("No se pudo consultar la lista de cajeros")
 

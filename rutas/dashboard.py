@@ -4,7 +4,7 @@ from flask import Blueprint, current_app, render_template
 
 import db
 from auth import login_required, permiso_requerido
-from utils import hoy
+from utils import cacheado, hoy
 
 bp = Blueprint("dashboard", __name__)
 
@@ -28,7 +28,7 @@ def index():
     try:
         inicio, fin = _rango_mes(hoy())
         inicio_mes_anterior = (inicio - timedelta(days=1)).replace(day=1)
-        r = db.fetchone("""
+        r = cacheado(f"dash_r_{inicio}", 30, lambda: db.fetchone("""
             SELECT
                 (SELECT COUNT(*) FROM matriculas
                  WHERE archivado = 0 AND estado <> 'Histórico') AS activos,
@@ -48,7 +48,7 @@ def index():
                     HAVING COALESCE(m.precio_total, 0) > COALESCE(SUM(p.valor), 0)
                 )) AS pendiente_total
             FROM dual
-        """, (inicio, fin, inicio_mes_anterior, inicio, inicio, fin))
+        """, (inicio, fin, inicio_mes_anterior, inicio, inicio, fin)))
         datos["activos"] = int(r["activos"]) if r else 0
         datos["matriculas_mes"] = int(r["matriculas_mes"]) if r else 0
         datos["matriculas_mes_anterior"] = int(r["matriculas_mes_anterior"]) if r else 0
@@ -97,9 +97,12 @@ def index():
             )
             FETCH FIRST 5 ROWS ONLY
         """
-        datos["por_categoria"] = db.fetchall(sql_categoria, (inicio, fin))
-        datos["recientes"] = db.fetchall(sql_recientes)
-        datos["deudores"] = db.fetchall(sql_deudores)
+        datos["por_categoria"], datos["recientes"], datos["deudores"] = cacheado(
+            f"dash_listas_{inicio}", 30, lambda: (
+                db.fetchall(sql_categoria, (inicio, fin)),
+                db.fetchall(sql_recientes),
+                db.fetchall(sql_deudores),
+            ))
 
         for matricula in datos["recientes"]:
             total = float(matricula["precio_total"] or 0)

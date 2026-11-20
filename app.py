@@ -105,6 +105,11 @@ def create_app() -> Flask:
     def healthz():
         return "ok"
 
+    @app.route("/healthz/db")
+    def healthz_db():
+        db.fetchone("SELECT 1 AS ok FROM dual")   # mantiene viva la conexión a Oracle
+        return "ok"
+
     # ── Errores ──
     @app.errorhandler(400)
     @app.errorhandler(403)
