@@ -11,7 +11,7 @@
   let ctx = { matricula: 0, saldo: 0, guardando: false, costos: [], editado: false };
 
   function abrir(btn) {
-    ctx = { matricula: btn.dataset.matricula, saldo: Number(btn.dataset.saldo) || 0, guardando: false, costos: [], editado: false };
+    ctx = { btn, matricula: btn.dataset.matricula, saldo: Number(btn.dataset.saldo) || 0, guardando: false, costos: [], editado: false };
     $("modalStudentName").textContent = btn.dataset.nombre;
     $("modalStudentBalance").textContent = fmt(ctx.saldo);
     $("pagoConcepto").value = btn.dataset.concepto || "Pago curso de conducción";
@@ -37,9 +37,28 @@
     $("inputAmount").select();
   }
 
-  function cerrar(recargar) {
+  function cerrar() {
     modal.classList.remove("open");
-    if (recargar) window.location.reload();
+  }
+
+  // Actualiza la fila del alumno sin recargar la página
+  function actualizarFila(saldo) {
+    const celdas = ctx.btn.closest("tr").children;
+    const valor = celdas[3].querySelector("strong");
+    valor.textContent = fmt(saldo);
+    valor.style.color = saldo > 0 ? "var(--accent-red)" : "var(--accent-green)";
+    const estado = celdas[4].querySelector(".badge-status");
+    if (saldo > 0) {
+      ctx.btn.dataset.saldo = saldo;
+      if (estado.textContent.trim() === "Activo") {
+        estado.textContent = "Pendiente Pago";
+        estado.className = "badge-status pending";
+      }
+    } else {
+      ctx.btn.remove();
+      estado.textContent = "Pagado";
+      estado.className = "badge-status paid";
+    }
   }
 
   function cambioMetodo() {
@@ -193,6 +212,7 @@
       return error(r.error || "No se pudo guardar el pago.");
     }
 
+    actualizarFila(r.saldo);
     $("exitoRecibo").textContent = r.numero_recibo;
     $("exitoSaldo").textContent = fmt(r.saldo);
     $("exitoCambioFila").style.display = r.cambio > 0 ? "block" : "none";
@@ -206,7 +226,7 @@
   document.querySelectorAll(".js-cobrar").forEach((b) => b.addEventListener("click", () => abrir(b)));
   $("btnCerrarModal").addEventListener("click", () => cerrar(false));
   $("btnCancelarPago").addEventListener("click", () => cerrar(false));
-  $("btnTerminar").addEventListener("click", () => cerrar(true));
+  $("btnTerminar").addEventListener("click", cerrar);
   $("btnGuardarPago").addEventListener("click", guardar);
   if ($("btnEditarReparto")) $("btnEditarReparto").addEventListener("click", () => {
     const detalle = $("distribDetalle");
