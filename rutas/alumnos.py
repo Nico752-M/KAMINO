@@ -198,6 +198,16 @@ def buscar_documento(documento: str):
     return jsonify(ok=True, encontrado=True, alumno=alumno)
 
 
+@bp.route("/alumnos/version")
+@login_required
+@permiso_requerido("ver_alumnos")
+def version():
+    v = cacheado("alumnos_version", 10, lambda: db.fetchone(
+        "SELECT (SELECT NVL(MAX(id), 0) FROM matriculas) AS m, "
+        "(SELECT NVL(MAX(id), 0) FROM pagos) AS p FROM dual"))
+    return jsonify(v=f"{v['m']}-{v['p']}")
+
+
 def _duplicado_unico(error: Exception) -> bool:
     causa = error.args[0] if error.args else None
     return getattr(causa, "code", None) == 1

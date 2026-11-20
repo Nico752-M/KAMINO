@@ -332,3 +332,9 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
 .distrib-total{display:flex;justify-content:space-between;align-items:center;font-weight:800;border-top:1px dashed var(--border-color);padding-top:8px;margin-top:6px}
 .distrib-total.ok strong{color:var(--accent-green)}
 .distrib-total.falta strong{color:var(--accent-red)}
+
+/* ===== Indicador de carga ===== */
+#cargando{position:fixed;inset:0;z-index:3000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:.8rem;background:var(--overlay-bg);color:#fff;font-weight:700}
+#cargando.on{display:flex}
+.rueda{width:56px;height:56px;border:5px solid rgba(255,255,255,.35);border-top-color:var(--accent-gold);border-radius:50%;animation:girar .8s linear infinite}
+@keyframes girar{to{transform:rotate(360deg)}}

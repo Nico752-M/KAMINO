@@ -2,6 +2,13 @@
 (function () {
   "use strict";
 
+  // ── Indicador de carga (aparece si la acción tarda más de 150 ms) ──
+  const cargando = document.getElementById("cargando");
+  let tCarga;
+  window.mostrarCarga = () => { clearTimeout(tCarga); tCarga = setTimeout(() => cargando.classList.add("on"), 150); };
+  window.ocultarCarga = () => { clearTimeout(tCarga); cargando.classList.remove("on"); };
+  window.addEventListener("pageshow", window.ocultarCarga);   // al volver con "Atrás"
+
   // ── Tema claro / noche (se recuerda en el navegador) ──
   const html = document.documentElement;
   const btnTema = document.getElementById("theme-btn");
@@ -116,6 +123,7 @@
     const datos = new FormData(f, evento.submitter);
     const botones = [...f.querySelectorAll("button")];
     botones.forEach((b) => (b.disabled = true));
+    mostrarCarga();
     try {
       const resp = await fetch(f.action, { method: "POST", body: datos, credentials: "same-origin" });
       if (new URL(resp.url).pathname !== location.pathname) { location.href = resp.url; return; }
@@ -127,9 +135,24 @@
       nueva.querySelectorAll("[data-money-input]").forEach((c) => window.formatearCampoMoneda(c));
       contenido.scrollTop = antes.y;
     } catch (e) {
+      ocultarCarga();
       botones.forEach((b) => (b.disabled = false));
       alert("Sin conexión. Revisa tu internet e intenta de nuevo.");
+    } finally {
+      ocultarCarga();
     }
+  });
+
+  // ── Rueda en formularios que recargan y en enlaces a otras páginas ──
+  document.addEventListener("submit", (e) => {
+    if (!e.defaultPrevented && e.target.target !== "_blank") mostrarCarga();
+  });
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[href]");
+    if (!a || e.defaultPrevented || a.target === "_blank" || a.hasAttribute("download")
+        || e.ctrlKey || e.metaKey || e.shiftKey || a.getAttribute("href").startsWith("#")) return;
+    mostrarCarga();
+    setTimeout(ocultarCarga, 5000);   // por si el enlace descarga un archivo (PDF/Excel) y la página no cambia
   });
 
   // ── Recordar detalles abiertos, pestaña y posición al recargar tras guardar ──
@@ -157,6 +180,10 @@
 
   // ── Helper global: POST JSON con token CSRF ──
   window.postJSON = async function (url, datos) {
+    mostrarCarga();
+    try { return await enviarJSON(url, datos); } finally { ocultarCarga(); }
+  };
+  async function enviarJSON(url, datos) {
     const token = document.querySelector('meta[name="csrf-token"]').content;
     let resp;
     try {
@@ -173,7 +200,7 @@
     try { cuerpo = await resp.json(); } catch (e) {}
     if (resp.status === 401) { window.location.href = "/login"; }
     return { ok: resp.ok && cuerpo.ok !== false, ...cuerpo, error: cuerpo.error };
-  };
+  }
 
   // ── Actualizaciones: versión aceptada en este dispositivo vs. versión del servidor ──
   const versionServidor = document.body.dataset.version;

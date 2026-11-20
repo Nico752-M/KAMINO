@@ -223,7 +223,10 @@
   }
 
   // Eventos
-  document.querySelectorAll(".js-cobrar").forEach((b) => b.addEventListener("click", () => abrir(b)));
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".js-cobrar");
+    if (b) abrir(b);
+  });
   $("btnCerrarModal").addEventListener("click", () => cerrar(false));
   $("btnCancelarPago").addEventListener("click", () => cerrar(false));
   $("btnTerminar").addEventListener("click", cerrar);

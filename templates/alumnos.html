@@ -95,6 +95,7 @@
 <p class="student-list-note">Resultados filtrados · 10 por página.</p>
 {% endif %}
 
+<div id="listaAlumnos">
 <div class="tabs-scope">
   <div class="internal-tabs">
     <button type="button" class="active" data-tab="sub-cursos"><i class="ri-user-star-line"></i> Cursos Completos</button>
@@ -110,6 +111,7 @@
     {% if hay_siguiente %}<a class="btn-action sm" href="{{ url_for('alumnos.lista', q=q, desde=desde, hasta=hasta, pagina=pagina+1) }}">Siguientes 10 <i class="ri-arrow-right-line"></i></a>{% endif %}
   </div>
 </nav>
+</div>
 
 {% include "parciales/modal_pago.html" %}
 
@@ -290,4 +292,32 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/pagos.js', v=asset_v) }}"></script>
 {% if 'crear_matricula' in permisos %}<script src="{{ url_for('static', filename='js/matriculas.js', v=asset_v) }}"></script>{% endif %}
+<script>
+(function () {
+  let v = null;
+  async function revisar() {
+    if (document.hidden || document.querySelector(".modal-overlay.open, .student-actions-menu[open]")
+        || document.activeElement?.matches("input, select, textarea")) return;
+    try {
+      const r = await fetch("/alumnos/version", { credentials: "same-origin" });
+      if (!r.ok) return;
+      const n = (await r.json()).v;
+      if (v !== null && n !== v) {
+        const h = await fetch(location.href, { credentials: "same-origin" });
+        const nueva = new DOMParser().parseFromString(await h.text(), "text/html").getElementById("listaAlumnos");
+        const actual = document.getElementById("listaAlumnos");
+        if (nueva && actual) {
+          const tab = actual.querySelector(".subtab-content.active")?.id;
+          actual.replaceWith(nueva);
+          if (tab) nueva.querySelector('.internal-tabs button[data-tab="' + tab + '"]')?.click();
+        }
+      }
+      v = n;
+    } catch (e) {}
+  }
+  setInterval(revisar, 30000);
+  document.addEventListener("visibilitychange", revisar);
+  revisar();
+})();
+</script>
 {% endblock %}
