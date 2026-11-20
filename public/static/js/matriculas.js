@@ -166,9 +166,29 @@
     descuentoPorcentaje.value = "";
   });
 
+  // Alumno que ya venía cursando: pide la fecha original y trata el abono como "ya pagado"
+  const enCurso = document.getElementById("alumnoEnCurso");
+  const bloqueEnCurso = document.getElementById("bloqueEnCurso");
+  const fechaOriginal = document.getElementById("fechaMatriculaOriginal");
+  function actualizarEnCurso() {
+    const activo = enCurso.checked;
+    bloqueEnCurso.style.display = activo ? "" : "none";   // (el atributo hidden pierde contra display:grid)
+    fechaOriginal.required = activo;
+    const hoyLocal = new Date();
+    fechaOriginal.max = hoyLocal.getFullYear() + "-" +
+      String(hoyLocal.getMonth() + 1).padStart(2, "0") + "-" + String(hoyLocal.getDate()).padStart(2, "0");
+    document.getElementById("campoMetodoPago").style.display = activo ? "none" : "";
+    document.getElementById("lblAbonoInicial").textContent =
+      activo ? "Lo que ya ha pagado hasta hoy (COP)" : "Abono inicial (COP)";
+    document.getElementById("hintAbonoInicial").textContent =
+      activo ? "Escribe 0 si aún no ha pagado nada." : "Escribe 0 si no paga ahora.";
+  }
+  enCurso.addEventListener("change", actualizarEnCurso);
+
   const cerrar = () => modal.classList.remove("open");
   abrir.addEventListener("click", () => {
     form.reset();
+    actualizarEnCurso();
     autocompletados = {};
     lookupMessage.textContent = "";
     descuentoPesos.value = "";
