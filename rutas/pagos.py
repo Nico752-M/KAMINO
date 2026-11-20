@@ -104,17 +104,18 @@ def registrar():
             raise PagoInvalido("El valor a abonar debe ser mayor a $0.")
 
         with db.transaccion() as cur:
-            cur.execute("SELECT id, COALESCE(precio_total, 0) AS precio_total, estado, archivado "
-                        "FROM matriculas WHERE id = %s FOR UPDATE", (mid,))
+            cur.execute("""
+                SELECT m.id, COALESCE(m.precio_total, 0) AS precio_total, m.estado, m.archivado,
+                       (SELECT COALESCE(SUM(p.valor), 0) FROM pagos p
+                         WHERE p.id_matricula = m.id AND p.anulado = 0) AS pagado
+                FROM matriculas m WHERE m.id = %s FOR UPDATE OF m.id
+            """, (mid,))
             mat = cur.fetchone()
             if not mat:
                 raise PagoInvalido("No existe esa matrícula.")
             if mat["archivado"] or mat["estado"] == "Histórico":
                 raise PagoInvalido("No se pueden registrar pagos a una matrícula histórica o archivada.")
-
-            cur.execute("SELECT COALESCE(SUM(valor), 0) AS total FROM pagos "
-                        "WHERE id_matricula = %s AND anulado = 0", (mid,))
-            pagado = float(cur.fetchone()["total"])
+            pagado = float(mat["pagado"])
             precio = int(mat["precio_total"])
             saldo = max(precio - pagado, 0)
 
@@ -156,8 +157,9 @@ def registrar():
                             "SELECT p.id, d.c, d.v FROM pagos p CROSS JOIN (" + filas + ") d "
                             "WHERE p.numero_recibo = %s", params + (numero,))
 
-            cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
-                        (estado_matricula(mat["estado"], precio, pagado + valor), mid))
+            nuevo_estado = estado_matricula(mat["estado"], precio, pagado + valor)
+            if nuevo_estado != mat["estado"]:
+                cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s", (nuevo_estado, mid))
 
     except PagoInvalido as e:
         return jsonify(ok=False, error=str(e)), 400

@@ -49,9 +49,8 @@ def _wallet_dir() -> str:
 
 def _init_sesion(cnx, requested_tag):
     with cnx.cursor() as c:
-        if Config.DB_SCHEMA:
-            c.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {Config.DB_SCHEMA}")
-        c.execute(f"ALTER SESSION SET TIME_ZONE = '{Config.DB_TIMEZONE}'")
+        esquema = f"CURRENT_SCHEMA = {Config.DB_SCHEMA} " if Config.DB_SCHEMA else ""
+        c.execute(f"ALTER SESSION SET {esquema}TIME_ZONE = '{Config.DB_TIMEZONE}'")
 
 
 def _get_pool():
