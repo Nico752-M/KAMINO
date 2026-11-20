@@ -241,6 +241,19 @@
         <div class="form-step" data-step-pane="3" hidden>
           <section class="form-section price-section">
             <h4>Matrícula y pago</h4>
+            <label style="display:flex;gap:.6rem;align-items:center;font-weight:700;cursor:pointer;margin-bottom:.75rem">
+              <input type="checkbox" id="alumnoEnCurso" name="alumno_en_curso" value="1">
+              <span>Este alumno ya venía cursando (se matriculó antes de usar la app)</span>
+            </label>
+            <div id="bloqueEnCurso" class="form-grid two" style="margin-bottom:.75rem;display:none">
+              <div class="field"><label class="lbl" for="fechaMatriculaOriginal">Fecha en que se matriculó <span class="required-mark">*</span></label>
+                <input class="input-clean" type="date" id="fechaMatriculaOriginal" name="fecha_matricula"></div>
+              <div class="field"><label class="lbl" for="runtYa">¿Ya está registrado en el RUNT?</label>
+                <select class="input-clean" id="runtYa" name="runt_registrado">
+                  <option value="0">No</option><option value="1">Sí</option>
+                </select></div>
+              <p class="hint" style="grid-column:1/-1;margin:0">Lo que ya pagó se guarda como abono previo: no entra en la caja de hoy ni genera recibo.</p>
+            </div>
             <div class="form-grid two">
               <div class="field"><label class="lbl" for="precioBase">Precio base (COP) <span class="required-mark">*</span></label>
                 <input class="input-clean" id="precioBase" name="precio_base" inputmode="numeric" data-money-input required></div>
@@ -248,15 +261,15 @@
                 <input class="input-clean" id="descuentoPesos" data-money-input inputmode="numeric" placeholder="Ej: 50.000"></div>
               <div class="field"><label class="lbl" for="descuentoPorcentaje">Descuento (%)</label>
                 <input class="input-clean" id="descuentoPorcentaje" type="number" min="0" max="100" step="0.01" placeholder="Ej: 10"></div>
-              <div class="field"><label class="lbl" for="metodoPagoInicial">Método de pago del abono</label>
+              <div class="field" id="campoMetodoPago"><label class="lbl" for="metodoPagoInicial">Método de pago del abono</label>
                 <select class="input-clean" id="metodoPagoInicial" name="metodo_pago">
                   <option>Efectivo</option><option>Transferencia</option><option>Nequi</option>
                   <option>Daviplata</option><option>Sistecredit</option><option>Otro</option>
                 </select></div>
-              <div class="field"><label class="lbl" for="abonoInicial">Abono inicial (COP)</label>
+              <div class="field"><label class="lbl" for="abonoInicial" id="lblAbonoInicial">Abono inicial (COP)</label>
                 <input class="input-clean" id="abonoInicial" name="abono_inicial" inputmode="numeric"
                        data-money-input value="0">
-                <p class="hint">Escribe 0 si no paga ahora.</p></div>
+                <p class="hint" id="hintAbonoInicial">Escribe 0 si no paga ahora.</p></div>
               <div class="field"><label class="lbl" for="matriculaPrecio">Total a pagar (COP) <span class="required-mark">*</span></label>
                 <input class="input-clean total-input" id="matriculaPrecio" name="precio_total"
                        inputmode="numeric" data-money-input required>
