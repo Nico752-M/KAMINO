@@ -65,7 +65,7 @@
           {% for tarifa in tarifas %}
           <option value="{{ tarifa.categoria }}" {{ 'selected' if tarifa.categoria == categoria_base }}>{{ tarifa.categoria }}</option>
           {% endfor %}
-          {% if categoria_base and categoria_base not in (tarifa.categoria for tarifa in tarifas) %}
+          {% if categoria_base and categoria_base not in tarifas|map(attribute='categoria')|list %}
           <option value="{{ categoria_base }}" selected>{{ categoria_base }}</option>
           {% endif %}
         </select></div>

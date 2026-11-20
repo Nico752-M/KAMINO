@@ -25,6 +25,10 @@
     $("pagoForm").style.display = "flex";
     $("pagoExito").style.display = "none";
     $("btnGuardarPago").disabled = false;
+    if ($("distribDetalle")) {
+      $("distribDetalle").style.display = "none";
+      $("btnEditarReparto").textContent = "Cambiar";
+    }
     cambioMetodo();
     recalcular();
     cargarDistribucion();
@@ -67,8 +71,9 @@
       if (!resp.ok || datos.ok === false) return;
     } catch (e) { return; }
     if (matricula !== ctx.matricula) return;   // se cerró o se abrió otro alumno
-    ctx.costos = datos.costos || [];
-    if (!ctx.costos.length) return;   // sin costos no hay nada que repartir
+    const todos = datos.costos || [];
+    if (!todos.length) return;   // sin costos no hay nada que repartir
+    ctx.costos = todos.filter((c) => c.restante > 0);   // solo los que aún faltan
     const filas = ctx.costos.map((c) =>
       '<div class="distrib-row"><div><strong>' + escapar(c.concepto) + '</strong>' +
       '<small>Costo ' + fmt(c.valor) + ' · cubierto ' + fmt(c.asignado) + ' · falta ' + fmt(c.restante) + '</small></div>' +
@@ -137,6 +142,8 @@
     const g = campoReparto("ganancia");
     if (g) g.value = ganancia ? window.formatearMiles(ganancia) : "";
     const pendiente = abono - costos - ganancia;   // 0, o negativo si los costos se pasan
+    const resumen = $("distribResumen");
+    if (resumen) resumen.textContent = "Costos " + fmt(costos) + " · Ganancia " + fmt(ganancia);
     $("distribPendiente").textContent = fmt(pendiente);
     $("distribPendiente").parentElement.className = "distrib-total " + (pendiente === 0 ? "ok" : "falta");
     return pendiente;
@@ -201,7 +208,13 @@
   $("btnCancelarPago").addEventListener("click", () => cerrar(false));
   $("btnTerminar").addEventListener("click", () => cerrar(true));
   $("btnGuardarPago").addEventListener("click", guardar);
-  if ($("btnSugerirReparto")) $("btnSugerirReparto").addEventListener("click", () => { ctx.editado = false; sugerirReparto(); });
+  if ($("btnEditarReparto")) $("btnEditarReparto").addEventListener("click", () => {
+    const detalle = $("distribDetalle");
+    const mostrar = detalle.style.display === "none";
+    detalle.style.display = mostrar ? "block" : "none";
+    $("btnEditarReparto").textContent = mostrar ? "Volver a automático" : "Cambiar";
+    if (!mostrar) { ctx.editado = false; sugerirReparto(); }
+  });
   $("selectPaymentMethod").addEventListener("change", cambioMetodo);
   $("inputAmount").addEventListener("input", recalcular);
   $("inputReceived").addEventListener("input", recalcular);
