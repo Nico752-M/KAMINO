@@ -43,9 +43,6 @@
 {{ grupo('Pendientes — menos de 1 mes', 'Registro reciente, dentro del tiempo óptimo.', g.recientes, 'active') }}
 
 {% if total == 0 and not error %}<div class="card-bento"><div class="vacio">✅ No hay recordatorios pendientes.</div></div>{% endif %}
-
-<div class="card-bento"><div class="grupo-titulo"><i class="ri-folder-line"></i> Expedientes digitales</div>
-  <p class="hint">Subir, ver y eliminar el PDF escaneado de cada alumno: próxima fase.</p></div>
 {% endblock %}
 
 {% block scripts %}<script src="{{ url_for('static', filename='js/tramites.js', v=asset_v) }}"></script>{% endblock %}
