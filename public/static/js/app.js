@@ -102,6 +102,29 @@
     });
   });
 
+  // ── Recordar detalles abiertos, pestaña y posición al recargar tras guardar ──
+  const claveUI = "ui:" + location.pathname;
+  try {
+    const g = JSON.parse(sessionStorage.getItem(claveUI) || "null");
+    sessionStorage.removeItem(claveUI);
+    if (g && Date.now() - g.t < 10000) {
+      document.querySelectorAll("details[id]").forEach((d) => { d.open = g.abiertos.includes(d.id); });
+      g.tabs.forEach((id) => document.querySelector('.internal-tabs button[data-tab="' + id + '"]')?.click());
+      if (contenido) contenido.scrollTop = g.y;
+    }
+  } catch (e) {}
+  document.addEventListener("submit", (evento) => {
+    if (evento.defaultPrevented) return;
+    try {
+      sessionStorage.setItem(claveUI, JSON.stringify({
+        t: Date.now(),
+        abiertos: [...document.querySelectorAll("details[id][open]")].map((d) => d.id),
+        tabs: [...document.querySelectorAll(".subtab-content.active")].map((p) => p.id),
+        y: contenido ? contenido.scrollTop : 0,
+      }));
+    } catch (e) {}
+  });
+
   // ── Helper global: POST JSON con token CSRF ──
   window.postJSON = async function (url, datos) {
     const token = document.querySelector('meta[name="csrf-token"]').content;

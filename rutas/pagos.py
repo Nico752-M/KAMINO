@@ -148,11 +148,13 @@ def registrar():
                     if parte > costo["restante"]:
                         raise PagoInvalido(
                             f"«{costo['concepto']}» solo admite {cop(costo['restante'])} más.")
-                pago_id = cur.execute("SELECT id FROM pagos WHERE numero_recibo = %s",
-                                      (numero,)).fetchone()["id"]
-                for costo_id, parte in distribucion:
-                    cur.execute("INSERT INTO pago_distribucion (id_pago, id_costo, valor) "
-                                "VALUES (%s, %s, %s)", (pago_id, costo_id, parte))
+                filas = " UNION ALL ".join(
+                    "SELECT CAST(%s AS NUMBER) AS c, CAST(%s AS NUMBER) AS v FROM dual"
+                    for _ in distribucion)
+                params = tuple(x for parte in distribucion for x in parte)
+                cur.execute("INSERT INTO pago_distribucion (id_pago, id_costo, valor) "
+                            "SELECT p.id, d.c, d.v FROM pagos p CROSS JOIN (" + filas + ") d "
+                            "WHERE p.numero_recibo = %s", params + (numero,))
 
             cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s",
                         (estado_matricula(mat["estado"], precio, pagado + valor), mid))

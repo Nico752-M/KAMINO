@@ -18,7 +18,7 @@
   <div><span>Ganancia ({{ resumen.margen }}%)</span>
     <strong style="color:{{ 'var(--accent-green)' if resumen.ganancia >= 0 else 'var(--accent-red)' }}">{{ resumen.ganancia|cop }}</strong></div>
 </div>
-<details class="cash-details">
+<details class="cash-details" id="masDetalle">
   <summary>Más detalle</summary>
   <div class="cash-details-content">
     <div class="payment-summary">
