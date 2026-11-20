@@ -95,16 +95,17 @@ def cuenta(matricula_id):
         WHERE c.id_matricula = %s
         ORDER BY c.anulado, c.fecha_registro, c.id
     """, (matricula_id,))
-    cobrado = int(db.fetchone(
-        "SELECT COALESCE(SUM(valor), 0) AS total FROM pagos WHERE id_matricula = %s AND anulado = 0",
-        (matricula_id,),
-    )["total"])
-    ganancia_asignada = int(db.fetchone("""
-        SELECT COALESCE(SUM(d.valor), 0) AS total
-        FROM pago_distribucion d
-        JOIN pagos p ON p.id = d.id_pago
-        WHERE p.id_matricula = %s AND p.anulado = 0 AND d.id_costo IS NULL
-    """, (matricula_id,))["total"])
+    r = db.fetchone("""
+        SELECT
+          (SELECT COALESCE(SUM(valor), 0) FROM pagos
+            WHERE id_matricula = %s AND anulado = 0) AS cobrado,
+          (SELECT COALESCE(SUM(d.valor), 0) FROM pago_distribucion d
+             JOIN pagos p ON p.id = d.id_pago
+            WHERE p.id_matricula = %s AND p.anulado = 0 AND d.id_costo IS NULL) AS ganancia_asignada
+        FROM dual
+    """, (matricula_id, matricula_id))
+    cobrado = int(r["cobrado"])
+    ganancia_asignada = int(r["ganancia_asignada"])
     vigentes = [c for c in costos if not c["anulado"]]
     precio = int(alumno["precio_total"] or 0)
     total_costos = sum(int(c["valor"]) for c in vigentes)
@@ -303,25 +304,27 @@ def cargar_plantilla(matricula_id):
 @bp.route("/costos/plantillas")
 @login_required
 @permiso_requerido("gestionar_costos")
+
 def plantillas():
     filas = db.fetchall("""
-        SELECT id, tipo, categoria, concepto, valor
-        FROM costos_plantilla WHERE activo = 1
-        ORDER BY tipo, categoria, concepto
+        SELECT t.tipo, t.categoria, t.precio_base, c.id, c.concepto, c.valor
+        FROM tarifas_categoria t
+        LEFT JOIN costos_plantilla c
+               ON c.tipo = t.tipo AND c.categoria = t.categoria AND c.activo = 1
+        ORDER BY t.tipo, t.categoria, c.concepto
     """)
-    tarifas = db.fetchall("SELECT tipo, categoria, precio_base FROM tarifas_categoria ORDER BY tipo, categoria")
-    precios = {(t["tipo"], t["categoria"]): int(t["precio_base"]) for t in tarifas}
-    grupos = {clave: [] for clave in precios}
-    for fila in filas:
-        grupos.setdefault((fila["tipo"], fila["categoria"]), []).append(fila)
-    lista = []
-    for (tipo, categoria), items in sorted(grupos.items()):
-        total = sum(int(i["valor"]) for i in items)
-        precio = precios.get((tipo, categoria))
-        lista.append({"tipo": tipo, "categoria": categoria, "costos": items, "total": total,
-                      "precio": precio, "ganancia": (precio - total) if precio is not None else None})
+    grupos = {}
+    for f in filas:
+        g = grupos.setdefault((f["tipo"], f["categoria"]), {
+            "tipo": f["tipo"], "categoria": f["categoria"],
+            "precio": int(f["precio_base"]), "costos": [], "total": 0})
+        if f["id"]:
+            g["costos"].append(f)
+            g["total"] += int(f["valor"])
+    lista = list(grupos.values())
+    for g in lista:
+        g["ganancia"] = g["precio"] - g["total"]
     return render_template("costos_plantillas.html", grupos=lista)
-
 
 @bp.route("/costos/plantillas", methods=["POST"])
 @login_required
