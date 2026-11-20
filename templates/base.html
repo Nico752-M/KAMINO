@@ -66,11 +66,13 @@
       </div>
     </div>
 
+    <div id="zona" {{ 'data-ajax' if ajax }}>
     {% with mensajes = get_flashed_messages(with_categories=true) %}
       {% for categoria, texto in mensajes %}<div class="alerta {{ categoria }}">{{ texto }}</div>{% endfor %}
     {% endwith %}
 
     {% block contenido %}{% endblock %}
+    </div>
   </main>
 
   <script src="{{ url_for('static', filename='js/app.js', v=asset_v) }}"></script>

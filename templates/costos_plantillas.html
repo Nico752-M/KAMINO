@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set nav = 'costos' %}
+{% set ajax = true %}f
 {% block titulo %}Plantillas de costos — CEA La 30{% endblock %}
 {% block contenido %}
 <div class="section-header">
@@ -40,7 +41,7 @@
         </td>
         <td>
           <form method="post" action="{{ url_for('costos.eliminar_plantilla', plantilla_id=i.id) }}"
-                onsubmit="return confirm('¿Quitar este costo de la plantilla? Las matrículas ya creadas no cambian.')">
+                data-confirm="¿Quitar este costo de la plantilla? Las matrículas ya creadas no cambian.">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn-action red sm" type="submit"><i class="ri-delete-bin-line"></i> Quitar</button>
           </form>

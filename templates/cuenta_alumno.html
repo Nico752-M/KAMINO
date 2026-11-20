@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% set nav = 'alumnos' %}
+{% set ajax = true %}
 {% block titulo %}Cuenta del alumno — CEA La 30{% endblock %}
 {% block contenido %}
 {% set puede = 'gestionar_costos' in permisos and not alumno.archivado %}
