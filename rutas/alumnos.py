@@ -251,6 +251,22 @@ def crear_matricula():
     observaciones_abono = " ".join(request.form.get("observaciones", "").split()) or None
     acompanante = " ".join(request.form.get("acompanante", "").split()) or None
 
+    # Alumno que ya venía cursando antes de usar la app: conserva su fecha original y
+    # lo que ya pagó queda como "abono histórico previo" (sin caja ni recibo de hoy).
+    en_curso = request.form.get("alumno_en_curso") == "1"
+    fecha_matricula = None
+    runt_ya = en_curso and request.form.get("runt_registrado") == "1"
+    if en_curso:
+        try:
+            fecha_matricula = date.fromisoformat(request.form.get("fecha_matricula", "").strip())
+        except ValueError:
+            flash("Escribe la fecha en que se matriculó el alumno.", "error")
+            return redirect(url_for("alumnos.lista"))
+        if fecha_matricula > hoy() or (hoy() - fecha_matricula).days > 1100:
+            flash("La fecha de matrícula no puede ser futura ni de hace más de 3 años.", "error")
+            return redirect(url_for("alumnos.lista"))
+        metodo_pago = "Otro"
+
     try:
         validar_datos_alumno(
             documento, tipo_documento, nombres, apellidos,
@@ -361,15 +377,25 @@ def crear_matricula():
                     )
 
                 orden = _siguiente_orden_matricula(cur, anio)
-                cur.execute("""
-                    INSERT INTO matriculas
-                        (numero_orden, anio, numero_documento, categoria, estado, precio_total,
-                         precio_base, descuento_valor, descuento_porcentaje)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (orden, anio, documento, categoria,
-                      estado_matricula("Activo", precio, abono),
-                      precio, precio_base, precio_base - precio,
-                      round((precio_base - precio) * 100 / precio_base, 2)))
+                datos_mat = (orden, anio, documento, categoria,
+                             estado_matricula("Activo", precio, abono),
+                             precio, precio_base, precio_base - precio,
+                             round((precio_base - precio) * 100 / precio_base, 2))
+                if en_curso:
+                    cur.execute("""
+                        INSERT INTO matriculas
+                            (numero_orden, anio, numero_documento, categoria, estado, precio_total,
+                             precio_base, descuento_valor, descuento_porcentaje,
+                             fecha_registro, runt_registrado)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, datos_mat + (fecha_matricula, 1 if runt_ya else 0))
+                else:
+                    cur.execute("""
+                        INSERT INTO matriculas
+                            (numero_orden, anio, numero_documento, categoria, estado, precio_total,
+                             precio_base, descuento_valor, descuento_porcentaje)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, datos_mat)
                 matricula_id = cur.execute("SELECT id FROM matriculas WHERE anio = %s AND numero_orden = %s",
                                            (anio, orden)).fetchone()["id"]
                 cur.execute("""
@@ -386,7 +412,14 @@ def crear_matricula():
                     """, (matricula_id, responsable["tipo_documento"], responsable["numero_documento"],
                           responsable["nombres"], responsable["apellidos"], responsable["celular"],
                           responsable["email"], responsable["relacion"]))
-                if abono:
+                if abono and en_curso:
+                    cur.execute("""
+                        INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
+                                           usuario_id, caja_id, observaciones, acompanante, fecha_pago)
+                        VALUES (%s, 'Abono histórico previo', %s, 'Otro', %s, %s, NULL, %s, %s, %s)
+                    """, (matricula_id, abono, f"HIST-{matricula_id}", session["uid"],
+                          observaciones_abono, acompanante, fecha_matricula))
+                elif abono:
                     caja = cur.execute(
                         "SELECT id FROM cajas WHERE usuario_id = %s AND estado = 'ABIERTA' FOR UPDATE",
                         (session["uid"],),
@@ -422,7 +455,7 @@ def crear_matricula():
             return redirect(url_for("alumnos.lista"))
 
     if creada:
-        flash(f"{'Renovación' if tipo_matricula == 'renovacion' else 'Matrícula'} "
+        flash(f"{'Alumno en curso registrado' if en_curso else 'Renovación' if tipo_matricula == 'renovacion' else 'Matrícula'} "
               f"{orden}-{str(anio)[-2:]} creada correctamente."
               + (f" Recibo del abono: {recibo_inicial}." if recibo_inicial else ""), "ok")
     return redirect(url_for("alumnos.lista", recibo_nuevo=recibo_inicial) if recibo_inicial
