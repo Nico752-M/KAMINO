@@ -493,3 +493,23 @@ if (typeof document !== "undefined") (function () {
     irA(location.hash.replace("#", "") || "caja");
   })();
 })();
+
+/* Método de pago con botones grandes (la lista de siempre queda oculta y sigue mandando) */
+(function () {
+  const sel = document.getElementById("tMetodo");
+  if (!sel || sel.dataset.botones) return;
+  sel.dataset.botones = "1";
+  const caja = document.createElement("div");
+  caja.className = "t-metodos";
+  const pintar = () => caja.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.m === sel.value));
+  Array.from(sel.options).forEach((o) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.m = o.value; b.textContent = o.text;
+    b.addEventListener("click", () => { sel.value = o.value; sel.dispatchEvent(new Event("change")); pintar(); });
+    caja.appendChild(b);
+  });
+  sel.style.display = "none";
+  sel.insertAdjacentElement("afterend", caja);
+  sel.addEventListener("change", pintar);
+  pintar();
+})();
