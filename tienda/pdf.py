@@ -94,13 +94,22 @@ def ganancias(d, a, periodo):
 
 
 def ticket_venta(v, items):
+    from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
     mm = 72 / 25.4
-    ancho, alto = 80 * mm, (70 + 5 * len(items)) * mm
+    ancho, alto = 80 * mm, (70 + 5 * len(items)) * mm   # medidas del ticket
+    pagina_ancho, pagina_alto = A4
     buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=(ancho, alto))
+    c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle(f"Venta {v['id']}")
+    # El ticket se dibuja pegado a la esquina superior izquierda de la hoja
+    c.translate(8 * mm, pagina_alto - alto - 8 * mm)
+    # Marco punteado para saber por dónde recortar
+    c.setDash(2, 2)
+    c.setLineWidth(0.4)
+    c.rect(0, 0, ancho, alto)
+    c.setDash()
     y = alto - 8 * mm
 
     def fila(izq, der="", f="Helvetica", s=8, centro=False):
