@@ -9,18 +9,20 @@ const TiendaCalculo = (function () {
     const dias = datos.dias;
     const sum = (campo) => datos.porDia.reduce((s, d) => s + d[campo], 0);
     const bruto = sum("ventas"), costo = sum("costo"), noEfectivo = sum("noEfectivo"), numVentas = sum("n");
+    const gastosCaja = sum("gastos"), mermas = sum("mermas");
     const gananciaBruta = bruto - costo;
     const comision = a.usarComision ? noEfectivo * a.comision / 100 : 0;
     const impuesto = a.usarImpuesto ? bruto * a.impuesto / 100 : 0;
     const gastos = a.usarGastos ? a.gastosMes / 30 * dias : 0;
-    const neta = gananciaBruta - comision - impuesto - gastos;
+    const neta = gananciaBruta - comision - impuesto - gastos - gastosCaja - mermas;
     const reserva = a.usarReserva ? Math.max(neta, 0) * a.reserva / 100 : 0;
     const porDia = datos.porDia.map((d) => ({
       fecha: d.fecha, ventas: d.ventas,
       neta: d.ventas - d.costo - (a.usarComision ? d.noEfectivo * a.comision / 100 : 0)
-            - (a.usarImpuesto ? d.ventas * a.impuesto / 100 : 0) - (a.usarGastos ? a.gastosMes / 30 : 0),
+            - (a.usarImpuesto ? d.ventas * a.impuesto / 100 : 0) - (a.usarGastos ? a.gastosMes / 30 : 0)
+            - d.gastos - d.mermas,
     }));
-    return { dias, numVentas, bruto, costo, gananciaBruta, comision, impuesto, gastos, neta, reserva,
+    return { dias, numVentas, bruto, costo, gananciaBruta, comision, impuesto, gastos, gastosCaja, mermas, neta, reserva,
              disponible: neta - reserva, margen: bruto ? neta / bruto * 100 : 0, porDia, top: datos.top };
   }
   function estadoStock(p) { return p.stock <= 0 ? "agotado" : p.stock <= p.minimo ? "bajo" : "ok"; }
@@ -71,7 +73,7 @@ if (typeof document !== "undefined") (function () {
     document.querySelectorAll("[data-vista]").forEach((a) => a.classList.toggle("active", a.dataset.vista === vista));
     document.body.classList.remove("sidebar-open");
     if (vista === "caja") renderCaja();
-    if (vista === "inventario") renderInventario();
+    if (vista === "inventario") { renderInventario(); cargarMermas(); }
     if (vista === "ventas") await cargarVentas();
     if (vista === "ganancias") await cargarGanancias();
   }
@@ -112,13 +114,19 @@ if (typeof document !== "undefined") (function () {
         <div class="t-cant"><button type="button" data-menos="${id}" aria-label="Quitar uno">−</button><span>${cant}</span>
         <button type="button" data-mas="${id}" aria-label="Agregar uno">+</button></div><span></span></div>`;
     }).join("") : `<p class="t-vacio">Aún no hay productos en la venta.</p>`;
-    $("tTotal").textContent = fmt(total);
+    const dv = digitos($("tDescVal").value);
+    const desc = $("tDescTipo").value === "pct" ? Math.round(total * Math.min(dv, 100) / 100) : dv;
+    const descMal = desc > 0 && desc >= total;
+    $("tDescHint").textContent = descMal ? "El descuento debe ser menor que el total."
+      : (desc ? `Subtotal ${fmt(total)} − descuento ${fmt(desc)}` : "");
+    const neto = descMal ? total : total - desc;
+    $("tTotal").textContent = fmt(neto);
     const efectivo = $("tMetodo").value === "Efectivo";
     const rec = digitos($("tRecibido").value);
-    $("tCobrar").disabled = !ids.length || ui.enviando || (efectivo && rec <= 0);
+    $("tCobrar").disabled = !ids.length || ui.enviando || descMal || (efectivo && rec <= 0);
     $("tCampoRecibido").style.display = efectivo ? "" : "none";
-    $("tCampoResto").style.display = efectivo && rec > 0 && rec < total ? "" : "none";
-    $("tDevuelta").textContent = efectivo && rec ? (rec >= total ? `Devuelta: ${fmt(rec - total)}` : `Resto por cobrar: ${fmt(total - rec)}`) : "";
+    $("tCampoResto").style.display = efectivo && rec > 0 && rec < neto ? "" : "none";
+    $("tDevuelta").textContent = efectivo && rec ? (rec >= neto ? `Devuelta: ${fmt(rec - neto)}` : `Resto por cobrar: ${fmt(neto - rec)}`) : "";
     $("tError").style.display = "none";
   }
 
@@ -136,17 +144,19 @@ if (typeof document !== "undefined") (function () {
     if (ui.enviando) return;
     const items = Object.entries(ui.carrito).map(([id, cant]) => ({ id: Number(id), cant }));
     ui.enviando = true; $("tCobrar").disabled = true;
-    const r = await api("/tienda/api/ventas", { items, metodo: $("tMetodo").value, recibido: digitos($("tRecibido").value), resto: $("tResto").value });
+    const r = await api("/tienda/api/ventas", { items, metodo: $("tMetodo").value, recibido: digitos($("tRecibido").value), resto: $("tResto").value,
+      descuento: { tipo: $("tDescTipo").value, valor: digitos($("tDescVal").value) } });
     ui.enviando = false;
     if (!r.ok) { $("tError").textContent = r.error; $("tError").style.display = "block"; $("tCobrar").disabled = false; await recargarProductos(); return; }
     r.stocks.forEach((s) => { const p = estado.productos.find((x) => x.id === s.id); if (p) p.stock = s.stock; });
     $("vResumen").innerHTML = r.venta.items.map((i) => `<div><span>${i.cant} × ${esc(i.nombre)}</span><strong>${fmt(i.cant * i.precio)}</strong></div>`).join("")
+      + (r.venta.descuento ? `<div><span>Descuento</span><strong>− ${fmt(r.venta.descuento)}</strong></div>` : "")
       + `<div><span>Total (${esc(r.venta.metodo)}) · venta #${r.venta.id}</span><strong>${fmt(r.venta.total)}</strong></div>`
       + (r.venta.monto2 ? `<div><span>Resto con ${esc(r.venta.metodo2)}</span><strong>${fmt(r.venta.monto2)}</strong></div>` : "")
       + (r.devuelta ? `<div><span>Devuelta</span><strong>${fmt(r.devuelta)}</strong></div>` : "");
     $("vAvisos").innerHTML = r.bajos.map((b) =>
       `<div class="t-aviso"><i class="ri-alert-line"></i> ${b.stock <= 0 ? "Se agotó" : "Queda poco de"} «${esc(b.nombre)}»${b.stock > 0 ? ` (${b.stock})` : ""}.</div>`).join("");
-    ui.carrito = {}; $("tRecibido").value = "";
+    ui.carrito = {}; $("tRecibido").value = ""; $("tDescVal").value = "";
     $("vTicket").href = "/tienda/pdf/venta/" + r.venta.id;
     abrirModal("mVenta"); renderCaja();
   }
@@ -178,7 +188,8 @@ if (typeof document !== "undefined") (function () {
         <td>${margen.toFixed(0)} %</td><td><strong>${p.stock}</strong></td><td>${badge}</td>
         <td><div class="t-acciones"><button type="button" class="t-mas" data-reab="${p.id}"><i class="ri-add-line"></i> Reabastecer</button>
         <button type="button" data-edit="${p.id}"><i class="ri-edit-line"></i> Editar</button>
-        <button type="button" data-hist="${p.id}"><i class="ri-history-line"></i> Historial</button></div></td></tr>`;
+        <button type="button" data-hist="${p.id}"><i class="ri-history-line"></i> Historial</button>
+        <button type="button" data-baja="${p.id}"><i class="ri-delete-bin-line"></i> Baja</button></div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-archive-line"></i><strong>Tu inventario está vacío</strong><p>Agrega tu primer producto con «Nuevo producto».</p></div></td></tr>`;
     badgeBajo();
   }
@@ -231,10 +242,76 @@ if (typeof document !== "undefined") (function () {
   }
 
   // ── Cierre de caja y movimientos del producto ──
+  const hora = (iso) => new Date(iso).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
+  const ETIQ = { BASE: "Base", INGRESO: "Entrada", EGRESO: "Salida" };
   function pintarCierre(r) {
-    $("cEsperado").textContent = fmt(r.esperado);
+    const card = (t, v, c) => `<div class="stat-card ${c || ""}"><span>${t}</span><strong>${fmt(v)}</strong></div>`;
+    $("cResumen").innerHTML = card("Base", r.base) + card("Ventas en efectivo", r.efectivo, "green")
+      + card("Entradas", r.ingresos) + card("Salidas", r.egresos, "red") + card("Efectivo esperado", r.esperado, "gold");
+    $("cMovs").innerHTML = r.movs.map((m) => `<div>${hora(m.fecha)} · <strong>${ETIQ[m.tipo]}</strong> ${fmt(m.monto)} · ${esc(m.motivo)}${m.gasto ? " <small>(gasto)</small>" : ""} · ${esc(m.usuario)}
+      <button type="button" class="t-link" data-qmov="${m.id}">Quitar</button></div>`).join("");
     $("cLista").innerHTML = r.cierres.map((c) =>
-      `<div>${new Date(c.fecha).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })} · esperado ${fmt(c.esperado)} · contado ${fmt(c.contado)} · <strong style="color:${c.diferencia === 0 ? "var(--accent-green)" : "var(--accent-red)"}">dif. ${fmt(c.diferencia)}</strong> · ${esc(c.usuario)}</div>`).join("");
+      `<div>${hora(c.fecha)} · esperado ${fmt(c.esperado)} · contado ${fmt(c.contado)} · <strong style="color:${c.diferencia === 0 ? "var(--accent-green)" : "var(--accent-red)"}">dif. ${fmt(c.diferencia)}</strong> · ${esc(c.usuario)}</div>`).join("");
+  }
+  function abrirMov(tipo) {
+    $("mvTipo").value = tipo;
+    $("mMovTitulo").textContent = tipo === "BASE" ? "Base de caja" : tipo === "INGRESO" ? "Entrada de dinero" : "Salida de dinero";
+    $("mvMonto").value = ""; $("mvMotivo").value = tipo === "BASE" ? "Base inicial" : "";
+    $("mvGastoFila").style.display = tipo === "EGRESO" ? "" : "none"; $("mvGasto").checked = true;
+    $("mvError").style.display = "none"; abrirModal("mMov"); $("mvMonto").focus();
+  }
+  async function guardarMov() {
+    const monto = digitos($("mvMonto").value);
+    if (monto <= 0) return errorEn("mvError", "Escribe el valor.");
+    const r = await conCarga(() => api("/tienda/api/caja/mov", { tipo: $("mvTipo").value, monto, motivo: $("mvMotivo").value, gasto: $("mvGasto").checked }));
+    if (!r.ok) return errorEn("mvError", r.error);
+    estado.ganCache = {}; cerrarModales(); pintarCierre(r);
+  }
+  async function quitarMov(id) {
+    if (!confirm("¿Quitar este movimiento de la caja?")) return;
+    const r = await conCarga(() => api(`/tienda/api/caja/mov/${id}/quitar`, {}));
+    if (!r.ok) return aviso(r.error);
+    estado.ganCache = {}; aviso(""); pintarCierre(r);
+  }
+
+  // ── Mermas ──
+  function abrirBaja(id) {
+    const p = estado.productos.find((x) => x.id === Number(id));
+    $("bId").value = p.id; $("bNombre").textContent = `${p.nombre} · hoy hay ${p.stock}`;
+    $("bCant").value = ""; $("bNota").value = ""; $("bError").style.display = "none"; abrirModal("mBaja"); $("bCant").focus();
+  }
+  async function guardarBaja() {
+    const cant = digitos($("bCant").value);
+    if (cant <= 0) return errorEn("bError", "Escribe cuántas unidades se pierden.");
+    const r = await conCarga(() => api(`/tienda/api/productos/${$("bId").value}/baja`, { cantidad: cant, motivo: $("bMotivo").value, nota: $("bNota").value }));
+    if (!r.ok) return errorEn("bError", r.error);
+    estado.productos = r.productos; estado.ganCache = {}; cerrarModales(); renderInventario(); pintarMermas(r.mermas);
+  }
+  function pintarMermas(lista) {
+    $("tMermas").innerHTML = lista.length ? lista.map((m) => `<div class="${m.anulada ? "t-venta-anulada" : ""}">${hora(m.fecha)} · ${m.cant} × ${esc(m.nombre)} · ${esc(m.motivo)}${m.nota ? " (" + esc(m.nota) + ")" : ""}
+      · <strong style="color:var(--accent-red)">− ${fmt(m.cant * m.costo)}</strong>
+      ${m.anulada ? "(anulada)" : `<button type="button" class="t-link" data-amerma="${m.id}">Anular</button>`}</div>`).join("")
+      : `<p class="t-vacio">Sin bajas registradas.</p>`;
+  }
+  async function cargarMermas() { const r = await api("/tienda/api/mermas"); if (r.ok) pintarMermas(r.mermas); }
+  async function anularMerma(id) {
+    if (!confirm("¿Anular esta baja? Las unidades vuelven al stock.")) return;
+    const r = await conCarga(() => api(`/tienda/api/mermas/${id}/anular`, {}));
+    if (!r.ok) return aviso(r.error);
+    estado.productos = r.productos; estado.ganCache = {}; aviso(""); renderInventario(); pintarMermas(r.mermas);
+  }
+
+  // ── Reporte por fechas ──
+  const isoLocal = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  function enlacesReporte() {
+    const q = "?desde=" + $("rDesde").value + "&hasta=" + $("rHasta").value;
+    $("rXls").href = "/tienda/excel/reporte" + q; $("rPdf").href = "/tienda/pdf/reporte" + q;
+  }
+  function fijarRango(k) {
+    const fin = new Date(), ini = new Date();
+    if (k === "7") ini.setDate(ini.getDate() - 6);
+    if (k === "mes") ini.setDate(1);
+    $("rDesde").value = isoLocal(ini); $("rHasta").value = isoLocal(fin); enlacesReporte();
   }
   async function cargarCierre() { const r = await api("/tienda/api/cierre"); if (r.ok) pintarCierre(r); }
   async function guardarCierre() {
@@ -261,7 +338,7 @@ if (typeof document !== "undefined") (function () {
       const detalle = v.items.map((i) => `${i.cant} × ${esc(i.nombre)}`).join(", ");
       const fecha = v.fecha ? new Date(v.fecha).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "";
       return `<tr class="${v.anulada ? "t-venta-anulada" : ""}"><td><strong>${v.id}</strong></td><td>${fecha}</td>
-        <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}${v.metodo2 ? " + " + esc(v.metodo2) : ""}</td><td><strong>${fmt(v.total)}</strong></td><td>${esc(v.cajero)}</td>
+        <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}${v.metodo2 ? " + " + esc(v.metodo2) : ""}</td><td><strong>${fmt(v.total)}</strong>${v.descuento ? `<br><small>desc. ${fmt(v.descuento)}</small>` : ""}</td><td>${esc(v.cajero)}</td>
         <td>${v.anulada ? `<span class="badge-status urgent" title="${esc(v.motivo)}">Anulada</span>` : `<span class="badge-status active">Válida</span>`}</td>
         <td><div class="t-acciones"><a href="/tienda/pdf/venta/${v.id}" download><i class="ri-file-pdf-line"></i> PDF</a>${v.anulada ? "" : `<button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button>`}</div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-receipt-line"></i><strong>Aún no hay ventas</strong></div></td></tr>`;
@@ -316,6 +393,8 @@ if (typeof document !== "undefined") (function () {
       + fila(`Comisión Nequi y tarjeta (${a.comision} %)`, r.comision, "resta" + (a.usarComision ? "" : " apagado"))
       + fila(`Impuesto sobre ventas (${a.impuesto} %)`, r.impuesto, "resta" + (a.usarImpuesto ? "" : " apagado"))
       + fila(`Gastos fijos (${r.dias} día${r.dias > 1 ? "s" : ""})`, r.gastos, "resta" + (a.usarGastos ? "" : " apagado"))
+      + fila("Gastos de caja", r.gastosCaja, "resta")
+      + fila("Mermas (producto perdido)", r.mermas, "resta")
       + fila("Ganancia neta", r.neta, "final")
       + (a.usarReserva ? fila(`Reinversión (${a.reserva} %)`, r.reserva, "resta") + fila("Libre para ti", r.disponible, "sub") : "");
     const dias = r.porDia, max = Math.max(1, ...dias.map((d) => Math.abs(d.neta)), ...dias.map((d) => d.ventas));
@@ -371,6 +450,11 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.reab) abrirReabastecer(t.dataset.reab);
     else if (t.dataset.edit) abrirProducto(t.dataset.edit);
     else if (t.dataset.hist) abrirHistorial(t.dataset.hist);
+    else if (t.dataset.baja) abrirBaja(t.dataset.baja);
+    else if (t.dataset.amerma) anularMerma(t.dataset.amerma);
+    else if (t.dataset.mov) abrirMov(t.dataset.mov);
+    else if (t.dataset.qmov) quitarMov(t.dataset.qmov);
+    else if (t.dataset.rango) fijarRango(t.dataset.rango);
     else if (t.dataset.anular) abrirAnular(t.dataset.anular);
     else if (t.dataset.p) { ui.periodo = t.dataset.p; cargarGanancias(); }
     else if (t.hasAttribute("data-cerrar")) cerrarModales();
@@ -381,13 +465,18 @@ if (typeof document !== "undefined") (function () {
   $("tVaciar").addEventListener("click", () => { ui.carrito = {}; renderCaja(); });
   $("tMetodo").addEventListener("change", renderCarrito);
   $("tRecibido").addEventListener("input", renderCarrito);
+  $("tDescVal").addEventListener("input", renderCarrito);
+  $("tDescTipo").addEventListener("change", renderCarrito);
   $("tCobrar").addEventListener("click", cobrar);
   $("tNuevo").addEventListener("click", () => abrirProducto(null));
   $("pGuardar").addEventListener("click", guardarProducto);
   $("rGuardar").addEventListener("click", guardarReabastecer);
   $("aGuardar").addEventListener("click", guardarAnular);
   $("cGuardar").addEventListener("click", guardarCierre);
-  ["tRecibido", "pCosto", "pPrecio", "pStock", "pMin", "rCant", "aGastos", "cContado"].forEach((id) => money($(id)));
+  $("mvGuardar").addEventListener("click", guardarMov);
+  $("bGuardar").addEventListener("click", guardarBaja);
+  ["rDesde", "rHasta"].forEach((id) => $(id).addEventListener("change", enlacesReporte));
+  ["tRecibido", "pCosto", "pPrecio", "pStock", "pMin", "rCant", "aGastos", "cContado", "tDescVal", "mvMonto", "bCant"].forEach((id) => money($(id)));
   ["aGastos", "aComision", "aImpuesto", "aReserva"].forEach((id) => $(id).addEventListener("input", leerAjustes));
   ["uGastos", "uComision", "uImpuesto", "uReserva"].forEach((id) => $(id).addEventListener("change", leerAjustes));
 
@@ -396,6 +485,7 @@ if (typeof document !== "undefined") (function () {
     const r = await conCarga(() => api("/tienda/api/estado"));
     if (!r.ok) { aviso(r.error); $("tGrid").innerHTML = ""; return; }
     estado.productos = r.productos; estado.ajustes = r.ajustes;
+    fijarRango("hoy");
     irA(location.hash.replace("#", "") || "caja");
   })();
 })();

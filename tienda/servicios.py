@@ -7,6 +7,7 @@ from . import datos
 
 METODOS = ("Efectivo", "Nequi", "Tarjeta")
 TOPE = 999_999_999
+MOTIVOS_MERMA = ("Dañado", "Vencido", "Consumo propio", "Pérdida", "Otro")
 
 AJUSTES_BASE = {
     "gastosMes": 0, "usarGastos": True,
@@ -120,7 +121,21 @@ def quitar_producto(pid):
 
 
 # ═════════════════ Ventas ═════════════════
-def registrar_venta(items, metodo, recibido, usuario, resto=None):
+def _descuento(d, subtotal):
+    """Descuento en $ o % ya convertido a pesos. 0 si no hay."""
+    if not isinstance(d, dict):
+        return 0
+    v = _entero(d.get("valor") or 0, "Descuento")
+    if d.get("tipo") == "pct":
+        if v > 100:
+            raise TiendaError("El descuento no puede pasar de 100 %.")
+        v = round(subtotal * v / 100)
+    if v >= subtotal and v > 0:
+        raise TiendaError("El descuento debe ser menor que el total de la venta.")
+    return v
+
+
+def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None):
     if metodo not in METODOS:
         raise TiendaError("Elige un método de pago válido.")
     if not isinstance(items, list) or not items or len(items) > 60:
@@ -150,6 +165,8 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None):
             total += cant * int(f["precio"])
             costo_total += cant * int(f["costo"])
             lineas.append((f, cant))
+        desc = _descuento(descuento, total)
+        total -= desc
         metodo2, monto2 = None, 0
         if metodo == "Efectivo":
             if recibido <= 0:
@@ -161,10 +178,10 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None):
         cambio = recibido - total if metodo == "Efectivo" and recibido > total else 0
 
         cur.execute("""INSERT INTO t_ventas (id, metodo, total, costo_total, recibido, cambio, usuario_id, usuario_nombre,
-                                             metodo2, monto_metodo2)
-                       VALUES (t_seq_ventas.NEXTVAL, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                             metodo2, monto_metodo2, descuento)
+                       VALUES (t_seq_ventas.NEXTVAL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (metodo, total, costo_total, recibido, cambio, usuario["id"], usuario["nombre"][:100],
-                     metodo2, monto2))
+                     metodo2, monto2, desc))
         vid = int(cur.execute("SELECT t_seq_ventas.CURRVAL AS id FROM dual").fetchone()["id"])
         cur.executemany("UPDATE t_productos SET stock = stock - %s WHERE id = %s",
                         [(c, int(f["id"])) for f, c in lineas])
@@ -180,6 +197,7 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None):
              for f, c in lineas if int(f["stock"]) - c <= int(f["stock_minimo"])]
     return {
         "venta": {"id": vid, "metodo": metodo, "total": total, "metodo2": metodo2, "monto2": monto2,
+                  "descuento": desc,
                   "items": [{"nombre": f["nombre"], "cant": c, "precio": int(f["precio"])} for f, c in lineas]},
         "devuelta": cambio, "bajos": bajos,
         "stocks": [{"id": int(f["id"]), "stock": int(f["stock"]) - c} for f, c in lineas],
@@ -188,7 +206,7 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None):
 
 def listar_ventas(limite=60):
     ventas = datos.fetchall(f"""
-        SELECT id, fecha, metodo, metodo2, monto_metodo2, total, usuario_nombre, anulada, motivo_anulacion
+        SELECT id, fecha, metodo, metodo2, monto_metodo2, total, descuento, usuario_nombre, anulada, motivo_anulacion
         FROM t_ventas ORDER BY id DESC FETCH FIRST {int(limite)} ROWS ONLY""")
     if not ventas:
         return []
@@ -201,9 +219,20 @@ def listar_ventas(limite=60):
         por_venta.setdefault(int(it["venta_id"]), []).append(
             {"nombre": it["nombre"], "cant": int(it["cantidad"]), "precio": int(it["precio"])})
     return [{"id": int(v["id"]), "fecha": v["fecha"].isoformat() if v["fecha"] else None,
-             "metodo": v["metodo"], "metodo2": v["metodo2"], "total": int(v["total"]), "cajero": v["usuario_nombre"],
+             "metodo": v["metodo"], "metodo2": v["metodo2"], "total": int(v["total"]),
+             "descuento": int(v["descuento"]), "cajero": v["usuario_nombre"],
              "anulada": int(v["anulada"]) == 1, "motivo": v["motivo_anulacion"],
              "items": por_venta.get(int(v["id"]), [])} for v in ventas]
+
+
+def obtener_venta(vid):
+    v = datos.fetchone("""SELECT id, fecha, metodo, metodo2, monto_metodo2, total, descuento, recibido, cambio,
+                                 usuario_nombre, anulada FROM t_ventas WHERE id = %s""", (vid,))
+    if not v:
+        raise TiendaError("La venta no existe.")
+    items = datos.fetchall(
+        "SELECT nombre, cantidad, precio FROM t_venta_items WHERE venta_id = %s ORDER BY id", (vid,))
+    return v, items
 
 
 def anular_venta(vid, motivo, usuario):
@@ -236,14 +265,7 @@ def anular_venta(vid, motivo, usuario):
                               anulada_por = %s WHERE id = %s""", (motivo, usuario["nombre"][:100], vid))
 
 
-def obtener_venta(vid):
-    v = datos.fetchone("""SELECT id, fecha, metodo, metodo2, monto_metodo2, total, recibido, cambio,
-                                 usuario_nombre, anulada FROM t_ventas WHERE id = %s""", (vid,))
-    if not v:
-        raise TiendaError("La venta no existe.")
-    items = datos.fetchall(
-        "SELECT nombre, cantidad, precio FROM t_venta_items WHERE venta_id = %s ORDER BY id", (vid,))
-    return v, items
+
 
 # ═════════════════ Ganancias ═════════════════
 def ganancias(periodo):
@@ -263,6 +285,12 @@ def ganancias(periodo):
         WHERE v.anulada = 0 AND v.fecha >= %s
         GROUP BY i.nombre ORDER BY SUM(i.cantidad * (i.precio - i.costo)) DESC FETCH FIRST 6 ROWS ONLY""",
         (desde,))
+    perdidas = datos.fetchall("""
+        SELECT 'g' AS k, fecha, monto AS valor FROM t_caja_mov
+        WHERE tipo = 'EGRESO' AND gasto = 1 AND anulado = 0 AND fecha >= %s
+        UNION ALL
+        SELECT 'm', fecha, cantidad * costo FROM t_mermas WHERE anulada = 0 AND fecha >= %s""",
+        (desde, desde))
     quietos = datos.fetchall("""
         SELECT p.nombre, p.stock, p.stock * p.costo AS parado FROM t_productos p
         WHERE p.activo = 1 AND p.stock > 0 AND NOT EXISTS (
@@ -270,6 +298,7 @@ def ganancias(periodo):
             WHERE i.producto_id = p.id AND v.anulada = 0 AND v.fecha >= %s)
         ORDER BY parado DESC FETCH FIRST 8 ROWS ONLY""", (hoy_ - timedelta(days=29),))
 
+    nuevo = lambda: {"n": 0, "ventas": 0, "costo": 0, "noEfectivo": 0, "gastos": 0, "mermas": 0}
     por_fecha, metodos, horas = {}, {}, {}
     ant = {"n": 0, "ventas": 0, "bruta": 0}
     for v in ventas:
@@ -280,7 +309,7 @@ def ganancias(periodo):
             ant["ventas"] += total
             ant["bruta"] += total - costo
             continue
-        x = por_fecha.setdefault(d, {"n": 0, "ventas": 0, "costo": 0, "noEfectivo": 0})
+        x = por_fecha.setdefault(d, nuevo())
         x["n"] += 1
         x["ventas"] += total
         x["costo"] += costo
@@ -291,18 +320,20 @@ def ganancias(periodo):
         h = horas.setdefault(v["fecha"].hour, {"n": 0, "ventas": 0})
         h["n"] += 1
         h["ventas"] += total
+    for p in perdidas:
+        por_fecha.setdefault(p["fecha"].date(), nuevo())["gastos" if p["k"] == "g" else "mermas"] += int(p["valor"])
 
     por_dia = []
     for i in range(dias):
         d = hoy_ - timedelta(days=dias - 1 - i)
-        x = por_fecha.get(d, {"n": 0, "ventas": 0, "costo": 0, "noEfectivo": 0})
-        por_dia.append({"fecha": d.isoformat(), **x})
+        por_dia.append({"fecha": d.isoformat(), **por_fecha.get(d, nuevo())})
     return {"dias": dias, "porDia": por_dia,
             "top": [{"nombre": t["nombre"], "unidades": int(t["unidades"]), "ganancia": int(t["ganancia"])} for t in top],
             "anterior": ant,
             "metodos": [{"metodo": m, "valor": val} for m, val in sorted(metodos.items(), key=lambda kv: -kv[1])],
             "horas": [{"h": h, **horas[h]} for h in sorted(horas)],
             "quietos": [{"nombre": q["nombre"], "stock": int(q["stock"]), "parado": int(q["parado"])} for q in quietos]}
+
 
 
 # ═════════════════ Preferencias de cálculo ═════════════════
@@ -360,17 +391,27 @@ def movimientos_producto(pid):
 
 
 def cierre_hoy():
-    """Efectivo esperado desde el último cierre de hoy (o desde las 00:00) y los últimos cierres."""
-    ult = datos.fetchone(
-        "SELECT MAX(creado) AS t FROM t_cierres WHERE creado >= TRUNC(CURRENT_TIMESTAMP)")["t"]
-    cond = "fecha > %s" if ult else "fecha >= TRUNC(CURRENT_TIMESTAMP)"
-    esp = datos.fetchone(
-        f"SELECT NVL(SUM(total - monto_metodo2), 0) AS e FROM t_ventas "
-        f"WHERE anulada = 0 AND metodo = 'Efectivo' AND {cond}", (ult,) if ult else ())
+    """Caja abierta: todo lo ocurrido desde el último cierre (o desde las 00:00 si nunca se cerró)."""
     cierres = datos.fetchall("""
         SELECT creado, esperado, contado, diferencia, usuario_nombre FROM t_cierres
         ORDER BY id DESC FETCH FIRST 8 ROWS ONLY""")
-    return {"esperado": int(esp["e"]),
+    cond, par = (("fecha > %s", (cierres[0]["creado"],)) if cierres
+                 else ("fecha >= TRUNC(CURRENT_TIMESTAMP)", ()))
+    v = datos.fetchone(f"""
+        SELECT NVL(SUM(CASE WHEN metodo = 'Efectivo' THEN total - monto_metodo2 END), 0) AS efectivo,
+               NVL(SUM(CASE WHEN metodo = 'Efectivo' THEN monto_metodo2 ELSE total END), 0) AS otros
+        FROM t_ventas WHERE anulada = 0 AND {cond}""", par)
+    movs = datos.fetchall(f"""
+        SELECT id, fecha, tipo, monto, motivo, gasto, usuario_nombre FROM t_caja_mov
+        WHERE anulado = 0 AND {cond} ORDER BY id DESC""", par)
+    suma = lambda t: sum(int(m["monto"]) for m in movs if m["tipo"] == t)
+    base, ingresos, egresos, efectivo = suma("BASE"), suma("INGRESO"), suma("EGRESO"), int(v["efectivo"])
+    return {"base": base, "efectivo": efectivo, "otros": int(v["otros"]),
+            "ingresos": ingresos, "egresos": egresos,
+            "esperado": base + efectivo + ingresos - egresos,
+            "movs": [{"id": int(m["id"]), "fecha": m["fecha"].isoformat(), "tipo": m["tipo"],
+                      "monto": int(m["monto"]), "motivo": m["motivo"], "gasto": int(m["gasto"]) == 1,
+                      "usuario": m["usuario_nombre"]} for m in movs],
             "cierres": [{"fecha": c["creado"].isoformat(), "esperado": int(c["esperado"]),
                          "contado": int(c["contado"]), "diferencia": int(c["diferencia"]),
                          "usuario": c["usuario_nombre"]} for c in cierres]}
@@ -378,8 +419,147 @@ def cierre_hoy():
 
 def guardar_cierre(contado, usuario):
     contado = _entero(contado, "Efectivo contado")
-    esperado = cierre_hoy()["esperado"]
+    c = cierre_hoy()
     datos.execute_rowcount("""
-        INSERT INTO t_cierres (fecha, esperado, contado, diferencia, usuario_nombre)
-        VALUES (TRUNC(CURRENT_TIMESTAMP), %s, %s, %s, %s)""",
-        (esperado, contado, contado - esperado, usuario["nombre"][:100]))
+        INSERT INTO t_cierres (fecha, esperado, contado, diferencia, usuario_nombre,
+                               base, efectivo, ingresos, egresos, otros)
+        VALUES (TRUNC(CURRENT_TIMESTAMP), %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (c["esperado"], contado, contado - c["esperado"], usuario["nombre"][:100],
+         c["base"], c["efectivo"], c["ingresos"], c["egresos"], c["otros"]))
+
+
+# ═════════════════ Movimientos de caja ═════════════════
+def registrar_mov(d, usuario):
+    tipo = d.get("tipo")
+    if tipo not in ("BASE", "INGRESO", "EGRESO"):
+        raise TiendaError("Tipo de movimiento no válido.")
+    monto = _entero(d.get("monto"), "Valor", minimo=1, maximo=100_000_000)
+    motivo = " ".join(str(d.get("motivo") or "").split())[:200]
+    if tipo == "BASE":
+        motivo = motivo or "Base inicial"
+    if not motivo:
+        raise TiendaError("Escribe el motivo.")
+    gasto = 1 if tipo == "EGRESO" and d.get("gasto") else 0
+    datos.execute_rowcount(
+        "INSERT INTO t_caja_mov (tipo, monto, motivo, gasto, usuario_nombre) VALUES (%s, %s, %s, %s, %s)",
+        (tipo, monto, motivo, gasto, usuario["nombre"][:100]))
+
+
+def quitar_mov(mid):
+    """Solo los movimientos de la caja abierta; los ya cerrados no se tocan."""
+    n = datos.execute_rowcount(
+        "UPDATE t_caja_mov SET anulado = 1 WHERE id = %s AND anulado = 0 "
+        "AND fecha > NVL((SELECT MAX(creado) FROM t_cierres), TIMESTAMP '1900-01-01 00:00:00')", (mid,))
+    if not n:
+        raise TiendaError("No se puede quitar: ya fue cerrado o no existe.")
+
+
+# ═════════════════ Mermas (bajas de inventario) ═════════════════
+def registrar_merma(pid, cantidad, motivo, nota, usuario):
+    cantidad = _entero(cantidad, "Cantidad", minimo=1, maximo=1_000_000)
+    if motivo not in MOTIVOS_MERMA:
+        raise TiendaError("Elige el motivo de la baja.")
+    nota = " ".join(str(nota or "").split())[:200] or None
+    with datos.transaccion() as cur:
+        p = cur.execute("SELECT nombre, costo, stock FROM t_productos WHERE id = %s AND activo = 1 FOR UPDATE",
+                        (pid,)).fetchone()
+        if not p:
+            raise TiendaError("El producto ya no existe.")
+        if cantidad > int(p["stock"]):
+            raise TiendaError(f"«{p['nombre']}» solo tiene {int(p['stock'])} en stock.")
+        nuevo = int(p["stock"]) - cantidad
+        cur.execute("UPDATE t_productos SET stock = %s WHERE id = %s", (nuevo, pid))
+        cur.execute("""INSERT INTO t_mermas (producto_id, nombre, cantidad, costo, motivo, nota, usuario_nombre)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (pid, p["nombre"], cantidad, int(p["costo"]), motivo, nota, usuario["nombre"][:100]))
+        cur.execute("""INSERT INTO t_movimientos (producto_id, tipo, cantidad, stock_resultante, usuario_id, nota)
+                       VALUES (%s, 'MERMA', %s, %s, %s, %s)""", (pid, -cantidad, nuevo, usuario["id"], motivo))
+
+
+def listar_mermas():
+    filas = datos.fetchall("""
+        SELECT id, fecha, nombre, cantidad, costo, motivo, nota, anulada FROM t_mermas
+        ORDER BY id DESC FETCH FIRST 40 ROWS ONLY""")
+    return [{"id": int(f["id"]), "fecha": f["fecha"].isoformat(), "nombre": f["nombre"],
+             "cant": int(f["cantidad"]), "costo": int(f["costo"]), "motivo": f["motivo"],
+             "nota": f["nota"], "anulada": int(f["anulada"]) == 1} for f in filas]
+
+
+def anular_merma(mid, usuario):
+    with datos.transaccion() as cur:
+        m = cur.execute("SELECT producto_id, cantidad, anulada FROM t_mermas WHERE id = %s FOR UPDATE",
+                        (mid,)).fetchone()
+        if not m:
+            raise TiendaError("La baja no existe.")
+        if int(m["anulada"]) == 1:
+            raise TiendaError("Esa baja ya estaba anulada.")
+        pid, cant = int(m["producto_id"]), int(m["cantidad"])
+        nuevo = int(cur.execute("SELECT stock FROM t_productos WHERE id = %s FOR UPDATE",
+                                (pid,)).fetchone()["stock"]) + cant
+        cur.execute("UPDATE t_productos SET stock = %s WHERE id = %s", (nuevo, pid))
+        cur.execute("UPDATE t_mermas SET anulada = 1 WHERE id = %s", (mid,))
+        cur.execute("""INSERT INTO t_movimientos (producto_id, tipo, cantidad, stock_resultante, usuario_id, nota)
+                       VALUES (%s, 'ANULACION', %s, %s, %s, 'Baja anulada: el producto regresa al stock')""",
+                    (pid, cant, nuevo, usuario["id"]))
+
+
+# ═════════════════ Reporte por fechas ═════════════════
+def reporte(desde, hasta):
+    try:
+        d0, d1 = date.fromisoformat(desde or ""), date.fromisoformat(hasta or "")
+    except ValueError:
+        raise TiendaError("Escribe las dos fechas del reporte.")
+    if d1 < d0 or (d1 - d0).days > 366:
+        raise TiendaError("Rango no válido (máximo 1 año).")
+    par = (d0, d1 + timedelta(days=1))
+    ventas = datos.fetchall("""
+        SELECT fecha, total, descuento, costo_total, metodo, metodo2, monto_metodo2 FROM t_ventas
+        WHERE anulada = 0 AND fecha >= %s AND fecha < %s""", par)
+    movs = datos.fetchall("""
+        SELECT fecha, tipo, monto, motivo, gasto, usuario_nombre FROM t_caja_mov
+        WHERE anulado = 0 AND fecha >= %s AND fecha < %s ORDER BY fecha""", par)
+    mermas = datos.fetchall("""
+        SELECT fecha, nombre, cantidad, costo, motivo FROM t_mermas
+        WHERE anulada = 0 AND fecha >= %s AND fecha < %s ORDER BY fecha""", par)
+    prods = datos.fetchall("""
+        SELECT i.nombre, SUM(i.cantidad) AS unidades, SUM(i.cantidad * i.precio) AS vendido,
+               SUM(i.cantidad * (i.precio - i.costo)) AS ganancia
+        FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
+        WHERE v.anulada = 0 AND v.fecha >= %s AND v.fecha < %s
+        GROUP BY i.nombre ORDER BY SUM(i.cantidad) DESC""", par)
+    cierres = datos.fetchall("""
+        SELECT creado, contado, diferencia FROM t_cierres WHERE creado >= %s AND creado < %s""", par)
+
+    dias = {}
+    dia = lambda d: dias.setdefault(d, {"n": 0, "ventas": 0, "desc": 0, "costo": 0, "Efectivo": 0, "Nequi": 0,
+                                        "Tarjeta": 0, "ing": 0, "egr": 0, "mer": 0, "contado": None, "dif": None})
+    for v in ventas:
+        x, total, m2 = dia(v["fecha"].date()), int(v["total"]), int(v["monto_metodo2"])
+        x["n"] += 1
+        x["ventas"] += total
+        x["desc"] += int(v["descuento"])
+        x["costo"] += int(v["costo_total"])
+        x[v["metodo"]] += total - m2
+        if v["metodo2"]:
+            x[v["metodo2"]] += m2
+    for m in movs:
+        if m["tipo"] != "BASE":
+            dia(m["fecha"].date())["ing" if m["tipo"] == "INGRESO" else "egr"] += int(m["monto"])
+    for m in mermas:
+        dia(m["fecha"].date())["mer"] += int(m["cantidad"]) * int(m["costo"])
+    for c in cierres:
+        x = dia(c["creado"].date())
+        x["contado"] = (x["contado"] or 0) + int(c["contado"])
+        x["dif"] = (x["dif"] or 0) + int(c["diferencia"])
+    filas = [{"fecha": d.isoformat(), **dias[d]} for d in sorted(dias)]
+    tot = {k: sum(f[k] for f in filas) for k in ("n", "ventas", "desc", "costo", "Efectivo", "Nequi", "Tarjeta", "ing", "egr", "mer")}
+    etiqueta = {"BASE": "Base", "INGRESO": "Entrada", "EGRESO": "Salida"}
+    return {
+        "desde": d0.isoformat(), "hasta": d1.isoformat(), "dias": filas, "tot": tot,
+        "movs": [(m["fecha"].strftime("%Y-%m-%d"), m["fecha"].strftime("%H:%M"),
+                  etiqueta[m["tipo"]] + (" (gasto)" if int(m["gasto"]) else ""), m["motivo"],
+                  int(m["monto"]), m["usuario_nombre"]) for m in movs],
+        "mermas": [(m["fecha"].strftime("%Y-%m-%d"), m["nombre"], int(m["cantidad"]), int(m["costo"]),
+                    int(m["cantidad"]) * int(m["costo"]), m["motivo"]) for m in mermas],
+        "productos": [(p["nombre"], int(p["unidades"]), int(p["vendido"]), int(p["ganancia"])) for p in prods],
+    }

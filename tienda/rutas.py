@@ -87,7 +87,8 @@ def api_quitar(pid):
 @api
 def api_vender():
     d = _json()
-    r = servicios.registrar_venta(d.get("items"), d.get("metodo"), d.get("recibido"), _usuario(), d.get("resto"))
+    r = servicios.registrar_venta(d.get("items"), d.get("metodo"), d.get("recibido"), _usuario(),
+                                  d.get("resto"), d.get("descuento"))
     return jsonify(ok=True, **r)
 
 
@@ -179,6 +180,18 @@ def excel_descarga(que):
             ("Sin movimiento", ["Producto", "Stock", "Dinero parado"],
              [(q["nombre"], q["stock"], q["parado"]) for q in d["quietos"]]),
         ]
+    elif que == "reporte":
+        r = servicios.reporte(request.args.get("desde"), request.args.get("hasta"))
+        hojas = [
+            ("Por día", ["Fecha", "# Ventas", "Efectivo", "Nequi", "Tarjeta", "Total vendido", "Descuentos",
+                         "Ganancia bruta", "Entradas", "Salidas", "Mermas", "Contado", "Diferencia"],
+             [(f["fecha"], f["n"], f["Efectivo"], f["Nequi"], f["Tarjeta"], f["ventas"], f["desc"],
+               f["ventas"] - f["costo"], f["ing"], f["egr"], f["mer"], f["contado"], f["dif"])
+              for f in r["dias"]]),
+            ("Caja", ["Fecha", "Hora", "Tipo", "Motivo", "Valor", "Cajero"], r["movs"]),
+            ("Mermas", ["Fecha", "Producto", "Cantidad", "Costo unit.", "Perdido", "Motivo"], r["mermas"]),
+            ("Productos", ["Producto", "Unidades", "Vendido", "Ganancia"], r["productos"]),
+        ]
     else:
         return jsonify(ok=False, error="No existe ese reporte."), 404
     return Response(excel.libro(hojas),
@@ -203,3 +216,44 @@ def api_cierre():
 def api_cerrar():
     servicios.guardar_cierre(_json().get("contado"), _usuario())
     return jsonify(ok=True, **servicios.cierre_hoy())
+
+@bp.route("/pdf/reporte")
+@api
+def pdf_reporte():
+    r = servicios.reporte(request.args.get("desde"), request.args.get("hasta"))
+    return _pdf(pdf.reporte(r), f"reporte-{r['desde']}_{r['hasta']}.pdf")
+
+
+@bp.route("/api/caja/mov", methods=["POST"])
+@api
+def api_mov():
+    servicios.registrar_mov(_json(), _usuario())
+    return jsonify(ok=True, **servicios.cierre_hoy())
+
+
+@bp.route("/api/caja/mov/<int:mid>/quitar", methods=["POST"])
+@api
+def api_quitar_mov(mid):
+    servicios.quitar_mov(mid)
+    return jsonify(ok=True, **servicios.cierre_hoy())
+
+
+@bp.route("/api/productos/<int:pid>/baja", methods=["POST"])
+@api
+def api_baja(pid):
+    d = _json()
+    servicios.registrar_merma(pid, d.get("cantidad"), d.get("motivo"), d.get("nota"), _usuario())
+    return jsonify(ok=True, productos=servicios.listar_productos(), mermas=servicios.listar_mermas())
+
+
+@bp.route("/api/mermas")
+@api
+def api_mermas():
+    return jsonify(ok=True, mermas=servicios.listar_mermas())
+
+
+@bp.route("/api/mermas/<int:mid>/anular", methods=["POST"])
+@api
+def api_anular_merma(mid):
+    servicios.anular_merma(mid, _usuario())
+    return jsonify(ok=True, productos=servicios.listar_productos(), mermas=servicios.listar_mermas())

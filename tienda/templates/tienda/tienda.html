@@ -33,6 +33,10 @@
     <aside class="t-carrito card-bento">
       <div class="t-carrito-head"><strong>Venta actual</strong><button type="button" class="t-link" id="tVaciar">Vaciar</button></div>
       <div id="tLineas" class="t-lineas"></div>
+      <div class="field"><label class="lbl" for="tDescVal">Descuento (opcional)</label>
+        <div style="display:flex;gap:.4rem"><input class="input-clean" id="tDescVal" inputmode="numeric" autocomplete="off" placeholder="0">
+          <select class="input-clean" id="tDescTipo" style="max-width:84px"><option value="valor">$</option><option value="pct">%</option></select></div>
+        <p class="hint" id="tDescHint"></p></div>
       <div class="t-total"><span>Total</span><strong id="tTotal">$ 0</strong></div>
       <div class="field"><label class="lbl" for="tMetodo">Método de pago</label>
         <select class="input-clean" id="tMetodo"><option>Efectivo</option><option>Nequi</option><option>Tarjeta</option></select></div>
@@ -64,6 +68,10 @@
       <thead><tr><th>Producto</th><th>Categoría</th><th>Costo</th><th>Precio</th><th>Margen</th><th>Stock</th><th>Estado</th><th>Acciones</th></tr></thead>
       <tbody></tbody></table></div>
   </div>
+  <div class="card-bento" style="margin-top:1.25rem">
+    <div class="t-card-titulo"><i class="ri-delete-bin-2-line"></i> Bajas recientes (mermas)</div>
+    <div id="tMermas" class="t-detalle" style="max-width:none"></div>
+  </div>
 </section>
 
 <!-- ═════════ VENTAS ═════════ -->
@@ -78,7 +86,13 @@
   </div>
   <div class="card-bento">
     <div class="t-card-titulo"><i class="ri-safe-2-line"></i> Cierre de caja</div>
-    <p class="hint">Efectivo esperado desde el último cierre: <strong id="cEsperado">$ 0</strong></p>
+    <div class="t-stats" id="cResumen" style="margin:.6rem 0"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button type="button" class="btn-action sm" data-mov="BASE"><i class="ri-safe-2-line"></i> Base</button>
+      <button type="button" class="btn-action sm green" data-mov="INGRESO"><i class="ri-add-circle-line"></i> Entrada</button>
+      <button type="button" class="btn-action sm red" data-mov="EGRESO"><i class="ri-indeterminate-circle-line"></i> Salida</button>
+    </div>
+    <div id="cMovs" class="t-detalle" style="margin:.8rem 0;max-width:none"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-top:.6rem">
       <div class="field" style="margin:0;flex:1;min-width:160px"><label class="lbl" for="cContado">Efectivo contado</label>
         <input class="input-clean" id="cContado" inputmode="numeric" autocomplete="off"></div>
@@ -86,6 +100,19 @@
     </div>
     <p class="alerta error" id="cError" style="display:none;margin-top:.6rem"></p>
     <div id="cLista" class="t-detalle" style="margin-top:.8rem"></div>
+  </div>
+  <div class="card-bento">
+    <div class="t-card-titulo"><i class="ri-file-chart-line"></i> Reporte de caja por fechas</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+      <div class="field" style="margin:0"><label class="lbl" for="rDesde">Desde</label><input class="input-clean" type="date" id="rDesde"></div>
+      <div class="field" style="margin:0"><label class="lbl" for="rHasta">Hasta</label><input class="input-clean" type="date" id="rHasta"></div>
+      <button type="button" class="btn-action sm" data-rango="hoy">Hoy</button>
+      <button type="button" class="btn-action sm" data-rango="7">7 días</button>
+      <button type="button" class="btn-action sm" data-rango="mes">Este mes</button>
+      <a class="btn-action" id="rXls" href="#" download><i class="ri-file-excel-2-line"></i> Excel</a>
+      <a class="btn-action" id="rPdf" href="#" download><i class="ri-file-pdf-line"></i> PDF</a>
+    </div>
+    <p class="hint">Incluye resumen por día, entradas y salidas de caja, mermas y productos más vendidos.</p>
   </div>
   <div class="card-bento" style="padding:0;overflow:hidden">
     <div class="t-tabla-wrap"><table class="table-clean" id="tVentas">
@@ -184,6 +211,32 @@
     <div class="field"><label class="lbl" for="aMotivo">Motivo (obligatorio)</label><input class="input-clean" id="aMotivo" maxlength="500" autocomplete="off" placeholder="Ej.: se cobró dos veces"></div>
     <p class="alerta error" id="aError" style="display:none"></p>
     <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action red" id="aGuardar"><i class="ri-arrow-go-back-line"></i> Anular venta</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mMov" role="dialog" aria-modal="true" aria-labelledby="mMovTitulo">
+  <div class="t-modal-panel" style="max-width:400px">
+    <h3 id="mMovTitulo">Movimiento de caja</h3>
+    <input type="hidden" id="mvTipo">
+    <div class="field"><label class="lbl" for="mvMonto">Valor</label><input class="input-clean" id="mvMonto" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+    <div class="field"><label class="lbl" for="mvMotivo">Motivo</label><input class="input-clean" id="mvMotivo" maxlength="200" autocomplete="off"></div>
+    <label class="t-ajuste" id="mvGastoFila" style="border:0"><span><strong>Cuenta como gasto del negocio</strong><small>Se descuenta de la ganancia. No lo marques si es pago de mercancía o retiro personal.</small></span><input type="checkbox" id="mvGasto" checked></label>
+    <p class="alerta error" id="mvError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="mvGuardar"><i class="ri-save-line"></i> Guardar</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mBaja" role="dialog" aria-modal="true" aria-labelledby="mBajaTitulo">
+  <div class="t-modal-panel" style="max-width:400px">
+    <h3 id="mBajaTitulo">Dar de baja</h3>
+    <p class="hint" id="bNombre"></p>
+    <input type="hidden" id="bId">
+    <div class="field"><label class="lbl" for="bCant">¿Cuántas unidades?</label><input class="input-clean" id="bCant" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+    <div class="field"><label class="lbl" for="bMotivo">Motivo</label>
+      <select class="input-clean" id="bMotivo"><option>Dañado</option><option>Vencido</option><option>Consumo propio</option><option>Pérdida</option><option>Otro</option></select></div>
+    <div class="field"><label class="lbl" for="bNota">Nota (opcional)</label><input class="input-clean" id="bNota" maxlength="200" autocomplete="off"></div>
+    <p class="alerta error" id="bError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action red" id="bGuardar"><i class="ri-delete-bin-line"></i> Dar de baja</button></div>
   </div>
 </div>
 

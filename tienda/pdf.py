@@ -5,9 +5,9 @@ from xml.sax.saxutils import escape
 from utils import ahora, cop
 
 
-def _tabla(titulo, subtitulo, encabezados, filas, resumen=()):
+def _tabla(titulo, subtitulo, encabezados, filas, resumen=(), horizontal=False):
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -15,7 +15,7 @@ def _tabla(titulo, subtitulo, encabezados, filas, resumen=()):
     est = getSampleStyleSheet()
     celda = ParagraphStyle("c", parent=est["BodyText"], fontSize=8, leading=9)
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, title=titulo, leftMargin=12 * mm,
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4) if horizontal else A4, title=titulo, leftMargin=12 * mm,
                             rightMargin=12 * mm, topMargin=12 * mm, bottomMargin=12 * mm)
     story = [Paragraph(escape(titulo), est["Title"]),
              Paragraph(escape(subtitulo), est["BodyText"]), Spacer(1, 6)]
@@ -77,12 +77,15 @@ def ganancias(d, a, periodo):
     comision = no_ef * a["comision"] / 100 if a["usarComision"] else 0
     impuesto = bruto * a["impuesto"] / 100 if a["usarImpuesto"] else 0
     gastos = a["gastosMes"] / 30 * d["dias"] if a["usarGastos"] else 0
-    neta = bruto - costo - comision - impuesto - gastos
+    gcaja = sum(x["gastos"] for x in dias)
+    mermas = sum(x["mermas"] for x in dias)
+    neta = bruto - costo - comision - impuesto - gastos - gcaja - mermas
     filas = [(x["fecha"], x["n"], cop(x["ventas"]), cop(x["costo"]), cop(x["ventas"] - x["costo"]))
              for x in dias]
     resumen = [("Ventas", cop(bruto)), ("Costo mercancía", cop(costo)),
                ("Ganancia bruta", cop(bruto - costo)), ("Comisión", cop(comision)),
                ("Impuesto", cop(impuesto)), ("Gastos fijos", cop(gastos)),
+               ("Gastos de caja", cop(gcaja)), ("Mermas", cop(mermas)),
                ("Ganancia neta", cop(neta))]
     resumen += [("Más vendidos (ganancia)",
                  ", ".join(f"{t['nombre']} {cop(t['ganancia'])}" for t in d["top"][:3]) or "—")]
@@ -119,6 +122,9 @@ def ticket_venta(v, items):
     for i in items:
         fila(f"{i['cantidad']} x {i['nombre']}", cop(int(i["cantidad"]) * int(i["precio"])))
     fila("-" * 48, s=7)
+    if v["descuento"]:
+        fila("Subtotal", cop(int(v["total"]) + int(v["descuento"])))
+        fila("Descuento", "- " + cop(v["descuento"]))
     fila("TOTAL", cop(v["total"]), "Helvetica-Bold", 10)
     if v["metodo"] == "Efectivo":
         if v["metodo2"]:
@@ -145,3 +151,16 @@ def reposicion(productos):
     return _tabla("Pedido de reposición", _fecha() + " · Sugerido = para quedar con el doble del mínimo",
                   ["Producto", "Categoría", "Stock", "Mínimo", "Sugerido", "Costo est."], filas,
                   [("Productos por reponer", len(bajos)), ("Inversión estimada", cop(total))])
+
+
+def reporte(r):
+    filas = [(f["fecha"], f["n"], cop(f["Efectivo"]), cop(f["Nequi"]), cop(f["Tarjeta"]), cop(f["ventas"]),
+              cop(f["desc"]), cop(f["ventas"] - f["costo"]), cop(f["ing"]), cop(f["egr"]), cop(f["mer"]),
+              "—" if f["contado"] is None else cop(f["contado"]),
+              "—" if f["dif"] is None else cop(f["dif"])) for f in r["dias"]]
+    t = r["tot"]
+    return _tabla("Reporte de caja", f"{r['desde']} a {r['hasta']} · {_fecha()}",
+                  ["Fecha", "# Ventas", "Efectivo", "Nequi", "Tarjeta", "Total", "Descuentos", "Gan. bruta",
+                   "Entradas", "Salidas", "Mermas", "Contado", "Dif."], filas,
+                  [("Total vendido", cop(t["ventas"])), ("Ganancia bruta", cop(t["ventas"] - t["costo"])),
+                   ("Salidas de caja", cop(t["egr"])), ("Mermas", cop(t["mer"]))], horizontal=True)
