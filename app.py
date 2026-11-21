@@ -32,9 +32,11 @@ def create_app() -> Flask:
 
     # ── Blueprints ──
     from rutas import alumnos, caja, costos, dashboard, pagos, tramites, usuarios
+    from tienda import bp as tienda_bp
     app.register_blueprint(auth.bp)
     for modulo in (dashboard, alumnos, pagos, caja, costos, tramites, usuarios):
         app.register_blueprint(modulo.bp)
+    app.register_blueprint(tienda_bp)   # carpeta propia: tienda/
 
     # ── Plantillas ──
     app.jinja_env.filters["cop"] = cop
