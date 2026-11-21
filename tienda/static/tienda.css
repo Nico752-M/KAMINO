@@ -133,3 +133,57 @@
 
 .t-caja-cerrada[hidden]{display:none}
 #cAbierta[hidden]{display:none}
+/* ═══ Rediseño: más claro y fácil de usar (va al final, manda sobre lo anterior) ═══ */
+.preview-menu a{padding:.95rem 1.1rem;font-size:1rem}
+.preview-menu a i{font-size:1.3rem}
+.t-titulo{font-size:1.6rem}
+.t-sub{font-size:.95rem;margin-bottom:1rem}
+
+/* Buscador y categorías */
+.t-buscar{padding:.8rem 1.1rem;font-size:1rem;border-radius:14px}
+.t-buscar input{font-size:1rem}
+.t-chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:.3rem;scrollbar-width:thin}
+.t-chip{flex:0 0 auto;min-height:44px;padding:.6rem 1.15rem;font-size:.92rem;border-radius:12px}
+.t-chip.on{background:var(--accent-green);border-color:var(--accent-green);color:#fff}
+
+/* Productos: fichas grandes, precio bien visible, franja de color según stock */
+.t-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.9rem}
+.t-prod{min-height:132px;padding:1rem;border-radius:16px;border-top:5px solid var(--accent-green);gap:.4rem}
+.t-prod strong{font-size:1.05rem}
+.t-prod .precio{font-size:1.25rem;color:var(--text-main)}
+.t-prod small{font-size:.8rem}
+.t-prod:has(small.bajo){border-top-color:var(--accent-red)}
+.t-prod:disabled,.t-prod:disabled:has(small.bajo){border-top-color:var(--border-color)}
+.t-prod:active:not(:disabled){transform:scale(.97)}
+
+/* Venta actual */
+.t-carrito{border-radius:18px;padding:1.25rem}
+.t-carrito-head strong{font-size:1.15rem}
+.t-lineas{max-height:340px}
+.t-linea strong,.t-linea .sub{font-size:.98rem}
+.t-cant button{width:36px;height:36px;font-size:1.1rem;border-radius:10px}
+.t-cant span{min-width:28px;font-size:1rem}
+.t-total{border-top:2px dashed var(--border-color)}
+.t-total strong{font-size:2rem;color:var(--text-main)}
+.t-carrito .input-clean{font-size:1.05rem;padding:.7rem .8rem}
+#tRecibido{font-size:1.3rem;font-weight:700;text-align:right}
+#tDevuelta{font-size:1.05rem;font-weight:800}
+.t-cobrar{min-height:60px;font-size:1.15rem;border-radius:14px}
+
+/* Método de pago con botones */
+.t-metodos{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+.t-metodos button{min-height:50px;border:1.5px solid var(--border-color);background:var(--bg-card);color:var(--text-main);border-radius:12px;font-weight:700;font-size:.92rem;cursor:pointer}
+.t-metodos button.on{background:var(--accent-green);border-color:var(--accent-green);color:#fff}
+
+/* Inventario, ventas y ganancias */
+.t-stats .stat-card strong{font-size:1.8rem}
+#tTabla th,#tTabla td{padding:.9rem .8rem}
+.t-acciones button,.t-acciones a{min-height:38px;padding:.5rem .8rem;font-size:.85rem}
+.t-modal-panel{border-radius:18px}
+.t-modal-botones .btn-action{min-height:48px}
+
+@media (max-width:600px){
+  .t-grid{grid-template-columns:repeat(2,1fr)}
+  .t-prod{min-height:120px}
+  .t-prod .precio{font-size:1.15rem}
+}
