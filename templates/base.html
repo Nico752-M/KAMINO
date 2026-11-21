@@ -27,6 +27,7 @@
     </div>
   </div>
   <aside class="preview-sidebar" id="sidebar">
+    {% block menu %}
     <a class="preview-brand" href="{{ url_for('caja.resumen') if 'ver_caja' in permisos else url_for('dashboard.index') if 'ver_dashboard' in permisos else url_for('alumnos.lista') if 'ver_alumnos' in permisos else url_for('tramites.lista') if 'ver_tramites' in permisos else url_for('usuarios.lista') }}">
       <span class="preview-brand-badge"></span> CEA LA 30
     </a>
@@ -41,8 +42,10 @@
       </a>{% endif %}
       {% if 'gestionar_usuarios' in permisos %}<a href="{{ url_for('usuarios.lista') }}" class="{{ 'active' if nav == 'usuarios' }}"><i class="ri-settings-3-line"></i> Administración</a>{% endif %}
       {% if 'gestionar_costos' in permisos %}<a href="{{ url_for('costos.plantillas') }}" class="{{ 'active' if nav == 'costos' }}"><i class="ri-price-tag-3-line"></i> Plantillas de costos</a>{% endif %}
+      {% if 'ver_tienda' in permisos %}<a href="{{ url_for('tienda.inicio') }}" class="{{ 'active' if nav == 'tienda' }}"><i class="ri-store-2-line"></i> Tienda</a>{% endif %}
       <a href="#" id="update-nav" class="update-nav" hidden><i class="ri-download-cloud-2-line"></i> Actualización disponible <span class="nav-badge">1</span></a>
     </nav>
+    {% endblock %}
     <div class="sidebar-user">
       <strong>{{ session.nombre }}</strong>{{ session.rol|capitalize }}
       <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:.6rem">
@@ -56,10 +59,10 @@
     <div class="top-bar-options">
       <div class="top-left">
         <button class="menu-btn" id="menu-btn" type="button" aria-label="Abrir menú"><i class="ri-menu-line"></i></button>
-        {% if 'ver_alumnos' in permisos and nav != 'alumnos' %}<form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
+        {% block buscador %}        {% if 'ver_alumnos' in permisos and nav != 'alumnos' %}<form class="global-search-bar" action="{{ url_for('alumnos.lista') }}" method="get">
           <i class="ri-search-line"></i>
           <input type="search" name="q" value="{{ q|default('') }}" placeholder="Buscar alumno, cédula o categoría..." autocomplete="off">
-        </form>{% endif %}
+        </form>{% endif %}{% endblock %}
       </div>
       <div class="top-right">
         <div class="fecha-hoy"><i class="ri-calendar-line"></i> {{ fecha_hoy }}</div>
