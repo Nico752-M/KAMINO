@@ -39,6 +39,8 @@
       <div class="field" id="tCampoRecibido"><label class="lbl" for="tRecibido">Recibido en efectivo</label>
         <input class="input-clean" id="tRecibido" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
         <p class="hint" id="tDevuelta"></p></div>
+      <div class="field" id="tCampoResto" style="display:none"><label class="lbl" for="tResto">El resto se paga con</label>
+        <select class="input-clean" id="tResto"><option>Nequi</option><option>Tarjeta</option></select></div>
       <button type="button" class="btn-action green t-cobrar" id="tCobrar" disabled><i class="ri-money-dollar-circle-line"></i> Cobrar</button>
       <p class="alerta error" id="tError" style="display:none;margin:.75rem 0 0"></p>
     </aside>
@@ -49,7 +51,12 @@
 <section class="t-vista" id="vista-inventario" hidden>
   <div class="t-cabecera">
     <div><h1 class="t-titulo">Inventario</h1><p class="t-sub">El stock baja solo con cada venta. Reabastece cuando llegue mercancía.</p></div>
-    <button type="button" class="btn-action green" id="tNuevo"><i class="ri-add-line"></i> Nuevo producto</button>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <a class="btn-action" href="/tienda/pdf/reposicion" download><i class="ri-alarm-warning-line"></i> Pedido</a>
+      <a class="btn-action" href="/tienda/excel/inventario" download><i class="ri-file-excel-2-line"></i> Excel</a>
+      <a class="btn-action" href="/tienda/pdf/inventario" download><i class="ri-file-pdf-line"></i> PDF</a>
+      <button type="button" class="btn-action green" id="tNuevo"><i class="ri-add-line"></i> Nuevo producto</button>
+    </div>
   </div>
   <div class="t-stats" id="tStatsInv"></div>
   <div class="card-bento" style="padding:0;overflow:hidden">
@@ -61,8 +68,25 @@
 
 <!-- ═════════ VENTAS ═════════ -->
 <section class="t-vista" id="vista-ventas" hidden>
-  <h1 class="t-titulo">Ventas</h1>
-  <p class="t-sub">Las últimas ventas. Si una se hizo por error, anúlala y el producto vuelve al inventario.</p>
+  <div class="t-cabecera">
+    <div><h1 class="t-titulo">Ventas</h1>
+    <p class="t-sub">Las últimas ventas. Si una se hizo por error, anúlala y el producto vuelve al inventario.</p></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <a class="btn-action" href="/tienda/excel/ventas" download><i class="ri-file-excel-2-line"></i> Excel</a>
+      <a class="btn-action" href="/tienda/pdf/ventas" download><i class="ri-file-pdf-line"></i> PDF</a>
+    </div>
+  </div>
+  <div class="card-bento">
+    <div class="t-card-titulo"><i class="ri-safe-2-line"></i> Cierre de caja</div>
+    <p class="hint">Efectivo esperado desde el último cierre: <strong id="cEsperado">$ 0</strong></p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-top:.6rem">
+      <div class="field" style="margin:0;flex:1;min-width:160px"><label class="lbl" for="cContado">Efectivo contado</label>
+        <input class="input-clean" id="cContado" inputmode="numeric" autocomplete="off"></div>
+      <button type="button" class="btn-action green" id="cGuardar"><i class="ri-lock-line"></i> Cerrar caja</button>
+    </div>
+    <p class="alerta error" id="cError" style="display:none;margin-top:.6rem"></p>
+    <div id="cLista" class="t-detalle" style="margin-top:.8rem"></div>
+  </div>
   <div class="card-bento" style="padding:0;overflow:hidden">
     <div class="t-tabla-wrap"><table class="table-clean" id="tVentas">
       <thead><tr><th>#</th><th>Fecha</th><th>Detalle</th><th>Pago</th><th>Total</th><th>Atendió</th><th>Estado</th><th></th></tr></thead>
@@ -72,8 +96,14 @@
 
 <!-- ═════════ GANANCIAS ═════════ -->
 <section class="t-vista" id="vista-ganancias" hidden>
-  <h1 class="t-titulo">Ganancias</h1>
-  <p class="t-sub">Elige qué descontar para ver tu ganancia neta a tu manera.</p>
+  <div class="t-cabecera">
+    <div><h1 class="t-titulo">Ganancias</h1>
+    <p class="t-sub">Elige qué descontar para ver tu ganancia neta a tu manera.</p></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <a class="btn-action" id="xlsGan" href="/tienda/excel/ganancias?periodo=30" download><i class="ri-file-excel-2-line"></i> Excel</a>
+      <a class="btn-action" id="pdfGan" href="/tienda/pdf/ganancias?periodo=30" download><i class="ri-file-pdf-line"></i> PDF</a>
+    </div>
+  </div>
   <div class="internal-tabs t-periodos" id="tPeriodos">
     <button type="button" data-p="hoy">Hoy</button>
     <button type="button" data-p="7">7 días</button>
@@ -104,6 +134,14 @@
   <div class="t-gan-grid">
     <div class="card-bento"><div class="t-card-titulo"><i class="ri-bar-chart-2-line"></i> Ventas y ganancia por día</div><div id="tGrafica" class="t-grafica"></div></div>
     <div class="card-bento"><div class="t-card-titulo"><i class="ri-trophy-line"></i> Productos que más ganancia dejan</div><div id="tTop"></div></div>
+  </div>
+  <div class="t-gan-grid">
+    <div class="card-bento"><div class="t-card-titulo"><i class="ri-bank-card-line"></i> Ventas por método de pago</div><div id="tMetodos"></div></div>
+    <div class="card-bento"><div class="t-card-titulo"><i class="ri-time-line"></i> Ventas por hora</div><div id="tHoras"></div></div>
+  </div>
+  <div class="t-gan-grid">
+    <div class="card-bento"><div class="t-card-titulo"><i class="ri-calendar-line"></i> Ventas por día de la semana</div><div id="tSemana"></div></div>
+    <div class="card-bento"><div class="t-card-titulo"><i class="ri-hourglass-line"></i> Sin ventas en 30 días</div><div id="tQuietos"></div></div>
   </div>
 </section>
 
@@ -149,13 +187,26 @@
   </div>
 </div>
 
+<div class="t-modal" id="mHistorial" role="dialog" aria-modal="true" aria-labelledby="mHistTitulo">
+  <div class="t-modal-panel">
+    <h3 id="mHistTitulo">Movimientos</h3>
+    <p class="hint" id="hNombre"></p>
+    <div class="t-tabla-wrap" style="max-height:50dvh;overflow-y:auto"><table class="table-clean">
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Cant.</th><th>Stock</th></tr></thead><tbody id="hLista"></tbody></table></div>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cerrar</button></div>
+  </div>
+</div>
+
 <div class="t-modal" id="mVenta" role="dialog" aria-modal="true" aria-labelledby="mVentaTitulo">
   <div class="t-modal-panel" style="max-width:420px;text-align:center">
     <div class="t-ok"><i class="ri-check-line"></i></div>
     <h3 id="mVentaTitulo">Venta registrada</h3>
     <div id="vResumen" class="t-resumen"></div>
     <div id="vAvisos"></div>
-    <div class="t-modal-botones" style="justify-content:center"><button type="button" class="btn-action green" data-cerrar>Nueva venta</button></div>
+    <div class="t-modal-botones" style="justify-content:center">
+      <a class="btn-action" id="vTicket" download><i class="ri-file-pdf-line"></i> Ticket PDF</a>
+      <button type="button" class="btn-action green" data-cerrar>Nueva venta</button>
+    </div>
   </div>
 </div>
 {% endblock %}

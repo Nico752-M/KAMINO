@@ -1,11 +1,11 @@
 """Páginas y API JSON de la tienda. Todo exige iniciar sesión y el permiso «ver_tienda»."""
 from functools import wraps
 
-from flask import current_app, jsonify, render_template, request, session, url_for
+from flask import Response, current_app, jsonify, render_template, request, session, url_for
 
 from auth import login_required, permiso_requerido, permisos_actuales
 
-from . import bp, servicios
+from . import bp, excel, pdf, servicios
 from .datos import TiendaNoConfigurada
 from .servicios import TiendaError
 
@@ -87,7 +87,7 @@ def api_quitar(pid):
 @api
 def api_vender():
     d = _json()
-    r = servicios.registrar_venta(d.get("items"), d.get("metodo"), d.get("recibido"), _usuario())
+    r = servicios.registrar_venta(d.get("items"), d.get("metodo"), d.get("recibido"), _usuario(), d.get("resto"))
     return jsonify(ok=True, **r)
 
 
@@ -114,3 +114,92 @@ def api_ganancias():
 @api
 def api_ajustes():
     return jsonify(ok=True, ajustes=servicios.guardar_ajustes(_json()))
+
+# ───────── PDFs ─────────
+def _pdf(contenido, nombre):
+    return Response(contenido, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@bp.route("/pdf/venta/<int:vid>")
+@api
+def pdf_venta(vid):
+    v, items = servicios.obtener_venta(vid)
+    return _pdf(pdf.ticket_venta(v, items), f"venta-{vid}.pdf")
+
+
+@bp.route("/pdf/inventario")
+@api
+def pdf_inventario():
+    return _pdf(pdf.inventario(servicios.listar_productos()), "inventario.pdf")
+
+
+@bp.route("/pdf/ventas")
+@api
+def pdf_ventas():
+    return _pdf(pdf.ventas(servicios.listar_ventas(200)), "ventas.pdf")
+
+
+@bp.route("/pdf/ganancias")
+@api
+def pdf_ganancias():
+    periodo = request.args.get("periodo", "30")
+    return _pdf(pdf.ganancias(servicios.ganancias(periodo), servicios.leer_ajustes(), periodo),
+                f"ganancias-{periodo}.pdf")
+
+@bp.route("/pdf/reposicion")
+@api
+def pdf_reposicion():
+    return _pdf(pdf.reposicion(servicios.listar_productos()), "pedido-reposicion.pdf")
+
+
+@bp.route("/excel/<que>")
+@api
+def excel_descarga(que):
+    if que == "inventario":
+        hojas = [("Inventario", ["Producto", "Categoría", "Costo", "Precio", "Stock", "Mínimo"],
+                  [(p["nombre"], p["cat"], p["costo"], p["precio"], p["stock"], p["minimo"])
+                   for p in servicios.listar_productos()])]
+    elif que == "ventas":
+        hojas = [("Ventas", ["#", "Fecha", "Detalle", "Pago", "Total", "Atendió", "Estado"],
+                  [(v["id"], (v["fecha"] or "")[:16].replace("T", " "),
+                    ", ".join(f"{i['cant']} x {i['nombre']}" for i in v["items"]),
+                    servicios.texto_pago(v), v["total"], v["cajero"],
+                    "Anulada" if v["anulada"] else "Válida")
+                   for v in servicios.listar_ventas(500)])]
+    elif que == "ganancias":
+        d = servicios.ganancias(request.args.get("periodo", "30"))
+        hojas = [
+            ("Por día", ["Fecha", "Ventas (n)", "Vendido", "Costo", "Ganancia bruta"],
+             [(x["fecha"], x["n"], x["ventas"], x["costo"], x["ventas"] - x["costo"]) for x in d["porDia"]]),
+            ("Más vendidos", ["Producto", "Unidades", "Ganancia"],
+             [(t["nombre"], t["unidades"], t["ganancia"]) for t in d["top"]]),
+            ("Por método", ["Método", "Valor"], [(m["metodo"], m["valor"]) for m in d["metodos"]]),
+            ("Por hora", ["Hora", "Ventas (n)", "Vendido"], [(h["h"], h["n"], h["ventas"]) for h in d["horas"]]),
+            ("Sin movimiento", ["Producto", "Stock", "Dinero parado"],
+             [(q["nombre"], q["stock"], q["parado"]) for q in d["quietos"]]),
+        ]
+    else:
+        return jsonify(ok=False, error="No existe ese reporte."), 404
+    return Response(excel.libro(hojas),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{que}.xlsx"'})
+
+
+@bp.route("/api/productos/<int:pid>/movimientos")
+@api
+def api_movimientos(pid):
+    return jsonify(ok=True, movimientos=servicios.movimientos_producto(pid))
+
+
+@bp.route("/api/cierre")
+@api
+def api_cierre():
+    return jsonify(ok=True, **servicios.cierre_hoy())
+
+
+@bp.route("/api/cierre", methods=["POST"])
+@api
+def api_cerrar():
+    servicios.guardar_cierre(_json().get("contado"), _usuario())
+    return jsonify(ok=True, **servicios.cierre_hoy())

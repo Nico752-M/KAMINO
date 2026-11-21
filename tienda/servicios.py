@@ -120,7 +120,7 @@ def quitar_producto(pid):
 
 
 # ═════════════════ Ventas ═════════════════
-def registrar_venta(items, metodo, recibido, usuario):
+def registrar_venta(items, metodo, recibido, usuario, resto=None):
     if metodo not in METODOS:
         raise TiendaError("Elige un método de pago válido.")
     if not isinstance(items, list) or not items or len(items) > 60:
@@ -150,13 +150,21 @@ def registrar_venta(items, metodo, recibido, usuario):
             total += cant * int(f["precio"])
             costo_total += cant * int(f["costo"])
             lineas.append((f, cant))
-        if metodo == "Efectivo" and recibido and recibido < total:
-            raise TiendaError("Lo recibido no alcanza para el total.")
+        metodo2, monto2 = None, 0
+        if metodo == "Efectivo":
+            if recibido <= 0:
+                raise TiendaError("Escribe el efectivo recibido.")
+            if recibido < total:      # pago mixto: el resto va por otro método
+                if resto not in ("Nequi", "Tarjeta"):
+                    raise TiendaError("El efectivo no alcanza: elige con qué se paga el resto.")
+                metodo2, monto2 = resto, total - recibido
         cambio = recibido - total if metodo == "Efectivo" and recibido > total else 0
 
-        cur.execute("""INSERT INTO t_ventas (id, metodo, total, costo_total, recibido, cambio, usuario_id, usuario_nombre)
-                       VALUES (t_seq_ventas.NEXTVAL, %s, %s, %s, %s, %s, %s, %s)""",
-                    (metodo, total, costo_total, recibido, cambio, usuario["id"], usuario["nombre"][:100]))
+        cur.execute("""INSERT INTO t_ventas (id, metodo, total, costo_total, recibido, cambio, usuario_id, usuario_nombre,
+                                             metodo2, monto_metodo2)
+                       VALUES (t_seq_ventas.NEXTVAL, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (metodo, total, costo_total, recibido, cambio, usuario["id"], usuario["nombre"][:100],
+                     metodo2, monto2))
         vid = int(cur.execute("SELECT t_seq_ventas.CURRVAL AS id FROM dual").fetchone()["id"])
         cur.executemany("UPDATE t_productos SET stock = stock - %s WHERE id = %s",
                         [(c, int(f["id"])) for f, c in lineas])
@@ -171,7 +179,7 @@ def registrar_venta(items, metodo, recibido, usuario):
     bajos = [{"nombre": f["nombre"], "stock": int(f["stock"]) - c}
              for f, c in lineas if int(f["stock"]) - c <= int(f["stock_minimo"])]
     return {
-        "venta": {"id": vid, "metodo": metodo, "total": total,
+        "venta": {"id": vid, "metodo": metodo, "total": total, "metodo2": metodo2, "monto2": monto2,
                   "items": [{"nombre": f["nombre"], "cant": c, "precio": int(f["precio"])} for f, c in lineas]},
         "devuelta": cambio, "bajos": bajos,
         "stocks": [{"id": int(f["id"]), "stock": int(f["stock"]) - c} for f, c in lineas],
@@ -180,7 +188,7 @@ def registrar_venta(items, metodo, recibido, usuario):
 
 def listar_ventas(limite=60):
     ventas = datos.fetchall(f"""
-        SELECT id, fecha, metodo, total, usuario_nombre, anulada, motivo_anulacion
+        SELECT id, fecha, metodo, metodo2, monto_metodo2, total, usuario_nombre, anulada, motivo_anulacion
         FROM t_ventas ORDER BY id DESC FETCH FIRST {int(limite)} ROWS ONLY""")
     if not ventas:
         return []
@@ -193,7 +201,7 @@ def listar_ventas(limite=60):
         por_venta.setdefault(int(it["venta_id"]), []).append(
             {"nombre": it["nombre"], "cant": int(it["cantidad"]), "precio": int(it["precio"])})
     return [{"id": int(v["id"]), "fecha": v["fecha"].isoformat() if v["fecha"] else None,
-             "metodo": v["metodo"], "total": int(v["total"]), "cajero": v["usuario_nombre"],
+             "metodo": v["metodo"], "metodo2": v["metodo2"], "total": int(v["total"]), "cajero": v["usuario_nombre"],
              "anulada": int(v["anulada"]) == 1, "motivo": v["motivo_anulacion"],
              "items": por_venta.get(int(v["id"]), [])} for v in ventas]
 
@@ -228,15 +236,25 @@ def anular_venta(vid, motivo, usuario):
                               anulada_por = %s WHERE id = %s""", (motivo, usuario["nombre"][:100], vid))
 
 
+def obtener_venta(vid):
+    v = datos.fetchone("""SELECT id, fecha, metodo, metodo2, monto_metodo2, total, recibido, cambio,
+                                 usuario_nombre, anulada FROM t_ventas WHERE id = %s""", (vid,))
+    if not v:
+        raise TiendaError("La venta no existe.")
+    items = datos.fetchall(
+        "SELECT nombre, cantidad, precio FROM t_venta_items WHERE venta_id = %s ORDER BY id", (vid,))
+    return v, items
+
 # ═════════════════ Ganancias ═════════════════
 def ganancias(periodo):
     if periodo not in ("hoy", "7", "30"):
         raise TiendaError("Periodo no válido.")
     dias = 1 if periodo == "hoy" else int(periodo)
     desde = f"TRUNC(CURRENT_TIMESTAMP) - {dias - 1}"
+    ant_desde = f"TRUNC(CURRENT_TIMESTAMP) - {2 * dias - 1}"
     filas = datos.fetchall(f"""
         SELECT TRUNC(v.fecha) AS dia, COUNT(*) AS n, SUM(v.total) AS ventas, SUM(v.costo_total) AS costo,
-               SUM(CASE WHEN v.metodo <> 'Efectivo' THEN v.total ELSE 0 END) AS no_efectivo
+               SUM(CASE WHEN v.metodo <> 'Efectivo' THEN v.total ELSE v.monto_metodo2 END) AS no_efectivo
         FROM t_ventas v WHERE v.anulada = 0 AND v.fecha >= {desde}
         GROUP BY TRUNC(v.fecha) ORDER BY 1""")
     top = datos.fetchall(f"""
@@ -244,6 +262,27 @@ def ganancias(periodo):
         FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
         WHERE v.anulada = 0 AND v.fecha >= {desde}
         GROUP BY i.nombre ORDER BY SUM(i.cantidad * (i.precio - i.costo)) DESC FETCH FIRST 6 ROWS ONLY""")
+    ant = datos.fetchone(f"""
+        SELECT COUNT(*) AS n, NVL(SUM(total), 0) AS ventas, NVL(SUM(total - costo_total), 0) AS bruta
+        FROM t_ventas WHERE anulada = 0 AND fecha >= {ant_desde} AND fecha < {desde}""")
+    metodos = datos.fetchall(f"""
+        SELECT m, SUM(valor) AS valor FROM (
+            SELECT metodo AS m, total - monto_metodo2 AS valor FROM t_ventas
+            WHERE anulada = 0 AND fecha >= {desde}
+            UNION ALL
+            SELECT metodo2, monto_metodo2 FROM t_ventas
+            WHERE anulada = 0 AND fecha >= {desde} AND metodo2 IS NOT NULL)
+        GROUP BY m ORDER BY 2 DESC""")
+    horas = datos.fetchall(f"""
+        SELECT TO_NUMBER(TO_CHAR(fecha, 'HH24')) AS h, COUNT(*) AS n, SUM(total) AS ventas
+        FROM t_ventas WHERE anulada = 0 AND fecha >= {desde}
+        GROUP BY TO_NUMBER(TO_CHAR(fecha, 'HH24')) ORDER BY 1""")
+    quietos = datos.fetchall("""
+        SELECT p.nombre, p.stock, p.stock * p.costo AS parado FROM t_productos p
+        WHERE p.activo = 1 AND p.stock > 0 AND NOT EXISTS (
+            SELECT 1 FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
+            WHERE i.producto_id = p.id AND v.anulada = 0 AND v.fecha >= TRUNC(CURRENT_TIMESTAMP) - 29)
+        ORDER BY parado DESC FETCH FIRST 8 ROWS ONLY""")
     por_fecha = {}
     for f in filas:
         d = f["dia"]
@@ -259,7 +298,11 @@ def ganancias(periodo):
                         "costo": int(f["costo"]) if f else 0,
                         "noEfectivo": int(f["no_efectivo"]) if f else 0})
     return {"dias": dias, "porDia": por_dia,
-            "top": [{"nombre": t["nombre"], "unidades": int(t["unidades"]), "ganancia": int(t["ganancia"])} for t in top]}
+            "top": [{"nombre": t["nombre"], "unidades": int(t["unidades"]), "ganancia": int(t["ganancia"])} for t in top],
+            "anterior": {"n": int(ant["n"]), "ventas": int(ant["ventas"]), "bruta": int(ant["bruta"])},
+            "metodos": [{"metodo": m["m"], "valor": int(m["valor"])} for m in metodos],
+            "horas": [{"h": int(h["h"]), "n": int(h["n"]), "ventas": int(h["ventas"])} for h in horas],
+            "quietos": [{"nombre": q["nombre"], "stock": int(q["stock"]), "parado": int(q["parado"])} for q in quietos]}
 
 
 # ═════════════════ Preferencias de cálculo ═════════════════
@@ -301,3 +344,42 @@ def _porcentaje(valor, nombre, maximo):
     if n < 0 or n > maximo:
         raise TiendaError(f"{nombre}: debe estar entre 0 y {maximo}.")
     return round(n, 2)
+
+
+# ═════════════════ Extras ═════════════════
+def texto_pago(v):
+    return v["metodo"] + (f" + {v['metodo2']}" if v.get("metodo2") else "")
+
+
+def movimientos_producto(pid):
+    filas = datos.fetchall("""
+        SELECT fecha, tipo, cantidad, stock_resultante, venta_id FROM t_movimientos
+        WHERE producto_id = %s ORDER BY id DESC FETCH FIRST 50 ROWS ONLY""", (pid,))
+    return [{"fecha": f["fecha"].isoformat(), "tipo": f["tipo"], "cant": int(f["cantidad"]),
+             "stock": int(f["stock_resultante"]), "venta": f["venta_id"]} for f in filas]
+
+
+def cierre_hoy():
+    """Efectivo esperado desde el último cierre de hoy (o desde las 00:00) y los últimos cierres."""
+    ult = datos.fetchone(
+        "SELECT MAX(creado) AS t FROM t_cierres WHERE creado >= TRUNC(CURRENT_TIMESTAMP)")["t"]
+    cond = "fecha > %s" if ult else "fecha >= TRUNC(CURRENT_TIMESTAMP)"
+    esp = datos.fetchone(
+        f"SELECT NVL(SUM(total - monto_metodo2), 0) AS e FROM t_ventas "
+        f"WHERE anulada = 0 AND metodo = 'Efectivo' AND {cond}", (ult,) if ult else ())
+    cierres = datos.fetchall("""
+        SELECT creado, esperado, contado, diferencia, usuario_nombre FROM t_cierres
+        ORDER BY id DESC FETCH FIRST 8 ROWS ONLY""")
+    return {"esperado": int(esp["e"]),
+            "cierres": [{"fecha": c["creado"].isoformat(), "esperado": int(c["esperado"]),
+                         "contado": int(c["contado"]), "diferencia": int(c["diferencia"]),
+                         "usuario": c["usuario_nombre"]} for c in cierres]}
+
+
+def guardar_cierre(contado, usuario):
+    contado = _entero(contado, "Efectivo contado")
+    esperado = cierre_hoy()["esperado"]
+    datos.execute_rowcount("""
+        INSERT INTO t_cierres (fecha, esperado, contado, diferencia, usuario_nombre)
+        VALUES (TRUNC(CURRENT_TIMESTAMP), %s, %s, %s, %s)""",
+        (esperado, contado, contado - esperado, usuario["nombre"][:100]))

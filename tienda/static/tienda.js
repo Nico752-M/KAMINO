@@ -113,11 +113,12 @@ if (typeof document !== "undefined") (function () {
         <button type="button" data-mas="${id}" aria-label="Agregar uno">+</button></div><span></span></div>`;
     }).join("") : `<p class="t-vacio">Aún no hay productos en la venta.</p>`;
     $("tTotal").textContent = fmt(total);
-    $("tCobrar").disabled = !ids.length || ui.enviando;
     const efectivo = $("tMetodo").value === "Efectivo";
-    $("tCampoRecibido").style.display = efectivo ? "" : "none";
     const rec = digitos($("tRecibido").value);
-    $("tDevuelta").textContent = efectivo && rec ? (rec >= total ? `Devuelta: ${fmt(rec - total)}` : `Faltan ${fmt(total - rec)}`) : "";
+    $("tCobrar").disabled = !ids.length || ui.enviando || (efectivo && rec <= 0);
+    $("tCampoRecibido").style.display = efectivo ? "" : "none";
+    $("tCampoResto").style.display = efectivo && rec > 0 && rec < total ? "" : "none";
+    $("tDevuelta").textContent = efectivo && rec ? (rec >= total ? `Devuelta: ${fmt(rec - total)}` : `Resto por cobrar: ${fmt(total - rec)}`) : "";
     $("tError").style.display = "none";
   }
 
@@ -135,16 +136,18 @@ if (typeof document !== "undefined") (function () {
     if (ui.enviando) return;
     const items = Object.entries(ui.carrito).map(([id, cant]) => ({ id: Number(id), cant }));
     ui.enviando = true; $("tCobrar").disabled = true;
-    const r = await api("/tienda/api/ventas", { items, metodo: $("tMetodo").value, recibido: digitos($("tRecibido").value) });
+    const r = await api("/tienda/api/ventas", { items, metodo: $("tMetodo").value, recibido: digitos($("tRecibido").value), resto: $("tResto").value });
     ui.enviando = false;
     if (!r.ok) { $("tError").textContent = r.error; $("tError").style.display = "block"; $("tCobrar").disabled = false; await recargarProductos(); return; }
     r.stocks.forEach((s) => { const p = estado.productos.find((x) => x.id === s.id); if (p) p.stock = s.stock; });
     $("vResumen").innerHTML = r.venta.items.map((i) => `<div><span>${i.cant} × ${esc(i.nombre)}</span><strong>${fmt(i.cant * i.precio)}</strong></div>`).join("")
       + `<div><span>Total (${esc(r.venta.metodo)}) · venta #${r.venta.id}</span><strong>${fmt(r.venta.total)}</strong></div>`
+      + (r.venta.monto2 ? `<div><span>Resto con ${esc(r.venta.metodo2)}</span><strong>${fmt(r.venta.monto2)}</strong></div>` : "")
       + (r.devuelta ? `<div><span>Devuelta</span><strong>${fmt(r.devuelta)}</strong></div>` : "");
     $("vAvisos").innerHTML = r.bajos.map((b) =>
       `<div class="t-aviso"><i class="ri-alert-line"></i> ${b.stock <= 0 ? "Se agotó" : "Queda poco de"} «${esc(b.nombre)}»${b.stock > 0 ? ` (${b.stock})` : ""}.</div>`).join("");
     ui.carrito = {}; $("tRecibido").value = "";
+    $("vTicket").href = "/tienda/pdf/venta/" + r.venta.id;
     abrirModal("mVenta"); renderCaja();
   }
 
@@ -174,7 +177,8 @@ if (typeof document !== "undefined") (function () {
       return `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.cat)}</td><td>${fmt(p.costo)}</td><td>${fmt(p.precio)}</td>
         <td>${margen.toFixed(0)} %</td><td><strong>${p.stock}</strong></td><td>${badge}</td>
         <td><div class="t-acciones"><button type="button" class="t-mas" data-reab="${p.id}"><i class="ri-add-line"></i> Reabastecer</button>
-        <button type="button" data-edit="${p.id}"><i class="ri-edit-line"></i> Editar</button></div></td></tr>`;
+        <button type="button" data-edit="${p.id}"><i class="ri-edit-line"></i> Editar</button>
+        <button type="button" data-hist="${p.id}"><i class="ri-history-line"></i> Historial</button></div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-archive-line"></i><strong>Tu inventario está vacío</strong><p>Agrega tu primer producto con «Nuevo producto».</p></div></td></tr>`;
     badgeBajo();
   }
@@ -223,16 +227,43 @@ if (typeof document !== "undefined") (function () {
   async function cargarVentas() {
     const r = await conCarga(() => api("/tienda/api/ventas"));
     if (!r.ok) { aviso(r.error); return; } aviso("");
-    estado.ventas = r.ventas; renderVentas();
+    estado.ventas = r.ventas; renderVentas(); cargarCierre();
+  }
+
+  // ── Cierre de caja y movimientos del producto ──
+  function pintarCierre(r) {
+    $("cEsperado").textContent = fmt(r.esperado);
+    $("cLista").innerHTML = r.cierres.map((c) =>
+      `<div>${new Date(c.fecha).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })} · esperado ${fmt(c.esperado)} · contado ${fmt(c.contado)} · <strong style="color:${c.diferencia === 0 ? "var(--accent-green)" : "var(--accent-red)"}">dif. ${fmt(c.diferencia)}</strong> · ${esc(c.usuario)}</div>`).join("");
+  }
+  async function cargarCierre() { const r = await api("/tienda/api/cierre"); if (r.ok) pintarCierre(r); }
+  async function guardarCierre() {
+    if (!$("cContado").value) { $("cError").textContent = "Escribe el efectivo contado."; $("cError").style.display = "block"; return; }
+    const r = await conCarga(() => api("/tienda/api/cierre", { contado: digitos($("cContado").value) }));
+    $("cError").style.display = r.ok ? "none" : "block";
+    if (!r.ok) { $("cError").textContent = r.error; return; }
+    $("cContado").value = ""; pintarCierre(r);
+  }
+  async function abrirHistorial(id) {
+    const p = estado.productos.find((x) => x.id === Number(id));
+    const r = await conCarga(() => api(`/tienda/api/productos/${id}/movimientos`));
+    if (!r.ok) return aviso(r.error);
+    $("hNombre").textContent = p.nombre;
+    $("hLista").innerHTML = r.movimientos.length ? r.movimientos.map((m) =>
+      `<tr><td>${new Date(m.fecha).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}</td>
+       <td>${esc(m.tipo)}${m.venta ? " #" + m.venta : ""}</td>
+       <td><strong style="color:${m.cant < 0 ? "var(--accent-red)" : "var(--accent-green)"}">${m.cant > 0 ? "+" : ""}${m.cant}</strong></td>
+       <td>${m.stock}</td></tr>`).join("") : `<tr><td colspan="4" class="t-vacio">Sin movimientos.</td></tr>`;
+    abrirModal("mHistorial");
   }
   function renderVentas() {
     $("tVentas").querySelector("tbody").innerHTML = estado.ventas.length ? estado.ventas.map((v) => {
       const detalle = v.items.map((i) => `${i.cant} × ${esc(i.nombre)}`).join(", ");
       const fecha = v.fecha ? new Date(v.fecha).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "";
       return `<tr class="${v.anulada ? "t-venta-anulada" : ""}"><td><strong>${v.id}</strong></td><td>${fecha}</td>
-        <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}</td><td><strong>${fmt(v.total)}</strong></td><td>${esc(v.cajero)}</td>
+        <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}${v.metodo2 ? " + " + esc(v.metodo2) : ""}</td><td><strong>${fmt(v.total)}</strong></td><td>${esc(v.cajero)}</td>
         <td>${v.anulada ? `<span class="badge-status urgent" title="${esc(v.motivo)}">Anulada</span>` : `<span class="badge-status active">Válida</span>`}</td>
-        <td>${v.anulada ? "" : `<div class="t-acciones"><button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button></div>`}</td></tr>`;
+        <td><div class="t-acciones"><a href="/tienda/pdf/venta/${v.id}" download><i class="ri-file-pdf-line"></i> PDF</a>${v.anulada ? "" : `<button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button>`}</div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-receipt-line"></i><strong>Aún no hay ventas</strong></div></td></tr>`;
   }
   function abrirAnular(id) {
@@ -264,11 +295,16 @@ if (typeof document !== "undefined") (function () {
   function pintarGanancias() {
     if (!estado.ganancias) return;
     const r = K.calcular(estado.ganancias, estado.ajustes), a = estado.ajustes;
+    const g = estado.ganancias, ant = g.anterior;
+    const cmp = (x, y) => y ? (x >= y ? "▲ " : "▼ ") + Math.abs((x - y) / y * 100).toFixed(0) + " % vs período anterior" : "sin período anterior";
     document.querySelectorAll("#tPeriodos button").forEach((b) => b.classList.toggle("active", b.dataset.p === ui.periodo));
+    $("pdfGan").href = "/tienda/pdf/ganancias?periodo=" + ui.periodo;
+    $("xlsGan").href = "/tienda/excel/ganancias?periodo=" + ui.periodo;
     $("tStatsGan").innerHTML =
-      `<div class="stat-card gold"><span>Ventas</span><strong>${fmt(r.bruto)}</strong><small>${r.numVentas} ventas</small></div>
+      `<div class="stat-card gold"><span>Ventas</span><strong>${fmt(r.bruto)}</strong><small>${r.numVentas} ventas · ${cmp(r.bruto, ant.ventas)}</small></div>
        <div class="stat-card ${r.neta >= 0 ? "green" : "red"}"><span>Ganancia neta</span><strong>${fmt(r.neta)}</strong><small>margen ${r.margen.toFixed(1)} %</small></div>
-       <div class="stat-card gold"><span>Ganancia bruta</span><strong>${fmt(r.gananciaBruta)}</strong><small>ventas − costo de mercancía</small></div>
+       <div class="stat-card gold"><span>Ganancia bruta</span><strong>${fmt(r.gananciaBruta)}</strong><small>${cmp(r.gananciaBruta, ant.bruta)}</small></div>
+       <div class="stat-card"><span>Ticket promedio</span><strong>${fmt(r.numVentas ? r.bruto / r.numVentas : 0)}</strong><small>por venta</small></div>
        ${a.usarReserva ? `<div class="stat-card green"><span>Libre para ti</span><strong>${fmt(r.disponible)}</strong><small>tras reservar ${fmt(r.reserva)}</small></div>` : ""}`;
     const fila = (txt, val, cls) => `<div class="t-casc ${cls || ""}"><span>${txt}</span><span>${cls && cls.includes("resta") && val ? "− " : ""}${fmt(val)}</span></div>`;
     $("tCascada").innerHTML =
@@ -291,6 +327,21 @@ if (typeof document !== "undefined") (function () {
     $("tTop").innerHTML = r.top.length ? r.top.map((t) => `<div class="t-barra-fila"><span>${esc(t.nombre)}</span>
       <div class="t-barra"><i style="width:${Math.max(t.ganancia, 0) / maxG * 100}%"></i></div><strong>${fmt(t.ganancia)}</strong></div>`).join("")
       : `<p class="t-vacio">Aún no hay ventas en este periodo.</p>`;
+    const barras = (filas) => {
+      const m = Math.max(1, ...filas.map((f) => f.v));
+      return filas.length ? filas.map((f) => `<div class="t-barra-fila"><span>${esc(f.n)}</span>
+        <div class="t-barra"><i style="width:${f.v / m * 100}%"></i></div><strong>${fmt(f.v)}</strong></div>`).join("")
+        : `<p class="t-vacio">Sin ventas en este periodo.</p>`;
+    };
+    $("tMetodos").innerHTML = barras(g.metodos.map((x) => ({ n: x.metodo, v: x.valor })));
+    $("tHoras").innerHTML = barras(g.horas.map((x) => ({ n: x.h + ":00", v: x.ventas })));
+    const DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"], sem = DIAS.map(() => 0);
+    r.porDia.forEach((d) => { sem[(new Date(d.fecha + "T12:00:00").getDay() + 6) % 7] += d.ventas; });
+    $("tSemana").innerHTML = barras(DIAS.map((n, i) => ({ n, v: sem[i] })));
+    $("tQuietos").innerHTML = g.quietos.length
+      ? g.quietos.map((q) => `<div class="t-barra-fila" style="grid-template-columns:1fr auto"><span>${esc(q.nombre)} <small class="hint">(${q.stock} und)</small></span><strong>${fmt(q.parado)}</strong></div>`).join("")
+        + `<p class="hint">Dinero parado en inventario, a precio de costo.</p>`
+      : `<p class="t-vacio">Todo se está moviendo 🎉</p>`;
   }
 
   // Las preferencias se recalculan al instante y se guardan en el servidor un momento después
@@ -315,6 +366,7 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.cat) { ui.cat = t.dataset.cat; renderCaja(); }
     else if (t.dataset.reab) abrirReabastecer(t.dataset.reab);
     else if (t.dataset.edit) abrirProducto(t.dataset.edit);
+    else if (t.dataset.hist) abrirHistorial(t.dataset.hist);
     else if (t.dataset.anular) abrirAnular(t.dataset.anular);
     else if (t.dataset.p) { ui.periodo = t.dataset.p; cargarGanancias(); }
     else if (t.hasAttribute("data-cerrar")) cerrarModales();
@@ -330,7 +382,8 @@ if (typeof document !== "undefined") (function () {
   $("pGuardar").addEventListener("click", guardarProducto);
   $("rGuardar").addEventListener("click", guardarReabastecer);
   $("aGuardar").addEventListener("click", guardarAnular);
-  ["tRecibido", "pCosto", "pPrecio", "pStock", "pMin", "rCant", "aGastos"].forEach((id) => money($(id)));
+  $("cGuardar").addEventListener("click", guardarCierre);
+  ["tRecibido", "pCosto", "pPrecio", "pStock", "pMin", "rCant", "aGastos", "cContado"].forEach((id) => money($(id)));
   ["aGastos", "aComision", "aImpuesto", "aReserva"].forEach((id) => $(id).addEventListener("input", leerAjustes));
   ["uGastos", "uComision", "uImpuesto", "uReserva"].forEach((id) => $(id).addEventListener("change", leerAjustes));
 
