@@ -209,6 +209,7 @@ def _primer_destino_permitido() -> str:
         ("ver_dashboard", "dashboard.index"),
         ("ver_alumnos", "alumnos.lista"),
         ("ver_tramites", "tramites.lista"),
+        ("ver_tienda", "tienda.inicio"),
         ("gestionar_usuarios", "usuarios.lista"),
     )
     for codigo, endpoint in destinos:
