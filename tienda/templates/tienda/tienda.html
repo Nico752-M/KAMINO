@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block titulo %}Mi Tienda{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('tienda.static', filename='tienda.css', v=asset_v) }}">{% endblock %}
+
+{% block menu %}
+    <a class="preview-brand" href="#caja"><span class="preview-brand-badge"></span> MI TIENDA</a>
+    <nav class="preview-menu" aria-label="Navegación de la tienda">
+      <a href="#caja" data-vista="caja" class="active"><i class="ri-shopping-cart-2-line"></i> Caja</a>
+      <a href="#inventario" data-vista="inventario"><i class="ri-archive-line"></i> Inventario <span class="nav-badge" id="badgeBajo" hidden></span></a>
+      <a href="#ventas" data-vista="ventas"><i class="ri-receipt-line"></i> Ventas</a>
+      <a href="#ganancias" data-vista="ganancias"><i class="ri-line-chart-line"></i> Ganancias</a>
+      {% if volver %}<a href="{{ volver }}"><i class="ri-arrow-left-line"></i> Volver al CEA</a>{% endif %}
+      <a href="#" id="update-nav" class="update-nav" hidden><i class="ri-download-cloud-2-line"></i> Actualización disponible <span class="nav-badge">1</span></a>
+    </nav>
+{% endblock %}
+{% block buscador %}{% endblock %}
+
+{% block contenido %}
+<div class="alerta error" id="tAviso" style="display:none"></div>
+
+<!-- ═════════ CAJA ═════════ -->
+<section class="t-vista" id="vista-caja">
+  <h1 class="t-titulo">Caja</h1>
+  <p class="t-sub">Toca un producto para agregarlo. Al cobrar, el inventario se descuenta solo.</p>
+  <div class="t-pos">
+    <div class="t-pos-productos">
+      <div class="t-filtros">
+        <div class="t-buscar"><i class="ri-search-line"></i><input type="search" id="tBuscar" placeholder="Buscar producto…" autocomplete="off"></div>
+        <div class="t-chips" id="tChips"></div>
+      </div>
+      <div class="t-grid" id="tGrid"></div>
+    </div>
+    <aside class="t-carrito card-bento">
+      <div class="t-carrito-head"><strong>Venta actual</strong><button type="button" class="t-link" id="tVaciar">Vaciar</button></div>
+      <div id="tLineas" class="t-lineas"></div>
+      <div class="t-total"><span>Total</span><strong id="tTotal">$ 0</strong></div>
+      <div class="field"><label class="lbl" for="tMetodo">Método de pago</label>
+        <select class="input-clean" id="tMetodo"><option>Efectivo</option><option>Nequi</option><option>Tarjeta</option></select></div>
+      <div class="field" id="tCampoRecibido"><label class="lbl" for="tRecibido">Recibido en efectivo</label>
+        <input class="input-clean" id="tRecibido" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+        <p class="hint" id="tDevuelta"></p></div>
+      <button type="button" class="btn-action green t-cobrar" id="tCobrar" disabled><i class="ri-money-dollar-circle-line"></i> Cobrar</button>
+      <p class="alerta error" id="tError" style="display:none;margin:.75rem 0 0"></p>
+    </aside>
+  </div>
+</section>
+
+<!-- ═════════ INVENTARIO ═════════ -->
+<section class="t-vista" id="vista-inventario" hidden>
+  <div class="t-cabecera">
+    <div><h1 class="t-titulo">Inventario</h1><p class="t-sub">El stock baja solo con cada venta. Reabastece cuando llegue mercancía.</p></div>
+    <button type="button" class="btn-action green" id="tNuevo"><i class="ri-add-line"></i> Nuevo producto</button>
+  </div>
+  <div class="t-stats" id="tStatsInv"></div>
+  <div class="card-bento" style="padding:0;overflow:hidden">
+    <div class="t-tabla-wrap"><table class="table-clean" id="tTabla">
+      <thead><tr><th>Producto</th><th>Categoría</th><th>Costo</th><th>Precio</th><th>Margen</th><th>Stock</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+</section>
+
+<!-- ═════════ VENTAS ═════════ -->
+<section class="t-vista" id="vista-ventas" hidden>
+  <h1 class="t-titulo">Ventas</h1>
+  <p class="t-sub">Las últimas ventas. Si una se hizo por error, anúlala y el producto vuelve al inventario.</p>
+  <div class="card-bento" style="padding:0;overflow:hidden">
+    <div class="t-tabla-wrap"><table class="table-clean" id="tVentas">
+      <thead><tr><th>#</th><th>Fecha</th><th>Detalle</th><th>Pago</th><th>Total</th><th>Atendió</th><th>Estado</th><th></th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+</section>
+
+<!-- ═════════ GANANCIAS ═════════ -->
+<section class="t-vista" id="vista-ganancias" hidden>
+  <h1 class="t-titulo">Ganancias</h1>
+  <p class="t-sub">Elige qué descontar para ver tu ganancia neta a tu manera.</p>
+  <div class="internal-tabs t-periodos" id="tPeriodos">
+    <button type="button" data-p="hoy">Hoy</button>
+    <button type="button" data-p="7">7 días</button>
+    <button type="button" data-p="30" class="active">30 días</button>
+  </div>
+  <div class="t-stats" id="tStatsGan"></div>
+  <div class="t-gan-grid">
+    <div class="card-bento">
+      <div class="t-card-titulo"><i class="ri-equalizer-line"></i> ¿Qué descuentas?</div>
+      <p class="hint">Activa o desactiva cada descuento. La ganancia neta se recalcula al instante.</p>
+      <div class="t-ajustes">
+        <div class="t-ajuste fijo"><span><strong>Costo de la mercancía</strong><small>Lo que te costó lo que vendiste (siempre se descuenta)</small></span><span class="t-fijo">Siempre</span></div>
+        <label class="t-ajuste"><span><strong>Gastos fijos del mes</strong><small>Arriendo, servicios, nómina…</small></span>
+          <span class="t-ctrl"><input type="text" inputmode="numeric" class="input-clean" id="aGastos" autocomplete="off"><input type="checkbox" id="uGastos"></span></label>
+        <label class="t-ajuste"><span><strong>Comisión por Nequi y tarjeta (%)</strong><small>Se descuenta solo de ventas que no son en efectivo</small></span>
+          <span class="t-ctrl"><input type="number" step="0.1" min="0" max="20" class="input-clean" id="aComision"><input type="checkbox" id="uComision"></span></label>
+        <label class="t-ajuste"><span><strong>Impuesto sobre ventas (%)</strong><small>IVA, impoconsumo u otro</small></span>
+          <span class="t-ctrl"><input type="number" step="0.1" min="0" max="30" class="input-clean" id="aImpuesto"><input type="checkbox" id="uImpuesto"></span></label>
+        <label class="t-ajuste"><span><strong>Reservar para reinversión (%)</strong><small>Parte de la ganancia neta que apartas para comprar mercancía</small></span>
+          <span class="t-ctrl"><input type="number" step="1" min="0" max="100" class="input-clean" id="aReserva"><input type="checkbox" id="uReserva"></span></label>
+      </div>
+    </div>
+    <div class="card-bento">
+      <div class="t-card-titulo"><i class="ri-bar-chart-horizontal-line"></i> Así se calcula</div>
+      <div id="tCascada"></div>
+    </div>
+  </div>
+  <div class="t-gan-grid">
+    <div class="card-bento"><div class="t-card-titulo"><i class="ri-bar-chart-2-line"></i> Ventas y ganancia por día</div><div id="tGrafica" class="t-grafica"></div></div>
+    <div class="card-bento"><div class="t-card-titulo"><i class="ri-trophy-line"></i> Productos que más ganancia dejan</div><div id="tTop"></div></div>
+  </div>
+</section>
+
+<!-- ═════════ Modales ═════════ -->
+<div class="t-modal" id="mProducto" role="dialog" aria-modal="true" aria-labelledby="mProductoTitulo">
+  <div class="t-modal-panel">
+    <h3 id="mProductoTitulo">Nuevo producto</h3>
+    <input type="hidden" id="pId">
+    <div class="field"><label class="lbl" for="pNombre">Nombre</label><input class="input-clean" id="pNombre" maxlength="60" autocomplete="off"></div>
+    <div class="field"><label class="lbl" for="pCat">Categoría</label><input class="input-clean" id="pCat" maxlength="40" list="tCats" autocomplete="off"><datalist id="tCats"></datalist></div>
+    <div class="t-dos">
+      <div class="field"><label class="lbl" for="pCosto">Costo (lo que pagas)</label><input class="input-clean" id="pCosto" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label class="lbl" for="pPrecio">Precio de venta</label><input class="input-clean" id="pPrecio" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <div class="t-dos">
+      <div class="field"><label class="lbl" for="pStock">Stock actual</label><input class="input-clean" id="pStock" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label class="lbl" for="pMin">Avisar cuando queden</label><input class="input-clean" id="pMin" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <p class="alerta error" id="pError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="pGuardar"><i class="ri-save-line"></i> Guardar</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mReabastecer" role="dialog" aria-modal="true" aria-labelledby="mReabTitulo">
+  <div class="t-modal-panel" style="max-width:380px">
+    <h3 id="mReabTitulo">Reabastecer</h3>
+    <p class="hint" id="rNombre"></p>
+    <input type="hidden" id="rId">
+    <div class="field"><label class="lbl" for="rCant">¿Cuántas unidades llegaron?</label><input class="input-clean" id="rCant" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+    <p class="alerta error" id="rError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="rGuardar"><i class="ri-add-line"></i> Sumar al stock</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mAnular" role="dialog" aria-modal="true" aria-labelledby="mAnularTitulo">
+  <div class="t-modal-panel" style="max-width:420px">
+    <h3 id="mAnularTitulo">Anular venta</h3>
+    <p class="hint" id="aInfo"></p>
+    <input type="hidden" id="aId">
+    <div class="field"><label class="lbl" for="aMotivo">Motivo (obligatorio)</label><input class="input-clean" id="aMotivo" maxlength="500" autocomplete="off" placeholder="Ej.: se cobró dos veces"></div>
+    <p class="alerta error" id="aError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action red" id="aGuardar"><i class="ri-arrow-go-back-line"></i> Anular venta</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mVenta" role="dialog" aria-modal="true" aria-labelledby="mVentaTitulo">
+  <div class="t-modal-panel" style="max-width:420px;text-align:center">
+    <div class="t-ok"><i class="ri-check-line"></i></div>
+    <h3 id="mVentaTitulo">Venta registrada</h3>
+    <div id="vResumen" class="t-resumen"></div>
+    <div id="vAvisos"></div>
+    <div class="t-modal-botones" style="justify-content:center"><button type="button" class="btn-action green" data-cerrar>Nueva venta</button></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('tienda.static', filename='tienda.js', v=asset_v) }}"></script>{% endblock %}

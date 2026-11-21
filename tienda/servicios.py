@@ -1,0 +1,303 @@
+"""Lógica de la tienda: productos, ventas con descuento automático de inventario y ganancias."""
+from datetime import date, timedelta
+
+from utils import hoy
+
+from . import datos
+
+METODOS = ("Efectivo", "Nequi", "Tarjeta")
+TOPE = 999_999_999
+
+AJUSTES_BASE = {
+    "gastosMes": 0, "usarGastos": True,
+    "comision": 2.5, "usarComision": False,
+    "impuesto": 0.0, "usarImpuesto": False,
+    "reserva": 20.0, "usarReserva": False,
+}
+
+
+class TiendaError(Exception):
+    """Error de negocio: el mensaje se muestra tal cual al usuario."""
+
+
+def _entero(valor, nombre, minimo=0, maximo=TOPE):
+    try:
+        if isinstance(valor, bool):
+            raise ValueError
+        n = int(str(valor).replace(".", "").strip()) if isinstance(valor, str) else int(valor)
+    except (TypeError, ValueError):
+        raise TiendaError(f"{nombre}: escribe un número entero.")
+    if n < minimo or n > maximo:
+        raise TiendaError(f"{nombre}: debe estar entre {minimo:,} y {maximo:,}.".replace(",", "."))
+    return n
+
+
+def _marcadores(n):
+    return ", ".join(["%s"] * n)
+
+
+# ═════════════════ Productos ═════════════════
+def listar_productos():
+    filas = datos.fetchall("""
+        SELECT id, nombre, categoria, costo, precio, stock, stock_minimo
+        FROM t_productos WHERE activo = 1 ORDER BY categoria, nombre""")
+    return [{"id": int(f["id"]), "nombre": f["nombre"], "cat": f["categoria"],
+             "costo": int(f["costo"]), "precio": int(f["precio"]),
+             "stock": int(f["stock"]), "minimo": int(f["stock_minimo"])} for f in filas]
+
+
+def guardar_producto(d, usuario):
+    nombre = " ".join(str(d.get("nombre", "")).split())
+    categoria = " ".join(str(d.get("categoria", "")).split()) or "General"
+    if not nombre or len(nombre) > 80:
+        raise TiendaError("El nombre es obligatorio (máximo 80 caracteres).")
+    if len(categoria) > 40:
+        raise TiendaError("La categoría admite hasta 40 caracteres.")
+    costo = _entero(d.get("costo", 0), "Costo")
+    precio = _entero(d.get("precio"), "Precio", minimo=1)
+    stock = _entero(d.get("stock", 0), "Stock")
+    minimo = _entero(d.get("minimo", 0), "Aviso de stock bajo")
+    if costo > precio:
+        raise TiendaError("El costo es mayor que el precio: venderías con pérdida.")
+    pid = d.get("id")
+    pid = _entero(pid, "Producto", minimo=1) if pid not in (None, "", 0) else None
+
+    with datos.transaccion() as cur:
+        repetido = cur.execute(
+            "SELECT id FROM t_productos WHERE activo = 1 AND LOWER(nombre) = LOWER(%s)", (nombre,)
+        ).fetchall()
+        if any(int(r["id"]) != (pid or 0) for r in repetido):
+            raise TiendaError("Ya existe un producto con ese nombre.")
+        if pid:
+            fila = cur.execute(
+                "SELECT stock FROM t_productos WHERE id = %s AND activo = 1 FOR UPDATE", (pid,)
+            ).fetchone()
+            if not fila:
+                raise TiendaError("El producto ya no existe.")
+            cur.execute("""UPDATE t_productos SET nombre = %s, categoria = %s, costo = %s, precio = %s,
+                                  stock = %s, stock_minimo = %s WHERE id = %s""",
+                        (nombre, categoria, costo, precio, stock, minimo, pid))
+            diferencia = stock - int(fila["stock"])
+            if diferencia:
+                cur.execute("""INSERT INTO t_movimientos
+                                 (producto_id, tipo, cantidad, stock_resultante, usuario_id, nota)
+                               VALUES (%s, 'AJUSTE', %s, %s, %s, 'Corrección al editar el producto')""",
+                            (pid, diferencia, stock, usuario["id"]))
+        else:
+            cur.execute("""INSERT INTO t_productos (id, nombre, categoria, costo, precio, stock, stock_minimo)
+                           VALUES (t_seq_productos.NEXTVAL, %s, %s, %s, %s, %s, %s)""",
+                        (nombre, categoria, costo, precio, stock, minimo))
+            if stock:
+                nuevo = cur.execute("SELECT t_seq_productos.CURRVAL AS id FROM dual").fetchone()
+                cur.execute("""INSERT INTO t_movimientos
+                                 (producto_id, tipo, cantidad, stock_resultante, usuario_id, nota)
+                               VALUES (%s, 'INICIAL', %s, %s, %s, 'Stock inicial')""",
+                            (int(nuevo["id"]), stock, stock, usuario["id"]))
+
+
+def entrada_stock(pid, cantidad, nota, usuario):
+    cantidad = _entero(cantidad, "Cantidad", minimo=1, maximo=1_000_000)
+    nota = " ".join(str(nota or "").split())[:200] or "Entrada de mercancía"
+    with datos.transaccion() as cur:
+        fila = cur.execute(
+            "SELECT stock FROM t_productos WHERE id = %s AND activo = 1 FOR UPDATE", (pid,)
+        ).fetchone()
+        if not fila:
+            raise TiendaError("El producto ya no existe.")
+        nuevo = int(fila["stock"]) + cantidad
+        cur.execute("UPDATE t_productos SET stock = %s WHERE id = %s", (nuevo, pid))
+        cur.execute("""INSERT INTO t_movimientos (producto_id, tipo, cantidad, stock_resultante, usuario_id, nota)
+                       VALUES (%s, 'ENTRADA', %s, %s, %s, %s)""",
+                    (pid, cantidad, nuevo, usuario["id"], nota))
+    return nuevo
+
+
+def quitar_producto(pid):
+    """Lo oculta (no se borra) para conservar el historial de ventas."""
+    n = datos.execute_rowcount("UPDATE t_productos SET activo = 0 WHERE id = %s AND activo = 1", (pid,))
+    if not n:
+        raise TiendaError("El producto ya no existe.")
+
+
+# ═════════════════ Ventas ═════════════════
+def registrar_venta(items, metodo, recibido, usuario):
+    if metodo not in METODOS:
+        raise TiendaError("Elige un método de pago válido.")
+    if not isinstance(items, list) or not items or len(items) > 60:
+        raise TiendaError("Agrega al menos un producto a la venta.")
+    pedido = {}
+    for it in items:
+        if not isinstance(it, dict):
+            raise TiendaError("La venta no es válida.")
+        pid = _entero(it.get("id"), "Producto", minimo=1)
+        pedido[pid] = pedido.get(pid, 0) + _entero(it.get("cant"), "Cantidad", minimo=1, maximo=9999)
+    recibido = _entero(recibido or 0, "Recibido") if metodo == "Efectivo" else 0
+
+    ids = sorted(pedido)
+    with datos.transaccion() as cur:
+        filas = cur.execute(f"""
+            SELECT id, nombre, costo, precio, stock, stock_minimo FROM t_productos
+            WHERE activo = 1 AND id IN ({_marcadores(len(ids))}) ORDER BY id FOR UPDATE""",
+            tuple(ids)).fetchall()
+        if len(filas) != len(ids):
+            raise TiendaError("Un producto de la venta ya no está disponible. Recarga la pantalla.")
+        total = costo_total = 0
+        lineas = []
+        for f in filas:                      # precios y costos salen de la base, no del navegador
+            cant = pedido[int(f["id"])]
+            if cant > int(f["stock"]):
+                raise TiendaError(f"«{f['nombre']}» solo tiene {int(f['stock'])} en stock.")
+            total += cant * int(f["precio"])
+            costo_total += cant * int(f["costo"])
+            lineas.append((f, cant))
+        if metodo == "Efectivo" and recibido and recibido < total:
+            raise TiendaError("Lo recibido no alcanza para el total.")
+        cambio = recibido - total if metodo == "Efectivo" and recibido > total else 0
+
+        cur.execute("""INSERT INTO t_ventas (id, metodo, total, costo_total, recibido, cambio, usuario_id, usuario_nombre)
+                       VALUES (t_seq_ventas.NEXTVAL, %s, %s, %s, %s, %s, %s, %s)""",
+                    (metodo, total, costo_total, recibido, cambio, usuario["id"], usuario["nombre"][:100]))
+        vid = int(cur.execute("SELECT t_seq_ventas.CURRVAL AS id FROM dual").fetchone()["id"])
+        cur.executemany("UPDATE t_productos SET stock = stock - %s WHERE id = %s",
+                        [(c, int(f["id"])) for f, c in lineas])
+        cur.executemany("""INSERT INTO t_venta_items (venta_id, producto_id, nombre, cantidad, precio, costo)
+                           VALUES (%s, %s, %s, %s, %s, %s)""",
+                        [(vid, int(f["id"]), f["nombre"], c, int(f["precio"]), int(f["costo"])) for f, c in lineas])
+        cur.executemany("""INSERT INTO t_movimientos
+                             (producto_id, tipo, cantidad, stock_resultante, venta_id, usuario_id)
+                           VALUES (%s, 'VENTA', %s, %s, %s, %s)""",
+                        [(int(f["id"]), -c, int(f["stock"]) - c, vid, usuario["id"]) for f, c in lineas])
+
+    bajos = [{"nombre": f["nombre"], "stock": int(f["stock"]) - c}
+             for f, c in lineas if int(f["stock"]) - c <= int(f["stock_minimo"])]
+    return {
+        "venta": {"id": vid, "metodo": metodo, "total": total,
+                  "items": [{"nombre": f["nombre"], "cant": c, "precio": int(f["precio"])} for f, c in lineas]},
+        "devuelta": cambio, "bajos": bajos,
+        "stocks": [{"id": int(f["id"]), "stock": int(f["stock"]) - c} for f, c in lineas],
+    }
+
+
+def listar_ventas(limite=60):
+    ventas = datos.fetchall(f"""
+        SELECT id, fecha, metodo, total, usuario_nombre, anulada, motivo_anulacion
+        FROM t_ventas ORDER BY id DESC FETCH FIRST {int(limite)} ROWS ONLY""")
+    if not ventas:
+        return []
+    ids = [int(v["id"]) for v in ventas]
+    items = datos.fetchall(f"""
+        SELECT venta_id, nombre, cantidad, precio FROM t_venta_items
+        WHERE venta_id IN ({_marcadores(len(ids))}) ORDER BY id""", tuple(ids))
+    por_venta = {}
+    for it in items:
+        por_venta.setdefault(int(it["venta_id"]), []).append(
+            {"nombre": it["nombre"], "cant": int(it["cantidad"]), "precio": int(it["precio"])})
+    return [{"id": int(v["id"]), "fecha": v["fecha"].isoformat() if v["fecha"] else None,
+             "metodo": v["metodo"], "total": int(v["total"]), "cajero": v["usuario_nombre"],
+             "anulada": int(v["anulada"]) == 1, "motivo": v["motivo_anulacion"],
+             "items": por_venta.get(int(v["id"]), [])} for v in ventas]
+
+
+def anular_venta(vid, motivo, usuario):
+    motivo = " ".join(str(motivo or "").split())
+    if not motivo or len(motivo) > 500:
+        raise TiendaError("El motivo es obligatorio (máximo 500 caracteres).")
+    with datos.transaccion() as cur:
+        venta = cur.execute("SELECT anulada FROM t_ventas WHERE id = %s FOR UPDATE", (vid,)).fetchone()
+        if not venta:
+            raise TiendaError("La venta no existe.")
+        if int(venta["anulada"]) == 1:
+            raise TiendaError("Esa venta ya estaba anulada.")
+        items = cur.execute("SELECT producto_id, cantidad FROM t_venta_items WHERE venta_id = %s", (vid,)).fetchall()
+        pids = sorted({int(i["producto_id"]) for i in items})
+        stock = {int(f["id"]): int(f["stock"]) for f in cur.execute(
+            f"SELECT id, stock FROM t_productos WHERE id IN ({_marcadores(len(pids))}) ORDER BY id FOR UPDATE",
+            tuple(pids)).fetchall()}
+        movimientos, cambios = [], []
+        for i in items:
+            pid, cant = int(i["producto_id"]), int(i["cantidad"])
+            stock[pid] += cant
+            cambios.append((cant, pid))
+            movimientos.append((pid, cant, stock[pid], vid, usuario["id"]))
+        cur.executemany("UPDATE t_productos SET stock = stock + %s WHERE id = %s", cambios)
+        cur.executemany("""INSERT INTO t_movimientos
+                             (producto_id, tipo, cantidad, stock_resultante, venta_id, usuario_id, nota)
+                           VALUES (%s, 'ANULACION', %s, %s, %s, %s, 'Venta anulada: el producto regresa al stock')""",
+                        movimientos)
+        cur.execute("""UPDATE t_ventas SET anulada = 1, motivo_anulacion = %s, fecha_anulacion = CURRENT_TIMESTAMP,
+                              anulada_por = %s WHERE id = %s""", (motivo, usuario["nombre"][:100], vid))
+
+
+# ═════════════════ Ganancias ═════════════════
+def ganancias(periodo):
+    if periodo not in ("hoy", "7", "30"):
+        raise TiendaError("Periodo no válido.")
+    dias = 1 if periodo == "hoy" else int(periodo)
+    desde = f"TRUNC(CURRENT_TIMESTAMP) - {dias - 1}"
+    filas = datos.fetchall(f"""
+        SELECT TRUNC(v.fecha) AS dia, COUNT(*) AS n, SUM(v.total) AS ventas, SUM(v.costo_total) AS costo,
+               SUM(CASE WHEN v.metodo <> 'Efectivo' THEN v.total ELSE 0 END) AS no_efectivo
+        FROM t_ventas v WHERE v.anulada = 0 AND v.fecha >= {desde}
+        GROUP BY TRUNC(v.fecha) ORDER BY 1""")
+    top = datos.fetchall(f"""
+        SELECT i.nombre, SUM(i.cantidad) AS unidades, SUM(i.cantidad * (i.precio - i.costo)) AS ganancia
+        FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
+        WHERE v.anulada = 0 AND v.fecha >= {desde}
+        GROUP BY i.nombre ORDER BY SUM(i.cantidad * (i.precio - i.costo)) DESC FETCH FIRST 6 ROWS ONLY""")
+    por_fecha = {}
+    for f in filas:
+        d = f["dia"]
+        por_fecha[d.date() if hasattr(d, "date") else d] = f
+    hoy_ = hoy()
+    por_dia = []
+    for i in range(dias):
+        d = hoy_ - timedelta(days=dias - 1 - i)
+        f = por_fecha.get(d)
+        por_dia.append({"fecha": d.isoformat(),
+                        "n": int(f["n"]) if f else 0,
+                        "ventas": int(f["ventas"]) if f else 0,
+                        "costo": int(f["costo"]) if f else 0,
+                        "noEfectivo": int(f["no_efectivo"]) if f else 0})
+    return {"dias": dias, "porDia": por_dia,
+            "top": [{"nombre": t["nombre"], "unidades": int(t["unidades"]), "ganancia": int(t["ganancia"])} for t in top]}
+
+
+# ═════════════════ Preferencias de cálculo ═════════════════
+def leer_ajustes():
+    ajustes = dict(AJUSTES_BASE)
+    for f in datos.fetchall("SELECT clave, valor FROM t_ajustes"):
+        k, v = f["clave"], f["valor"]
+        if k not in AJUSTES_BASE:
+            continue
+        base = AJUSTES_BASE[k]
+        try:
+            ajustes[k] = (v == "1") if isinstance(base, bool) else int(float(v)) if k == "gastosMes" else float(v)
+        except (TypeError, ValueError):
+            pass
+    return ajustes
+
+
+def guardar_ajustes(d):
+    limpio = {
+        "gastosMes": _entero(d.get("gastosMes", 0), "Gastos fijos del mes"),
+        "comision": _porcentaje(d.get("comision"), "Comisión", 20),
+        "impuesto": _porcentaje(d.get("impuesto"), "Impuesto", 30),
+        "reserva": _porcentaje(d.get("reserva"), "Reinversión", 100),
+    }
+    for k in ("usarGastos", "usarComision", "usarImpuesto", "usarReserva"):
+        limpio[k] = bool(d.get(k))
+    filas = [(k, ("1" if v else "0") if isinstance(v, bool) else str(v)) for k, v in limpio.items()]
+    with datos.transaccion() as cur:
+        cur.execute("DELETE FROM t_ajustes")
+        cur.executemany("INSERT INTO t_ajustes (clave, valor) VALUES (%s, %s)", filas)
+    return limpio
+
+
+def _porcentaje(valor, nombre, maximo):
+    try:
+        n = float(valor or 0)
+    except (TypeError, ValueError):
+        raise TiendaError(f"{nombre}: escribe un número.")
+    if n < 0 or n > maximo:
+        raise TiendaError(f"{nombre}: debe estar entre 0 y {maximo}.")
+    return round(n, 2)
