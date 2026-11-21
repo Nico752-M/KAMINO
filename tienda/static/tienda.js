@@ -72,7 +72,7 @@ if (typeof document !== "undefined") (function () {
     VISTAS.forEach((v) => { $("vista-" + v).hidden = v !== vista; });
     document.querySelectorAll("[data-vista]").forEach((a) => a.classList.toggle("active", a.dataset.vista === vista));
     document.body.classList.remove("sidebar-open");
-    if (vista === "caja") renderCaja();
+    if (vista === "caja") { await cargarCierre(); renderCaja(); }
     if (vista === "inventario") { renderInventario(); cargarMermas(); }
     if (vista === "ventas") await cargarVentas();
     if (vista === "ganancias") await cargarGanancias();
