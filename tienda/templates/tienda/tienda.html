@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block titulo %}Mi Tienda{% endblock %}
+{% block titulo %}Todo en Transito{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('tienda.static', filename='tienda.css', v=asset_v) }}">{% endblock %}
 
 {% block menu %}
-    <a class="preview-brand" href="#caja"><span class="preview-brand-badge"></span> MI TIENDA</a>
+    <a class="preview-brand" href="#caja"><span class="preview-brand-badge"></span> TODO EN TRANSITO</a>
     <nav class="preview-menu" aria-label="Navegación de la tienda">
       <a href="#caja" data-vista="caja" class="active"><i class="ri-shopping-cart-2-line"></i> Caja</a>
       <a href="#inventario" data-vista="inventario"><i class="ri-archive-line"></i> Inventario <span class="nav-badge" id="badgeBajo" hidden></span></a>
@@ -85,25 +85,35 @@
     </div>
   </div>
   <div class="card-bento">
-    <div class="t-card-titulo"><i class="ri-safe-2-line"></i> Cierre de caja</div>
-    <div class="t-stats" id="cResumen" style="margin:.6rem 0"></div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <button type="button" class="btn-action sm" data-mov="BASE"><i class="ri-safe-2-line"></i> Base</button>
-      <button type="button" class="btn-action sm green" data-mov="INGRESO"><i class="ri-add-circle-line"></i> Entrada</button>
-      <button type="button" class="btn-action sm red" data-mov="EGRESO"><i class="ri-indeterminate-circle-line"></i> Salida</button>
+    <div class="t-card-titulo"><i class="ri-safe-2-line"></i> Caja de hoy</div>
+    <button type="button" class="t-base-grande" data-mov="BASE">
+      <i class="ri-safe-2-line"></i>
+      <span><strong>Abrir caja · Poner base</strong>
+        <small>Registra con cuánto efectivo empiezas el día</small></span>
+    </button>
+    <div class="t-stats" id="cResumen"></div>
+    <div class="t-mov-botones">
+      <button type="button" class="btn-action green" data-mov="INGRESO"><i class="ri-add-circle-line"></i> Entrada de dinero</button>
+      <button type="button" class="btn-action red" data-mov="EGRESO"><i class="ri-indeterminate-circle-line"></i> Salida de dinero</button>
     </div>
-    <div id="cMovs" class="t-detalle" style="margin:.8rem 0;max-width:none"></div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-top:.6rem">
+    <details class="t-det">
+      <summary><i class="ri-list-check-2"></i> Movimientos de la caja</summary>
+      <div id="cMovs" class="t-detalle" style="margin-top:.6rem;max-width:none"></div>
+    </details>
+    <div class="t-cerrar">
       <div class="field" style="margin:0;flex:1;min-width:160px"><label class="lbl" for="cContado">Efectivo contado</label>
-        <input class="input-clean" id="cContado" inputmode="numeric" autocomplete="off"></div>
+        <input class="input-clean" id="cContado" inputmode="numeric" autocomplete="off" placeholder="0"></div>
       <button type="button" class="btn-action green" id="cGuardar"><i class="ri-lock-line"></i> Cerrar caja</button>
     </div>
     <p class="alerta error" id="cError" style="display:none;margin-top:.6rem"></p>
-    <div id="cLista" class="t-detalle" style="margin-top:.8rem"></div>
+    <details class="t-det">
+      <summary><i class="ri-history-line"></i> Cierres anteriores</summary>
+      <div id="cLista" class="t-detalle" style="margin-top:.6rem;max-width:none"></div>
+    </details>
   </div>
-  <div class="card-bento">
-    <div class="t-card-titulo"><i class="ri-file-chart-line"></i> Reporte de caja por fechas</div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+  <details class="card-bento t-det">
+    <summary class="t-card-titulo"><i class="ri-file-chart-line"></i> Reporte de caja por fechas</summary>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-top:.6rem">
       <div class="field" style="margin:0"><label class="lbl" for="rDesde">Desde</label><input class="input-clean" type="date" id="rDesde"></div>
       <div class="field" style="margin:0"><label class="lbl" for="rHasta">Hasta</label><input class="input-clean" type="date" id="rHasta"></div>
       <button type="button" class="btn-action sm" data-rango="hoy">Hoy</button>
@@ -113,7 +123,7 @@
       <a class="btn-action" id="rPdf" href="#" download><i class="ri-file-pdf-line"></i> PDF</a>
     </div>
     <p class="hint">Incluye resumen por día, entradas y salidas de caja, mermas y productos más vendidos.</p>
-  </div>
+  </details>
   <div class="card-bento" style="padding:0;overflow:hidden">
     <div class="t-tabla-wrap"><table class="table-clean" id="tVentas">
       <thead><tr><th>#</th><th>Fecha</th><th>Detalle</th><th>Pago</th><th>Total</th><th>Atendió</th><th>Estado</th><th></th></tr></thead>

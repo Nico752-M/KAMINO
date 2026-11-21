@@ -114,7 +114,7 @@ def ticket_venta(v, items):
                 c.drawRightString(ancho - 4 * mm, y, der)
         y -= s * 1.6
 
-    fila("MI TIENDA", f="Helvetica-Bold", s=13, centro=True)
+    fila("TODO EN TRANSITO", f="Helvetica-Bold", s=13, centro=True)
     fila(f"Venta #{v['id']}", s=9, centro=True)
     fila(v["fecha"].strftime("%d/%m/%Y %H:%M"), s=7, centro=True)
     fila(f"Atendió: {v['usuario_nombre']}", s=7)

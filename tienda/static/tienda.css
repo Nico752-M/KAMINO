@@ -92,3 +92,19 @@
 .t-detalle{font-size:.82rem;color:var(--text-muted);max-width:320px}
 .t-venta-anulada td{opacity:.55}
 .t-venta-anulada .t-detalle{text-decoration:line-through}
+
+
+/* Caja: base grande y secciones plegables */
+.t-base-grande{width:100%;display:flex;align-items:center;gap:1rem;text-align:left;background:var(--accent-gold);color:#fff;border:0;border-radius:16px;padding:1.2rem 1.4rem;cursor:pointer;margin:.4rem 0 1.1rem;font-size:1rem}
+.t-base-grande:hover{filter:brightness(1.07)}
+.t-base-grande i{font-size:2.3rem}
+.t-base-grande strong{display:block;font-size:1.3rem}
+.t-base-grande small{opacity:.9;font-size:.82rem}
+.t-mov-botones{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1rem}
+.t-mov-botones .btn-action{padding:.85rem;font-size:.95rem}
+.t-det{margin:.6rem 0}
+.t-det>summary{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;list-style:none}
+.t-det>summary::-webkit-details-marker{display:none}
+.t-det>summary::after{content:"Mostrar";margin-left:auto;color:var(--accent-blue);font-size:.75rem;font-weight:600}
+.t-det[open]>summary::after{content:"Ocultar"}
+.t-cerrar{display:flex;gap:.6rem;align-items:end;flex-wrap:wrap;margin-top:1rem;padding-top:1rem;border-top:1px dashed var(--border-color)}
