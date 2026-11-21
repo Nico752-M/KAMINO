@@ -22,6 +22,8 @@
     btnTema.addEventListener("click", function () {
       const nuevo = html.getAttribute("data-theme") === "light" ? "night" : "light";
       html.setAttribute("data-theme", nuevo);
+      const metaTema = document.querySelector('meta[name="theme-color"]');
+      if (metaTema) metaTema.setAttribute("content", nuevo === "night" ? "#080c14" : "#f7f5f0");
       try { localStorage.setItem("tema", nuevo); } catch (e) {}
       pintarBotonTema();
     });
