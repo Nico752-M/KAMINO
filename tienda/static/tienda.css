@@ -130,3 +130,6 @@
   .t-modal-botones .btn-action{flex:1;min-height:48px}
   .t-cant button{width:38px;height:38px}
 }
+
+.t-caja-cerrada[hidden]{display:none}
+#cAbierta[hidden]{display:none}
