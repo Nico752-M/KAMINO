@@ -136,15 +136,8 @@ def _descuento(d, subtotal):
 
 
 def caja_abierta():
-    """La caja está abierta si hay una base vigente desde el último cierre."""
-    ultimo = datos.fetchone("SELECT MAX(creado) AS c FROM t_cierres")
-    if ultimo and ultimo["c"]:
-        cond, par = "fecha > %s", (ultimo["c"],)
-    else:
-        cond, par = "fecha >= TRUNC(CURRENT_TIMESTAMP)", ()
-    f = datos.fetchone(
-        f"SELECT COUNT(*) AS n FROM t_caja_mov WHERE tipo = 'BASE' AND anulado = 0 AND {cond}", par)
-    return int(f["n"]) > 0
+    """Misma regla que el cierre de caja: hay una base vigente desde el último cierre."""
+    return cierre_hoy()["abierta"]
 
 
 def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None):
