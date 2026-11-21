@@ -108,3 +108,25 @@
 .t-det>summary::after{content:"Mostrar";margin-left:auto;color:var(--accent-blue);font-size:.75rem;font-weight:600}
 .t-det[open]>summary::after{content:"Ocultar"}
 .t-cerrar{display:flex;gap:.6rem;align-items:end;flex-wrap:wrap;margin-top:1rem;padding-top:1rem;border-top:1px dashed var(--border-color)}
+
+.t-base-grande[hidden]{display:none}
+.t-caja-cerrada{display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;background:rgba(220,38,38,.1);border:1px solid var(--accent-red);border-radius:14px;padding:.9rem 1.1rem;margin-bottom:1rem}
+.t-caja-cerrada>i{font-size:1.8rem;color:var(--accent-red)}
+.t-caja-cerrada span{flex:1;min-width:150px;display:flex;flex-direction:column}
+.t-caja-cerrada small{color:var(--text-muted)}
+.t-mov-fila{display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.55rem 0;border-bottom:1px solid var(--border-color)}
+.t-mov-fila .t-link{padding:.5rem .8rem;border:1px solid var(--border-color);border-radius:8px;flex-shrink:0}
+.t-cobrar{min-height:54px}
+
+@media (max-width:600px){
+  .t-stats{grid-template-columns:repeat(2,1fr);gap:.6rem}
+  .t-stats .stat-card strong{font-size:1.2rem}
+  .t-mov-botones .btn-action{min-height:56px;font-size:1rem}
+  .t-cerrar .btn-action{flex:1 1 100%;min-height:50px}
+  .t-base-grande{padding:1.4rem 1.1rem}
+  .t-base-grande strong{font-size:1.15rem}
+  .t-grid{grid-template-columns:repeat(2,1fr)}
+  .t-modal-panel .input-clean,.t-ctrl .input-clean{font-size:16px}
+  .t-modal-botones .btn-action{flex:1;min-height:48px}
+  .t-cant button{width:38px;height:38px}
+}

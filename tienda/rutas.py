@@ -58,7 +58,8 @@ def inicio():
 @bp.route("/api/estado")
 @api
 def api_estado():
-    return jsonify(ok=True, productos=servicios.listar_productos(), ajustes=servicios.leer_ajustes())
+    return jsonify(ok=True, productos=servicios.listar_productos(), ajustes=servicios.leer_ajustes(),
+                   abierta=servicios.caja_abierta())
 
 
 @bp.route("/api/productos", methods=["POST"])

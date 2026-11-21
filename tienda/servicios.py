@@ -135,6 +135,18 @@ def _descuento(d, subtotal):
     return v
 
 
+def caja_abierta():
+    """La caja está abierta si hay una base vigente desde el último cierre."""
+    ultimo = datos.fetchone("SELECT MAX(creado) AS c FROM t_cierres")
+    if ultimo and ultimo["c"]:
+        cond, par = "fecha > %s", (ultimo["c"],)
+    else:
+        cond, par = "fecha >= TRUNC(CURRENT_TIMESTAMP)", ()
+    f = datos.fetchone(
+        f"SELECT COUNT(*) AS n FROM t_caja_mov WHERE tipo = 'BASE' AND anulado = 0 AND {cond}", par)
+    return int(f["n"]) > 0
+
+
 def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None):
     if metodo not in METODOS:
         raise TiendaError("Elige un método de pago válido.")
@@ -147,6 +159,8 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None
         pid = _entero(it.get("id"), "Producto", minimo=1)
         pedido[pid] = pedido.get(pid, 0) + _entero(it.get("cant"), "Cantidad", minimo=1, maximo=9999)
     recibido = _entero(recibido or 0, "Recibido") if metodo == "Efectivo" else 0
+    if not caja_abierta():
+        raise TiendaError("La caja está cerrada. Ve a Ventas y pon la base para poder vender.")
 
     ids = sorted(pedido)
     with datos.transaccion() as cur:
@@ -406,7 +420,8 @@ def cierre_hoy():
         WHERE anulado = 0 AND {cond} ORDER BY id DESC""", par)
     suma = lambda t: sum(int(m["monto"]) for m in movs if m["tipo"] == t)
     base, ingresos, egresos, efectivo = suma("BASE"), suma("INGRESO"), suma("EGRESO"), int(v["efectivo"])
-    return {"base": base, "efectivo": efectivo, "otros": int(v["otros"]),
+    return {"abierta": any(m["tipo"] == "BASE" for m in movs),
+            "base": base, "efectivo": efectivo, "otros": int(v["otros"]),
             "ingresos": ingresos, "egresos": egresos,
             "esperado": base + efectivo + ingresos - egresos,
             "movs": [{"id": int(m["id"]), "fecha": m["fecha"].isoformat(), "tipo": m["tipo"],
@@ -420,6 +435,8 @@ def cierre_hoy():
 def guardar_cierre(contado, usuario):
     contado = _entero(contado, "Efectivo contado")
     c = cierre_hoy()
+    if not c["abierta"]:
+        raise TiendaError("No hay una caja abierta para cerrar.")
     datos.execute_rowcount("""
         INSERT INTO t_cierres (fecha, esperado, contado, diferencia, usuario_nombre,
                                base, efectivo, ingresos, egresos, otros)
@@ -440,6 +457,11 @@ def registrar_mov(d, usuario):
     if not motivo:
         raise TiendaError("Escribe el motivo.")
     gasto = 1 if tipo == "EGRESO" and d.get("gasto") else 0
+    abierta = caja_abierta()
+    if tipo == "BASE" and abierta:
+        raise TiendaError("La caja ya tiene base. Quítala si te equivocaste, o cierra la caja para abrir otra.")
+    if tipo != "BASE" and not abierta:
+        raise TiendaError("Primero abre la caja poniendo la base.")
     datos.execute_rowcount(
         "INSERT INTO t_caja_mov (tipo, monto, motivo, gasto, usuario_nombre) VALUES (%s, %s, %s, %s, %s)",
         (tipo, monto, motivo, gasto, usuario["nombre"][:100]))

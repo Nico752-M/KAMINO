@@ -42,7 +42,7 @@ if (typeof document !== "undefined") (function () {
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (inp) => inp.addEventListener("input", () => { const v = digitos(inp.value); inp.value = v ? miles(v) : ""; });
 
-  const estado = { productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {} };
+  const estado = { productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false };
   const ui = { vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
 
   // ── Comunicación con el servidor ──
@@ -83,6 +83,7 @@ if (typeof document !== "undefined") (function () {
   const categorias = () => ["Todos", ...Array.from(new Set(estado.productos.map((p) => p.cat))).sort()];
 
   function renderCaja() {
+    $("tCajaCerrada").hidden = estado.abierta;
     $("tChips").innerHTML = categorias().length > 2 ? categorias().map((c) =>
       `<button type="button" class="t-chip ${c === ui.cat ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("") : "";
     const q = ui.q.trim().toLowerCase();
@@ -95,7 +96,7 @@ if (typeof document !== "undefined") (function () {
       $("tGrid").innerHTML = lista.length ? lista.map((p) => {
         const est = K.estadoStock(p), enCarrito = ui.carrito[p.id] || 0, quedan = p.stock - enCarrito;
         const etiqueta = est === "agotado" ? "Agotado" : (est === "bajo" ? `¡Quedan ${quedan}!` : `Quedan ${quedan}`);
-        return `<button type="button" class="t-prod" data-add="${p.id}" ${quedan <= 0 ? "disabled" : ""}>
+        return `<button type="button" class="t-prod" data-add="${p.id}" ${quedan <= 0 || !estado.abierta ? "disabled" : ""}>
           <strong>${esc(p.nombre)}</strong><span class="precio">${fmt(p.precio)}</span>
           <small class="${est !== "ok" ? "bajo" : ""}">${etiqueta}</small></button>`;
       }).join("") : `<p class="t-vacio" style="grid-column:1/-1">No hay productos con ese filtro.</p>`;
@@ -123,7 +124,7 @@ if (typeof document !== "undefined") (function () {
     $("tTotal").textContent = fmt(neto);
     const efectivo = $("tMetodo").value === "Efectivo";
     const rec = digitos($("tRecibido").value);
-    $("tCobrar").disabled = !ids.length || ui.enviando || descMal || (efectivo && rec <= 0);
+    $("tCobrar").disabled = !estado.abierta || !ids.length || ui.enviando || descMal || (efectivo && rec <= 0);
     $("tCampoRecibido").style.display = efectivo ? "" : "none";
     $("tCampoResto").style.display = efectivo && rec > 0 && rec < neto ? "" : "none";
     $("tDevuelta").textContent = efectivo && rec ? (rec >= neto ? `Devuelta: ${fmt(rec - neto)}` : `Resto por cobrar: ${fmt(neto - rec)}`) : "";
@@ -132,7 +133,7 @@ if (typeof document !== "undefined") (function () {
 
   function agregar(id) {
     const p = estado.productos.find((x) => x.id === Number(id));
-    if (!p || (ui.carrito[id] || 0) + 1 > p.stock) return;
+    if (!estado.abierta || !p || (ui.carrito[id] || 0) + 1 > p.stock) return;
     ui.carrito[id] = (ui.carrito[id] || 0) + 1; renderCaja();
   }
   function quitar(id) {
@@ -163,7 +164,7 @@ if (typeof document !== "undefined") (function () {
 
   async function recargarProductos() {
     const r = await api("/tienda/api/estado");
-    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
+    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; estado.abierta = r.abierta; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
   }
 
   // ── INVENTARIO ──
@@ -245,10 +246,13 @@ if (typeof document !== "undefined") (function () {
   const hora = (iso) => new Date(iso).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" });
   const ETIQ = { BASE: "Base", INGRESO: "Entrada", EGRESO: "Salida" };
   function pintarCierre(r) {
+    estado.abierta = r.abierta;
+    $("cAbrir").hidden = r.abierta;
+    $("cAbierta").hidden = !r.abierta;
     const card = (t, v, c) => `<div class="stat-card ${c || ""}"><span>${t}</span><strong>${fmt(v)}</strong></div>`;
     $("cResumen").innerHTML = card("Base", r.base) + card("Ventas en efectivo", r.efectivo, "green")
       + card("Entradas", r.ingresos) + card("Salidas", r.egresos, "red") + card("Efectivo esperado", r.esperado, "gold");
-    $("cMovs").innerHTML = r.movs.map((m) => `<div>${hora(m.fecha)} · <strong>${ETIQ[m.tipo]}</strong> ${fmt(m.monto)} · ${esc(m.motivo)}${m.gasto ? " <small>(gasto)</small>" : ""} · ${esc(m.usuario)}
+    $("cMovs").innerHTML = r.movs.map((m) => `<div class="t-mov-fila"><span>${hora(m.fecha)} · <strong>${ETIQ[m.tipo]}</strong> ${fmt(m.monto)} · ${esc(m.motivo)}${m.gasto ? " <small>(gasto)</small>" : ""} · ${esc(m.usuario)}</span>
       <button type="button" class="t-link" data-qmov="${m.id}">Quitar</button></div>`).join("");
     $("cLista").innerHTML = r.cierres.map((c) =>
       `<div>${hora(c.fecha)} · esperado ${fmt(c.esperado)} · contado ${fmt(c.contado)} · <strong style="color:${c.diferencia === 0 ? "var(--accent-green)" : "var(--accent-red)"}">dif. ${fmt(c.diferencia)}</strong> · ${esc(c.usuario)}</div>`).join("");
@@ -484,7 +488,7 @@ if (typeof document !== "undefined") (function () {
   (async function iniciar() {
     const r = await conCarga(() => api("/tienda/api/estado"));
     if (!r.ok) { aviso(r.error); $("tGrid").innerHTML = ""; return; }
-    estado.productos = r.productos; estado.ajustes = r.ajustes;
+    estado.productos = r.productos; estado.ajustes = r.ajustes; estado.abierta = r.abierta;
     fijarRango("hoy");
     irA(location.hash.replace("#", "") || "caja");
   })();

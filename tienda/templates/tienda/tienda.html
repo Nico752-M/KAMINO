@@ -22,6 +22,11 @@
 <section class="t-vista" id="vista-caja">
   <h1 class="t-titulo">Caja</h1>
   <p class="t-sub">Toca un producto para agregarlo. Al cobrar, el inventario se descuenta solo.</p>
+  <div class="t-caja-cerrada" id="tCajaCerrada" hidden>
+    <i class="ri-lock-2-line"></i>
+    <span><strong>La caja está cerrada</strong><small>Pon la base para poder vender.</small></span>
+    <a class="btn-action green" href="#ventas">Abrir caja</a>
+  </div>
   <div class="t-pos">
     <div class="t-pos-productos">
       <div class="t-filtros">
@@ -86,26 +91,28 @@
   </div>
   <div class="card-bento">
     <div class="t-card-titulo"><i class="ri-safe-2-line"></i> Caja de hoy</div>
-    <button type="button" class="t-base-grande" data-mov="BASE">
+    <button type="button" class="t-base-grande" id="cAbrir" data-mov="BASE">
       <i class="ri-safe-2-line"></i>
       <span><strong>Abrir caja · Poner base</strong>
         <small>Registra con cuánto efectivo empiezas el día</small></span>
     </button>
-    <div class="t-stats" id="cResumen"></div>
-    <div class="t-mov-botones">
-      <button type="button" class="btn-action green" data-mov="INGRESO"><i class="ri-add-circle-line"></i> Entrada de dinero</button>
-      <button type="button" class="btn-action red" data-mov="EGRESO"><i class="ri-indeterminate-circle-line"></i> Salida de dinero</button>
+    <div id="cAbierta" hidden>
+      <div class="t-stats" id="cResumen"></div>
+      <div class="t-mov-botones">
+        <button type="button" class="btn-action green" data-mov="INGRESO"><i class="ri-add-circle-line"></i> Entrada</button>
+        <button type="button" class="btn-action red" data-mov="EGRESO"><i class="ri-indeterminate-circle-line"></i> Salida</button>
+      </div>
+      <details class="t-det">
+        <summary><i class="ri-list-check-2"></i> Movimientos de la caja</summary>
+        <div id="cMovs" class="t-detalle" style="margin-top:.6rem;max-width:none"></div>
+      </details>
+      <div class="t-cerrar">
+        <div class="field" style="margin:0;flex:1;min-width:160px"><label class="lbl" for="cContado">Efectivo contado</label>
+          <input class="input-clean" id="cContado" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+        <button type="button" class="btn-action green" id="cGuardar"><i class="ri-lock-line"></i> Cerrar caja</button>
+      </div>
+      <p class="alerta error" id="cError" style="display:none;margin-top:.6rem"></p>
     </div>
-    <details class="t-det">
-      <summary><i class="ri-list-check-2"></i> Movimientos de la caja</summary>
-      <div id="cMovs" class="t-detalle" style="margin-top:.6rem;max-width:none"></div>
-    </details>
-    <div class="t-cerrar">
-      <div class="field" style="margin:0;flex:1;min-width:160px"><label class="lbl" for="cContado">Efectivo contado</label>
-        <input class="input-clean" id="cContado" inputmode="numeric" autocomplete="off" placeholder="0"></div>
-      <button type="button" class="btn-action green" id="cGuardar"><i class="ri-lock-line"></i> Cerrar caja</button>
-    </div>
-    <p class="alerta error" id="cError" style="display:none;margin-top:.6rem"></p>
     <details class="t-det">
       <summary><i class="ri-history-line"></i> Cierres anteriores</summary>
       <div id="cLista" class="t-detalle" style="margin-top:.6rem;max-width:none"></div>
