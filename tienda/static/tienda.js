@@ -40,7 +40,7 @@ if (typeof document !== "undefined") (function () {
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (inp) => inp.addEventListener("input", () => { const v = digitos(inp.value); inp.value = v ? miles(v) : ""; });
 
-  const estado = { productos: [], ajustes: {}, ventas: [], ganancias: null };
+  const estado = { productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {} };
   const ui = { vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
 
   // ── Comunicación con el servidor ──
@@ -281,15 +281,19 @@ if (typeof document !== "undefined") (function () {
 
   // ── GANANCIAS ──
   async function cargarGanancias() {
-    const r = await conCarga(() => api("/tienda/api/ganancias?periodo=" + ui.periodo));
-    if (!r.ok) { aviso(r.error); return; } aviso("");
-    estado.ganancias = r;
-    const a = estado.ajustes;
+    const a = estado.ajustes, periodo = ui.periodo;
     $("aGastos").value = miles(a.gastosMes); $("uGastos").checked = a.usarGastos;
     $("aComision").value = a.comision; $("uComision").checked = a.usarComision;
     $("aImpuesto").value = a.impuesto; $("uImpuesto").checked = a.usarImpuesto;
     $("aReserva").value = a.reserva; $("uReserva").checked = a.usarReserva;
-    pintarGanancias();
+    const guardado = estado.ganCache[periodo];
+    if (guardado) { estado.ganancias = guardado; pintarGanancias(); }   // lo último, al instante
+    const url = "/tienda/api/ganancias?periodo=" + periodo;
+    const r = await (guardado ? api(url) : conCarga(() => api(url)));
+    if (!r.ok) { aviso(r.error); return; } aviso("");
+    estado.ganCache[periodo] = r;
+    if (ui.periodo !== periodo) return;   // cambió de período mientras cargaba
+    estado.ganancias = r; pintarGanancias();
   }
 
   function pintarGanancias() {

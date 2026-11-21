@@ -250,58 +250,58 @@ def ganancias(periodo):
     if periodo not in ("hoy", "7", "30"):
         raise TiendaError("Periodo no válido.")
     dias = 1 if periodo == "hoy" else int(periodo)
-    desde = f"TRUNC(CURRENT_TIMESTAMP) - {dias - 1}"
-    ant_desde = f"TRUNC(CURRENT_TIMESTAMP) - {2 * dias - 1}"
-    filas = datos.fetchall(f"""
-        SELECT TRUNC(v.fecha) AS dia, COUNT(*) AS n, SUM(v.total) AS ventas, SUM(v.costo_total) AS costo,
-               SUM(CASE WHEN v.metodo <> 'Efectivo' THEN v.total ELSE v.monto_metodo2 END) AS no_efectivo
-        FROM t_ventas v WHERE v.anulada = 0 AND v.fecha >= {desde}
-        GROUP BY TRUNC(v.fecha) ORDER BY 1""")
-    top = datos.fetchall(f"""
+    hoy_ = hoy()
+    desde = hoy_ - timedelta(days=dias - 1)
+    ant_desde = hoy_ - timedelta(days=2 * dias - 1)
+
+    ventas = datos.fetchall("""
+        SELECT fecha, total, costo_total, metodo, metodo2, monto_metodo2
+        FROM t_ventas WHERE anulada = 0 AND fecha >= %s""", (ant_desde,))
+    top = datos.fetchall("""
         SELECT i.nombre, SUM(i.cantidad) AS unidades, SUM(i.cantidad * (i.precio - i.costo)) AS ganancia
         FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
-        WHERE v.anulada = 0 AND v.fecha >= {desde}
-        GROUP BY i.nombre ORDER BY SUM(i.cantidad * (i.precio - i.costo)) DESC FETCH FIRST 6 ROWS ONLY""")
-    ant = datos.fetchone(f"""
-        SELECT COUNT(*) AS n, NVL(SUM(total), 0) AS ventas, NVL(SUM(total - costo_total), 0) AS bruta
-        FROM t_ventas WHERE anulada = 0 AND fecha >= {ant_desde} AND fecha < {desde}""")
-    metodos = datos.fetchall(f"""
-        SELECT m, SUM(valor) AS valor FROM (
-            SELECT metodo AS m, total - monto_metodo2 AS valor FROM t_ventas
-            WHERE anulada = 0 AND fecha >= {desde}
-            UNION ALL
-            SELECT metodo2, monto_metodo2 FROM t_ventas
-            WHERE anulada = 0 AND fecha >= {desde} AND metodo2 IS NOT NULL)
-        GROUP BY m ORDER BY 2 DESC""")
-    horas = datos.fetchall(f"""
-        SELECT TO_NUMBER(TO_CHAR(fecha, 'HH24')) AS h, COUNT(*) AS n, SUM(total) AS ventas
-        FROM t_ventas WHERE anulada = 0 AND fecha >= {desde}
-        GROUP BY TO_NUMBER(TO_CHAR(fecha, 'HH24')) ORDER BY 1""")
+        WHERE v.anulada = 0 AND v.fecha >= %s
+        GROUP BY i.nombre ORDER BY SUM(i.cantidad * (i.precio - i.costo)) DESC FETCH FIRST 6 ROWS ONLY""",
+        (desde,))
     quietos = datos.fetchall("""
         SELECT p.nombre, p.stock, p.stock * p.costo AS parado FROM t_productos p
         WHERE p.activo = 1 AND p.stock > 0 AND NOT EXISTS (
             SELECT 1 FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
-            WHERE i.producto_id = p.id AND v.anulada = 0 AND v.fecha >= TRUNC(CURRENT_TIMESTAMP) - 29)
-        ORDER BY parado DESC FETCH FIRST 8 ROWS ONLY""")
-    por_fecha = {}
-    for f in filas:
-        d = f["dia"]
-        por_fecha[d.date() if hasattr(d, "date") else d] = f
-    hoy_ = hoy()
+            WHERE i.producto_id = p.id AND v.anulada = 0 AND v.fecha >= %s)
+        ORDER BY parado DESC FETCH FIRST 8 ROWS ONLY""", (hoy_ - timedelta(days=29),))
+
+    por_fecha, metodos, horas = {}, {}, {}
+    ant = {"n": 0, "ventas": 0, "bruta": 0}
+    for v in ventas:
+        total, costo, monto2 = int(v["total"]), int(v["costo_total"]), int(v["monto_metodo2"])
+        d = v["fecha"].date()
+        if d < desde:                      # período anterior, solo para comparar
+            ant["n"] += 1
+            ant["ventas"] += total
+            ant["bruta"] += total - costo
+            continue
+        x = por_fecha.setdefault(d, {"n": 0, "ventas": 0, "costo": 0, "noEfectivo": 0})
+        x["n"] += 1
+        x["ventas"] += total
+        x["costo"] += costo
+        x["noEfectivo"] += total if v["metodo"] != "Efectivo" else monto2
+        metodos[v["metodo"]] = metodos.get(v["metodo"], 0) + total - monto2
+        if v["metodo2"]:
+            metodos[v["metodo2"]] = metodos.get(v["metodo2"], 0) + monto2
+        h = horas.setdefault(v["fecha"].hour, {"n": 0, "ventas": 0})
+        h["n"] += 1
+        h["ventas"] += total
+
     por_dia = []
     for i in range(dias):
         d = hoy_ - timedelta(days=dias - 1 - i)
-        f = por_fecha.get(d)
-        por_dia.append({"fecha": d.isoformat(),
-                        "n": int(f["n"]) if f else 0,
-                        "ventas": int(f["ventas"]) if f else 0,
-                        "costo": int(f["costo"]) if f else 0,
-                        "noEfectivo": int(f["no_efectivo"]) if f else 0})
+        x = por_fecha.get(d, {"n": 0, "ventas": 0, "costo": 0, "noEfectivo": 0})
+        por_dia.append({"fecha": d.isoformat(), **x})
     return {"dias": dias, "porDia": por_dia,
             "top": [{"nombre": t["nombre"], "unidades": int(t["unidades"]), "ganancia": int(t["ganancia"])} for t in top],
-            "anterior": {"n": int(ant["n"]), "ventas": int(ant["ventas"]), "bruta": int(ant["bruta"])},
-            "metodos": [{"metodo": m["m"], "valor": int(m["valor"])} for m in metodos],
-            "horas": [{"h": int(h["h"]), "n": int(h["n"]), "ventas": int(h["ventas"])} for h in horas],
+            "anterior": ant,
+            "metodos": [{"metodo": m, "valor": val} for m, val in sorted(metodos.items(), key=lambda kv: -kv[1])],
+            "horas": [{"h": h, **horas[h]} for h in sorted(horas)],
             "quietos": [{"nombre": q["nombre"], "stock": int(q["stock"]), "parado": int(q["parado"])} for q in quietos]}
 
 

@@ -119,14 +119,25 @@ def transaccion():
             cnx.close()
 
 
+def _leer(sql, params, uno):
+    """Lectura sin commit: un viaje menos a la base por consulta."""
+    cnx, propia = _obtener()
+    cur = _Cursor(cnx.cursor())
+    try:
+        cur.execute(sql, params)
+        return cur.fetchone() if uno else cur.fetchall()
+    finally:
+        cur.close()
+        if propia:
+            cnx.close()
+
+
 def fetchall(sql, params=()):
-    with transaccion() as cur:
-        return cur.execute(sql, params).fetchall()
+    return _leer(sql, params, False)
 
 
 def fetchone(sql, params=()):
-    with transaccion() as cur:
-        return cur.execute(sql, params).fetchone()
+    return _leer(sql, params, True)
 
 
 def execute_rowcount(sql, params=()):
