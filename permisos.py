@@ -18,9 +18,10 @@ PERMISOS = {
     "gestionar_costos": "Gestionar costos de las matrículas",
     "ver_ganancias": "Ver ganancia de las matrículas",
     "gestionar_usuarios": "Gestionar usuarios y permisos",
+    "ver_tienda": "Usar la tienda (caja, inventario y ganancias)",
 }
 
-ROLES = ("admin", "cajera", "secretaria", "contadora")
+ROLES = ("admin", "cajera", "secretaria", "contadora", "tienda")
 
 GRUPOS_PERMISOS = {
     "Alumnos": (
@@ -34,6 +35,7 @@ GRUPOS_PERMISOS = {
     ),
     "Trámites": ("ver_tramites", "marcar_runt"),
     "Administración": ("ver_dashboard", "gestionar_usuarios"),
+    "Tienda": ("ver_tienda",),
 }
 
 _PANTALLAS = {
@@ -48,4 +50,5 @@ PERMISOS_POR_ROL = {
     "cajera": _PANTALLAS | {"registrar_pagos", "ver_recibos"},
     "secretaria": _PANTALLAS | {"registrar_pagos", "ver_recibos", "marcar_runt"},
     "contadora": _PANTALLAS | {"ver_recibos"},
+    "tienda": {"ver_tienda"},
 }
