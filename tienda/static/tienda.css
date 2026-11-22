@@ -201,3 +201,26 @@
 .t-cuentas-total strong{font-size:1.35rem}
 .t-check{display:flex;gap:.5rem;align-items:center;margin:.25rem 0 .75rem;font-size:.9rem}
 .t-casc.detalle{padding:.3rem 0 .3rem 1.1rem;font-size:.82rem;color:var(--text-muted)}
+
+/* Pantalla «Mis cuentas»: pocas cosas, letras grandes, sin gráficas */
+.t-centro{text-align:center;margin:.75rem 0 1.25rem}
+.t-mes{display:flex;align-items:center;justify-content:center;gap:1rem;margin:1rem 0}
+.t-mes strong{font-size:1.5rem;min-width:11rem;text-align:center;text-transform:capitalize}
+.t-mes button{width:56px;height:56px;border-radius:50%;border:2px solid var(--border-color);background:var(--bg-card);color:var(--text-main);font-size:1.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.t-mes button:disabled{opacity:.3;cursor:default}
+.t-tres{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.t-numero{border:2px solid var(--border-color);border-radius:18px;padding:1.2rem;text-align:center;background:var(--bg-card)}
+.t-numero span{display:block;font-size:1.1rem;font-weight:700;color:var(--text-muted);margin-bottom:.35rem}
+.t-numero strong{font-size:2.1rem;font-weight:800}
+.t-numero.bien{border-color:var(--accent-green)}.t-numero.bien strong{color:var(--accent-green)}
+.t-numero.mal{border-color:var(--accent-red)}.t-numero.mal strong{color:var(--accent-red)}
+.t-grande{font-size:1.35rem;font-weight:800;margin-bottom:.75rem}
+.t-fila-c{display:grid;grid-template-columns:1fr auto;gap:.5rem .9rem;align-items:center;padding:1rem 0;border-bottom:1px solid var(--border-color)}
+.t-fila-nombre strong{display:block;font-size:1.15rem}
+.t-fila-nombre small{color:var(--text-muted);font-size:.9rem}
+.t-fila-valor{font-size:1.25rem;font-weight:800;text-align:right}
+.t-fila-btns{grid-column:1/-1;display:flex;gap:.6rem}
+.t-fila-btns .btn-action{min-height:44px;padding:.5rem 1.1rem;font-size:1rem}
+.t-btn-grande{width:100%;min-height:60px;margin-top:1rem;font-size:1.1rem;justify-content:center}
+.t-hint{font-size:1rem;color:var(--text-muted);padding:1rem 0}
+@media (max-width:700px){.t-tres{grid-template-columns:1fr}.t-numero strong{font-size:1.8rem}}
