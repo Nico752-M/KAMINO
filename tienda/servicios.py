@@ -584,8 +584,9 @@ def reporte(desde, hasta):
     }
 
 # ═════════════════ Cuentas del negocio (gastos fijos de cada mes) ═════════════════
-CATEGORIAS_CUENTA = ("Arriendo", "Energía", "Agua", "Gas", "Internet y teléfono", "Nómina",
-                     "Mantenimiento", "Impuestos y trámites", "Otros")
+CATEGORIAS_CUENTA = ("Arriendo", "Luz", "Agua", "Gas", "Internet y teléfono", "Sueldos",
+                     "Arreglos y mantenimiento", "Impuestos y trámites", "Otros",
+                     "Energía", "Nómina", "Mantenimiento")       # los 3 últimos: nombres anteriores, se siguen aceptando
 
 
 def listar_cuentas():
@@ -633,3 +634,30 @@ def borrar_cuenta(cid):
     if not datos.execute_rowcount("DELETE FROM t_cuentas WHERE id = %s", (_entero(cid, "Cuenta", minimo=1),)):
         raise TiendaError("Esa cuenta ya no existe.")
     return listar_cuentas()
+
+
+def resumen_mes(mes):
+    """Pantalla «Mis cuentas»: lo que se vendió y lo que se gastó en un mes del calendario."""
+    try:
+        y, m = (int(x) for x in str(mes).split("-"))
+        desde = date(y, m, 1)
+    except (TypeError, ValueError):
+        raise TiendaError("Mes no válido.")
+    if not 2000 <= y <= 2100:
+        raise TiendaError("Mes no válido.")
+    hasta = date(y + (m == 12), m % 12 + 1, 1)
+    p = (desde, hasta)
+    v = datos.fetchone("SELECT NVL(SUM(total), 0) AS ventas, NVL(SUM(costo_total), 0) AS costo FROM t_ventas "
+                       "WHERE anulada = 0 AND fecha >= %s AND fecha < %s", p)
+    caja = datos.fetchone("SELECT NVL(SUM(monto), 0) AS v FROM t_caja_mov "
+                          "WHERE tipo = 'EGRESO' AND gasto = 1 AND anulado = 0 AND fecha >= %s AND fecha < %s", p)
+    mermas = datos.fetchone("SELECT NVL(SUM(cantidad * costo), 0) AS v FROM t_mermas "
+                            "WHERE anulada = 0 AND fecha >= %s AND fecha < %s", p)
+    cuentas = [c for c in (cuentas_seguras() or []) if c["activa"]]
+    filas = [{"nombre": "Mercancía que vendiste", "sub": "Lo que te costó lo que vendiste", "valor": int(v["costo"])}]
+    filas += [{"id": c["id"], "nombre": c["nombre"], "sub": c["categoria"], "valor": c["valor"]} for c in cuentas]
+    filas += [{"nombre": "Gastos sueltos de la caja", "sub": "Plata que salió de la caja para pagar cosas", "valor": int(caja["v"])},
+              {"nombre": "Productos dañados o perdidos", "sub": "Lo que se dañó, venció o se perdió", "valor": int(mermas["v"])}]
+    filas = [f for f in filas if f["valor"] or f.get("id")]
+    vendiste, gastaste = int(v["ventas"]), sum(f["valor"] for f in filas)
+    return {"mes": f"{y}-{m:02d}", "vendiste": vendiste, "gastaste": gastaste, "quedo": vendiste - gastaste, "filas": filas}
