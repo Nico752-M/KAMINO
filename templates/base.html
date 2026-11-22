@@ -30,7 +30,7 @@
   </div>
   <aside class="preview-sidebar" id="sidebar">
     {% block menu %}
-    <a class="preview-brand" href="{{ url_for('caja.resumen') if 'ver_caja' in permisos else url_for('dashboard.index') if 'ver_dashboard' in permisos else url_for('alumnos.lista') if 'ver_alumnos' in permisos else url_for('tramites.lista') if 'ver_tramites' in permisos else url_for('usuarios.lista') }}">
+    <a class="preview-brand" href="{{ url_for('caja.resumen') if 'ver_caja' in permisos else url_for('dashboard.index') if 'ver_dashboard' in permisos else url_for('alumnos.lista') if 'ver_alumnos' in permisos else url_for('tramites.lista') if 'ver_tramites' in permisos else url_for('cuentas.inicio') if 'ver_cuentas' in permisos else url_for('usuarios.lista') }}">
       <span class="preview-brand-badge"></span> CEA LA 30
     </a>
     <nav class="preview-menu" aria-label="Navegación principal">
@@ -39,6 +39,7 @@
       {% endif %}
       {% if 'ver_alumnos' in permisos %}<a href="{{ url_for('alumnos.lista') }}" class="{{ 'active' if nav == 'alumnos' }}"><i class="ri-team-line"></i> Alumnos y Matriculados</a>{% endif %}
       {% if 'ver_caja' in permisos %}<a href="{{ url_for('caja.resumen') }}" class="{{ 'active' if nav == 'caja' }}"><i class="ri-safe-2-line"></i> Caja y Tesorería</a>{% endif %}
+      {% if 'ver_cuentas' in permisos %}<a href="{{ url_for('cuentas.inicio') }}" class="{{ 'active' if nav == 'cuentas' }}"><i class="ri-wallet-3-line"></i> Mis cuentas</a>{% endif %}
       {% if 'ver_tramites' in permisos %}<a href="{{ url_for('tramites.lista') }}" class="{{ 'active' if nav == 'tramites' }}"><i class="ri-folder-history-line"></i> Trámites
         {% if runt_pendientes %}<span class="nav-badge">{{ runt_pendientes if runt_pendientes < 100 else '99+' }}</span>{% endif %}
       </a>{% endif %}
