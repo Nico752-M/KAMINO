@@ -160,8 +160,8 @@
       <p class="hint">Activa o desactiva cada descuento. La ganancia neta se recalcula al instante.</p>
       <div class="t-ajustes">
         <div class="t-ajuste fijo"><span><strong>Costo de la mercancía</strong><small>Lo que te costó lo que vendiste (siempre se descuenta)</small></span><span class="t-fijo">Siempre</span></div>
-        <label class="t-ajuste"><span><strong>Gastos fijos del mes</strong><small>Arriendo, servicios, nómina…</small></span>
-          <span class="t-ctrl"><input type="text" inputmode="numeric" class="input-clean" id="aGastos" autocomplete="off"><input type="checkbox" id="uGastos"></span></label>
+        <div class="t-ajuste"><span><strong>Cuentas del negocio</strong><small>Luz, agua, arriendo, nómina… cada una con su valor al mes</small></span>
+          <span class="t-ctrl"><button type="button" class="btn-action" id="bCuentas"><i class="ri-list-settings-line"></i> <span id="cuentasTotal">Agregar cuentas</span></button><input type="hidden" id="aGastos"><input type="checkbox" id="uGastos"></span></div>
         <label class="t-ajuste"><span><strong>Comisión por Nequi y tarjeta (%)</strong><small>Se descuenta solo de ventas que no son en efectivo</small></span>
           <span class="t-ctrl"><input type="number" step="0.1" min="0" max="20" class="input-clean" id="aComision"><input type="checkbox" id="uComision"></span></label>
         <label class="t-ajuste"><span><strong>Impuesto sobre ventas (%)</strong><small>IVA, impoconsumo u otro</small></span>
@@ -217,6 +217,24 @@
     <div class="field"><label class="lbl" for="rCant">¿Cuántas unidades llegaron?</label><input class="input-clean" id="rCant" inputmode="numeric" autocomplete="off" placeholder="0"></div>
     <p class="alerta error" id="rError" style="display:none"></p>
     <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="rGuardar"><i class="ri-add-line"></i> Sumar al stock</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mCuentas" role="dialog" aria-modal="true" aria-labelledby="mCuentasTitulo">
+  <div class="t-modal-panel" style="max-width:560px">
+    <h3 id="mCuentasTitulo">Cuentas del negocio</h3>
+    <p class="hint">Lo que pagas cada mes. La ganancia reparte el valor por día: en 7 días descuenta 7/30 del mes.</p>
+    <div id="cuLista" class="t-cuentas"></div>
+    <div class="t-cuentas-total"><span>Total al mes</span><strong id="cuTotal">$ 0</strong></div>
+    <input type="hidden" id="cuId">
+    <div class="field"><label class="lbl" for="cuNombre">Nombre de la cuenta</label><input class="input-clean" id="cuNombre" maxlength="80" placeholder="Ej: Factura de la luz" autocomplete="off"></div>
+    <div class="t-dos">
+      <div class="field"><label class="lbl" for="cuCat">Categoría</label><select class="input-clean" id="cuCat"></select></div>
+      <div class="field"><label class="lbl" for="cuValor">Valor al mes</label><input class="input-clean" id="cuValor" inputmode="numeric" autocomplete="off"></div>
+    </div>
+    <label class="t-check"><input type="checkbox" id="cuActiva" checked> Se está pagando (si la pausas, no se descuenta)</label>
+    <p class="alerta error" id="cuError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cerrar</button><button type="button" class="btn-action green" id="cuGuardar"><i class="ri-save-line"></i> Guardar cuenta</button></div>
   </div>
 </div>
 
