@@ -43,7 +43,7 @@ if (typeof document !== "undefined") (function () {
   const money = (inp) => inp.addEventListener("input", () => { const v = digitos(inp.value); inp.value = v ? miles(v) : ""; });
 
   const estado = { cuentas: [], productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false };
-  const ui = { vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
+  const ui = { mes: null, cuActiva: true, vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
 
   // ── Comunicación con el servidor ──
   async function api(url, cuerpo) {
@@ -65,7 +65,7 @@ if (typeof document !== "undefined") (function () {
   function aviso(msg) { const a = $("tAviso"); a.textContent = msg || ""; a.style.display = msg ? "block" : "none"; }
 
   // ── Navegación entre vistas ──
-  const VISTAS = ["caja", "inventario", "ventas", "ganancias"];
+  const VISTAS = ["caja", "inventario", "ventas", "ganancias", "cuentas"];
   async function irA(vista) {
     if (!VISTAS.includes(vista)) vista = "caja";
     ui.vista = vista;
@@ -75,6 +75,7 @@ if (typeof document !== "undefined") (function () {
     if (vista === "caja") { await cargarCierre(); renderCaja(); }
     if (vista === "inventario") { renderInventario(); cargarMermas(); }
     if (vista === "ventas") await cargarVentas();
+    if (vista === "cuentas") await cargarMes();
     if (vista === "ganancias") await cargarGanancias();
   }
   window.addEventListener("hashchange", () => irA(location.hash.replace("#", "")));
@@ -444,8 +445,8 @@ if (typeof document !== "undefined") (function () {
     tGuardar = setTimeout(async () => { const r = await api("/tienda/api/ajustes", a); if (!r.ok) aviso(r.error); else aviso(""); }, 700);
   }
 
-  // ── CUENTAS DEL NEGOCIO (gastos fijos de cada mes) ──
-  const CATS_CUENTA = ["Arriendo", "Energía", "Agua", "Gas", "Internet y teléfono", "Nómina", "Mantenimiento", "Impuestos y trámites", "Otros"];
+  // ── CUENTAS DEL NEGOCIO + pantalla «Mis cuentas» ──
+  const CATS_CUENTA = ["Arriendo", "Luz", "Agua", "Gas", "Internet y teléfono", "Sueldos", "Arreglos y mantenimiento", "Impuestos y trámites", "Otros"];
   const totalCuentas = () => (estado.cuentas || []).filter((c) => c.activa).reduce((s, c) => s + c.valor, 0);
   function pintarTotalCuentas() {
     const t = totalCuentas();
@@ -459,37 +460,61 @@ if (typeof document !== "undefined") (function () {
     return Object.entries(por).sort((x, y) => y[1] - x[1])
       .map(([cat, v]) => `<div class="t-casc detalle"><span>${esc(cat)}</span><span>${fmt(v / 30 * dias)}</span></div>`).join("");
   }
-  function renderCuentas() {
-    const l = estado.cuentas || [];
-    $("cuLista").innerHTML = l.length ? l.map((c) =>
-      `<div class="t-cuenta${c.activa ? "" : " apagada"}"><span><strong>${esc(c.nombre)}</strong><small>${esc(c.categoria)}${c.activa ? "" : " · pausada"}</small></span>`
-      + `<span class="t-cuenta-val">${fmt(c.valor)}</span><span class="t-cuenta-btns"><button type="button" class="btn-action" data-cedit="${c.id}" title="Editar"><i class="ri-edit-line"></i></button>`
-      + `<button type="button" class="btn-action red" data-cdel="${c.id}" title="Borrar"><i class="ri-delete-bin-line"></i></button></span></div>`).join("")
-      : `<p class="hint">Aún no hay cuentas. Agrega la primera abajo, por ejemplo la luz.</p>`;
-    $("cuTotal").textContent = fmt(totalCuentas());
+  const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const mesDe = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  const mesTexto = (m) => { const [y, n] = m.split("-"); return MESES[Number(n) - 1] + " de " + y; };
+  function mesMover(delta) {
+    const [y, n] = (ui.mes || mesDe(new Date())).split("-").map(Number);
+    ui.mes = mesDe(new Date(y, n - 1 + delta, 1));
+    cargarMes();
   }
-  function limpiarCuenta() {
-    $("cuId").value = ""; $("cuNombre").value = ""; $("cuValor").value = ""; $("cuActiva").checked = true;
-    $("cuCat").value = CATS_CUENTA[0]; $("cuError").style.display = "none";
+  async function cargarMes() {
+    ui.mes = ui.mes || mesDe(new Date());
+    const r = await conCarga(() => api("/tienda/api/mes?mes=" + ui.mes));
+    if (!r.ok) { aviso(r.error); return; }
+    aviso(""); estado.mes = r; pintarMes();
   }
-  function abrirCuentas() { limpiarCuenta(); renderCuentas(); abrirModal("mCuentas"); }
-  function editarCuenta(id) {
-    const c = (estado.cuentas || []).find((x) => x.id === Number(id)); if (!c) return;
-    $("cuId").value = c.id; $("cuNombre").value = c.nombre; $("cuCat").value = c.categoria;
-    $("cuValor").value = miles(c.valor); $("cuActiva").checked = c.activa; $("cuError").style.display = "none"; $("cuNombre").focus();
+  function pintarMes() {
+    const r = estado.mes; if (!r) return;
+    $("mesNombre").textContent = mesTexto(r.mes);
+    $("mesSig").disabled = r.mes >= mesDe(new Date());
+    const bien = r.quedo >= 0;
+    $("tTres").innerHTML =
+      `<div class="t-numero"><span>Vendiste</span><strong>${fmt(r.vendiste)}</strong></div>`
+      + `<div class="t-numero"><span>Gastaste</span><strong>${fmt(r.gastaste)}</strong></div>`
+      + `<div class="t-numero ${bien ? "bien" : "mal"}"><span>${bien ? "Te quedó" : "Perdiste"}</span><strong>${fmt(Math.abs(r.quedo))}</strong></div>`;
+    const hayCuentas = r.filas.some((f) => f.id);
+    $("mcLista").innerHTML = r.filas.map((f) =>
+      `<div class="t-fila-c"><span class="t-fila-nombre"><strong>${esc(f.nombre)}</strong><small>${esc(f.sub)}</small></span>`
+      + `<span class="t-fila-valor">${fmt(f.valor)}</span>`
+      + (f.id ? `<span class="t-fila-btns"><button type="button" class="btn-action" data-cedit="${f.id}">Cambiar</button><button type="button" class="btn-action red" data-cdel="${f.id}">Quitar</button></span>` : "")
+      + `</div>`).join("")
+      + (hayCuentas ? "" : `<p class="t-hint">Todavía no has anotado cuentas. Toca el botón verde para agregar la primera, por ejemplo la luz.</p>`);
   }
-  function cuentasActualizadas(r) { estado.cuentas = r.cuentas; renderCuentas(); pintarTotalCuentas(); pintarGanancias(); }
+  function abrirCuenta(c) {
+    ui.cuActiva = c ? c.activa : true;
+    $("mCuentasTitulo").textContent = c ? "Cambiar la cuenta" : "Agregar una cuenta";
+    $("cuId").value = c ? c.id : ""; $("cuNombre").value = c ? c.nombre : "";
+    $("cuCat").value = c && CATS_CUENTA.includes(c.categoria) ? c.categoria : CATS_CUENTA[0];
+    $("cuValor").value = c ? miles(c.valor) : ""; $("cuError").style.display = "none";
+    abrirModal("mCuentas"); $("cuNombre").focus();
+  }
+  const editarCuenta = (id) => abrirCuenta((estado.cuentas || []).find((x) => x.id === Number(id)));
+  function cuentasActualizadas(r) {
+    estado.cuentas = r.cuentas; cerrarModales(); pintarTotalCuentas(); pintarGanancias();
+    if (ui.vista === "cuentas") cargarMes();
+  }
   async function guardarCuenta() {
     $("cuError").style.display = "none";
     const r = await conCarga(() => api("/tienda/api/cuentas", { id: $("cuId").value || null, nombre: $("cuNombre").value,
-      categoria: $("cuCat").value, valor: digitos($("cuValor").value), activa: $("cuActiva").checked }));
+      categoria: $("cuCat").value, valor: digitos($("cuValor").value), activa: ui.cuActiva !== false }));
     if (!r.ok) return errorEn("cuError", r.error);
-    limpiarCuenta(); cuentasActualizadas(r);
+    cuentasActualizadas(r);
   }
   async function borrarCuenta(id) {
-    if (!window.confirm("¿Borrar esta cuenta? La ganancia dejará de descontarla.")) return;
+    if (!window.confirm("¿Quitar esta cuenta? Ya no se contará en tus gastos.")) return;
     const r = await conCarga(() => api(`/tienda/api/cuentas/${id}/borrar`, {}));
-    if (!r.ok) return errorEn("cuError", r.error);
+    if (!r.ok) return aviso(r.error);
     cuentasActualizadas(r);
   }
 
@@ -528,7 +553,10 @@ if (typeof document !== "undefined") (function () {
   $("rGuardar").addEventListener("click", guardarReabastecer);
   $("aGuardar").addEventListener("click", guardarAnular);
   $("cuCat").innerHTML = CATS_CUENTA.map((c) => `<option>${esc(c)}</option>`).join("");
-  $("bCuentas").addEventListener("click", abrirCuentas);
+  $("bCuentas").addEventListener("click", () => { location.hash = "#cuentas"; });
+  $("mcAgregar").addEventListener("click", () => abrirCuenta());
+  $("mesAnt").addEventListener("click", () => mesMover(-1));
+  $("mesSig").addEventListener("click", () => mesMover(1));
   $("cuGuardar").addEventListener("click", guardarCuenta);
   money($("cuValor"));
   $("cGuardar").addEventListener("click", guardarCierre);
