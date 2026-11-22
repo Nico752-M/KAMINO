@@ -8,6 +8,7 @@
       <a href="#caja" data-vista="caja" class="active"><i class="ri-shopping-cart-2-line"></i> Caja</a>
       <a href="#inventario" data-vista="inventario"><i class="ri-archive-line"></i> Inventario <span class="nav-badge" id="badgeBajo" hidden></span></a>
       <a href="#ventas" data-vista="ventas"><i class="ri-receipt-line"></i> Ventas</a>
+      <a href="#cuentas" data-vista="cuentas"><i class="ri-wallet-3-line"></i> Mis cuentas</a>
       <a href="#ganancias" data-vista="ganancias"><i class="ri-line-chart-line"></i> Ganancias</a>
       {% if volver %}<a href="{{ volver }}"><i class="ri-arrow-left-line"></i> Volver al CEA</a>{% endif %}
       <a href="#" id="update-nav" class="update-nav" hidden><i class="ri-download-cloud-2-line"></i> Actualización disponible <span class="nav-badge">1</span></a>
@@ -139,6 +140,22 @@
 </section>
 
 <!-- ═════════ GANANCIAS ═════════ -->
+<section class="t-vista" id="vista-cuentas" hidden>
+  <div class="t-cabecera"><div><h1 class="t-titulo">Mis cuentas</h1><p class="t-sub">Lo que entró y lo que salió este mes.</p></div></div>
+  <div class="t-mes">
+    <button type="button" id="mesAnt" aria-label="Mes anterior"><i class="ri-arrow-left-s-line"></i></button>
+    <strong id="mesNombre">—</strong>
+    <button type="button" id="mesSig" aria-label="Mes siguiente"><i class="ri-arrow-right-s-line"></i></button>
+  </div>
+  <div class="t-tres" id="tTres"></div>
+  <p class="t-sub t-centro">Te quedó = lo que vendiste menos lo que gastaste.</p>
+  <div class="card-bento">
+    <h2 class="t-grande">¿En qué se fue la plata?</h2>
+    <div id="mcLista"></div>
+    <button type="button" class="btn-action green t-btn-grande" id="mcAgregar"><i class="ri-add-line"></i> Agregar una cuenta (luz, agua, arriendo…)</button>
+  </div>
+</section>
+
 <section class="t-vista" id="vista-ganancias" hidden>
   <div class="t-cabecera">
     <div><h1 class="t-titulo">Ganancias</h1>
@@ -221,20 +238,14 @@
 </div>
 
 <div class="t-modal" id="mCuentas" role="dialog" aria-modal="true" aria-labelledby="mCuentasTitulo">
-  <div class="t-modal-panel" style="max-width:560px">
-    <h3 id="mCuentasTitulo">Cuentas del negocio</h3>
-    <p class="hint">Lo que pagas cada mes. La ganancia reparte el valor por día: en 7 días descuenta 7/30 del mes.</p>
-    <div id="cuLista" class="t-cuentas"></div>
-    <div class="t-cuentas-total"><span>Total al mes</span><strong id="cuTotal">$ 0</strong></div>
+  <div class="t-modal-panel" style="max-width:480px">
+    <h3 id="mCuentasTitulo">Agregar una cuenta</h3>
     <input type="hidden" id="cuId">
-    <div class="field"><label class="lbl" for="cuNombre">Nombre de la cuenta</label><input class="input-clean" id="cuNombre" maxlength="80" placeholder="Ej: Factura de la luz" autocomplete="off"></div>
-    <div class="t-dos">
-      <div class="field"><label class="lbl" for="cuCat">Categoría</label><select class="input-clean" id="cuCat"></select></div>
-      <div class="field"><label class="lbl" for="cuValor">Valor al mes</label><input class="input-clean" id="cuValor" inputmode="numeric" autocomplete="off"></div>
-    </div>
-    <label class="t-check"><input type="checkbox" id="cuActiva" checked> Se está pagando (si la pausas, no se descuenta)</label>
+    <div class="field"><label class="lbl" for="cuNombre">¿Qué cuenta es?</label><input class="input-clean" id="cuNombre" maxlength="80" placeholder="Ej: La luz, el arriendo" autocomplete="off"></div>
+    <div class="field"><label class="lbl" for="cuCat">¿De qué tipo es?</label><select class="input-clean" id="cuCat"></select></div>
+    <div class="field"><label class="lbl" for="cuValor">¿Cuánto pagas cada mes?</label><input class="input-clean" id="cuValor" inputmode="numeric" placeholder="Ej: 300.000" autocomplete="off"></div>
     <p class="alerta error" id="cuError" style="display:none"></p>
-    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cerrar</button><button type="button" class="btn-action green" id="cuGuardar"><i class="ri-save-line"></i> Guardar cuenta</button></div>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="cuGuardar"><i class="ri-check-line"></i> Guardar</button></div>
   </div>
 </div>
 
