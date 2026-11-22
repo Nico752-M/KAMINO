@@ -59,7 +59,7 @@ def inicio():
 @api
 def api_estado():
     return jsonify(ok=True, productos=servicios.listar_productos(), ajustes=servicios.leer_ajustes(),
-                   abierta=servicios.caja_abierta())
+                   abierta=servicios.caja_abierta(), cuentas=servicios.cuentas_seguras() or [])
 
 
 @bp.route("/api/productos", methods=["POST"])
@@ -116,6 +116,28 @@ def api_ganancias():
 @api
 def api_ajustes():
     return jsonify(ok=True, ajustes=servicios.guardar_ajustes(_json()))
+
+def _respuesta_cuentas(cuentas):
+    return jsonify(ok=True, cuentas=cuentas, gastosMes=servicios.total_cuentas(cuentas))
+
+
+@bp.route("/api/cuentas")
+@api
+def api_cuentas():
+    return _respuesta_cuentas(servicios.listar_cuentas())
+
+
+@bp.route("/api/cuentas", methods=["POST"])
+@api
+def api_guardar_cuenta():
+    return _respuesta_cuentas(servicios.guardar_cuenta(_json()))
+
+
+@bp.route("/api/cuentas/<int:cid>/borrar", methods=["POST"])
+@api
+def api_borrar_cuenta(cid):
+    return _respuesta_cuentas(servicios.borrar_cuenta(cid))
+
 
 # ───────── PDFs ─────────
 def _pdf(contenido, nombre):
