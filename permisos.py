@@ -19,6 +19,7 @@ PERMISOS = {
     "ver_ganancias": "Ver ganancia de las matrículas",
     "gestionar_usuarios": "Gestionar usuarios y permisos",
     "ver_tienda": "Usar la tienda (caja, inventario y ganancias)",
+    "ver_cuentas": "Ver y administrar Mis cuentas (ingresos y gastos del CEA)",
 }
 
 ROLES = ("admin", "cajera", "secretaria", "contadora", "tienda")
@@ -34,7 +35,7 @@ GRUPOS_PERMISOS = {
         "ver_recibos", "gestionar_caja", "ver_todas_cajas",
     ),
     "Trámites": ("ver_tramites", "marcar_runt"),
-    "Administración": ("ver_dashboard", "gestionar_usuarios"),
+    "Administración": ("ver_dashboard", "gestionar_usuarios", "ver_cuentas"),
     "Tienda": ("ver_tienda",),
 }
 
