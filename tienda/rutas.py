@@ -117,6 +117,12 @@ def api_ganancias():
 def api_ajustes():
     return jsonify(ok=True, ajustes=servicios.guardar_ajustes(_json()))
 
+@bp.route("/api/mes")
+@api
+def api_mes():
+    return jsonify(ok=True, **servicios.resumen_mes(request.args.get("mes") or servicios.hoy().strftime("%Y-%m")))
+
+
 def _respuesta_cuentas(cuentas):
     return jsonify(ok=True, cuentas=cuentas, gastosMes=servicios.total_cuentas(cuentas))
 
