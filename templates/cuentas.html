@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block titulo %}Mis cuentas · CEA La 30{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/cuentas.css', v=asset_v) }}">{% endblock %}
+{% block buscador %}{% endblock %}
+
+{% block contenido %}
+<div class="alerta error" id="mcAviso" style="display:none"></div>
+
+<h1 class="mc-titulo">Mis cuentas</h1>
+<p class="mc-sub">Todo lo que entró y lo que salió del CEA este mes: pagos, caja y cuentas fijas como arriendo, luz o nómina.</p>
+
+<div class="mc-mes">
+  <button type="button" id="mesAnt" aria-label="Mes anterior"><i class="ri-arrow-left-s-line"></i></button>
+  <strong id="mesNombre">—</strong>
+  <button type="button" id="mesSig" aria-label="Mes siguiente"><i class="ri-arrow-right-s-line"></i></button>
+</div>
+
+<div class="mc-tres" id="mcTres"></div>
+<p class="mc-sub mc-centro">Te queda = lo que entró menos lo que salió. Si sale en rojo con un menos (−), salió más plata de la que entró.</p>
+
+<div class="card-bento">
+  <h2 class="mc-grande">¿De dónde entró la plata?</h2>
+  <div id="mcEntradas"></div>
+</div>
+
+<div class="card-bento">
+  <h2 class="mc-grande">¿En qué se fue la plata?</h2>
+  <div id="mcGastos"></div>
+  <button type="button" class="btn-action green mc-btn-grande" id="mcAgregar"><i class="ri-add-line"></i> Agregar una cuenta (luz, agua, arriendo, nómina…)</button>
+</div>
+
+<div class="mc-modal" id="mCuentas" role="dialog" aria-modal="true" aria-labelledby="mCuentasTitulo">
+  <div class="mc-modal-panel">
+    <h3 id="mCuentasTitulo">Agregar una cuenta</h3>
+    <input type="hidden" id="cuId">
+    <div class="field"><label class="lbl" for="cuNombre">¿Qué cuenta es?</label><input class="input-clean" id="cuNombre" maxlength="80" placeholder="Ej: La luz, el arriendo" autocomplete="off"></div>
+    <div class="field"><label class="lbl" for="cuCat">¿De qué tipo es?</label>
+      <select class="input-clean" id="cuCat">{% for c in categorias %}<option>{{ c }}</option>{% endfor %}</select></div>
+    <div class="field"><label class="lbl" for="cuValor">¿Cuánto se paga cada mes?</label><input class="input-clean" id="cuValor" inputmode="numeric" placeholder="Ej: 300.000" autocomplete="off"></div>
+    <p class="alerta error" id="cuError" style="display:none"></p>
+    <div class="mc-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="cuGuardar"><i class="ri-check-line"></i> Guardar</button></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/cuentas.js', v=asset_v) }}"></script>{% endblock %}
