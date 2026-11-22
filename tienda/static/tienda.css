@@ -187,3 +187,17 @@
   .t-prod{min-height:120px}
   .t-prod .precio{font-size:1.15rem}
 }
+
+/* Cuentas del negocio */
+.t-cuentas{display:grid;gap:.5rem;margin:.75rem 0;max-height:260px;overflow-y:auto}
+.t-cuenta{display:grid;grid-template-columns:1fr auto auto;gap:.75rem;align-items:center;padding:.65rem .85rem;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card)}
+.t-cuenta strong{display:block;font-size:.98rem}
+.t-cuenta small{color:var(--text-muted)}
+.t-cuenta.apagada{opacity:.5}
+.t-cuenta-val{font-weight:800}
+.t-cuenta-btns{display:flex;gap:.35rem}
+.t-cuenta-btns .btn-action{min-height:36px;padding:.4rem .65rem}
+.t-cuentas-total{display:flex;justify-content:space-between;align-items:baseline;padding:.6rem .2rem;margin-bottom:.75rem;border-top:2px dashed var(--border-color)}
+.t-cuentas-total strong{font-size:1.35rem}
+.t-check{display:flex;gap:.5rem;align-items:center;margin:.25rem 0 .75rem;font-size:.9rem}
+.t-casc.detalle{padding:.3rem 0 .3rem 1.1rem;font-size:.82rem;color:var(--text-muted)}
