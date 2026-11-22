@@ -42,7 +42,7 @@ if (typeof document !== "undefined") (function () {
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (inp) => inp.addEventListener("input", () => { const v = digitos(inp.value); inp.value = v ? miles(v) : ""; });
 
-  const estado = { productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false };
+  const estado = { cuentas: [], productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false };
   const ui = { vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
 
   // ── Comunicación con el servidor ──
@@ -164,7 +164,7 @@ if (typeof document !== "undefined") (function () {
 
   async function recargarProductos() {
     const r = await api("/tienda/api/estado");
-    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; estado.abierta = r.abierta; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
+    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
   }
 
   // ── INVENTARIO ──
@@ -363,7 +363,7 @@ if (typeof document !== "undefined") (function () {
   // ── GANANCIAS ──
   async function cargarGanancias() {
     const a = estado.ajustes, periodo = ui.periodo;
-    $("aGastos").value = miles(a.gastosMes); $("uGastos").checked = a.usarGastos;
+    pintarTotalCuentas(); $("uGastos").checked = a.usarGastos;
     $("aComision").value = a.comision; $("uComision").checked = a.usarComision;
     $("aImpuesto").value = a.impuesto; $("uImpuesto").checked = a.usarImpuesto;
     $("aReserva").value = a.reserva; $("uReserva").checked = a.usarReserva;
@@ -396,7 +396,7 @@ if (typeof document !== "undefined") (function () {
       fila("Ventas", r.bruto) + fila("Costo de la mercancía", r.costo, "resta") + fila("Ganancia bruta", r.gananciaBruta, "sub")
       + fila(`Comisión Nequi y tarjeta (${a.comision} %)`, r.comision, "resta" + (a.usarComision ? "" : " apagado"))
       + fila(`Impuesto sobre ventas (${a.impuesto} %)`, r.impuesto, "resta" + (a.usarImpuesto ? "" : " apagado"))
-      + fila(`Gastos fijos (${r.dias} día${r.dias > 1 ? "s" : ""})`, r.gastos, "resta" + (a.usarGastos ? "" : " apagado"))
+      + fila(`Cuentas del negocio (${r.dias} día${r.dias > 1 ? "s" : ""})`, r.gastos, "resta" + (a.usarGastos ? "" : " apagado")) + detalleCuentas(r.dias, a.usarGastos)
       + fila("Gastos de caja", r.gastosCaja, "resta")
       + fila("Mermas (producto perdido)", r.mermas, "resta")
       + fila("Ganancia neta", r.neta, "final")
@@ -444,6 +444,55 @@ if (typeof document !== "undefined") (function () {
     tGuardar = setTimeout(async () => { const r = await api("/tienda/api/ajustes", a); if (!r.ok) aviso(r.error); else aviso(""); }, 700);
   }
 
+  // ── CUENTAS DEL NEGOCIO (gastos fijos de cada mes) ──
+  const CATS_CUENTA = ["Arriendo", "Energía", "Agua", "Gas", "Internet y teléfono", "Nómina", "Mantenimiento", "Impuestos y trámites", "Otros"];
+  const totalCuentas = () => (estado.cuentas || []).filter((c) => c.activa).reduce((s, c) => s + c.valor, 0);
+  function pintarTotalCuentas() {
+    const t = totalCuentas();
+    estado.ajustes.gastosMes = t; $("aGastos").value = miles(t);
+    $("cuentasTotal").textContent = t ? fmt(t) + " al mes" : "Agregar cuentas";
+  }
+  function detalleCuentas(dias, usar) {
+    if (!usar) return "";
+    const por = {};
+    (estado.cuentas || []).filter((c) => c.activa).forEach((c) => { por[c.categoria] = (por[c.categoria] || 0) + c.valor; });
+    return Object.entries(por).sort((x, y) => y[1] - x[1])
+      .map(([cat, v]) => `<div class="t-casc detalle"><span>${esc(cat)}</span><span>${fmt(v / 30 * dias)}</span></div>`).join("");
+  }
+  function renderCuentas() {
+    const l = estado.cuentas || [];
+    $("cuLista").innerHTML = l.length ? l.map((c) =>
+      `<div class="t-cuenta${c.activa ? "" : " apagada"}"><span><strong>${esc(c.nombre)}</strong><small>${esc(c.categoria)}${c.activa ? "" : " · pausada"}</small></span>`
+      + `<span class="t-cuenta-val">${fmt(c.valor)}</span><span class="t-cuenta-btns"><button type="button" class="btn-action" data-cedit="${c.id}" title="Editar"><i class="ri-edit-line"></i></button>`
+      + `<button type="button" class="btn-action red" data-cdel="${c.id}" title="Borrar"><i class="ri-delete-bin-line"></i></button></span></div>`).join("")
+      : `<p class="hint">Aún no hay cuentas. Agrega la primera abajo, por ejemplo la luz.</p>`;
+    $("cuTotal").textContent = fmt(totalCuentas());
+  }
+  function limpiarCuenta() {
+    $("cuId").value = ""; $("cuNombre").value = ""; $("cuValor").value = ""; $("cuActiva").checked = true;
+    $("cuCat").value = CATS_CUENTA[0]; $("cuError").style.display = "none";
+  }
+  function abrirCuentas() { limpiarCuenta(); renderCuentas(); abrirModal("mCuentas"); }
+  function editarCuenta(id) {
+    const c = (estado.cuentas || []).find((x) => x.id === Number(id)); if (!c) return;
+    $("cuId").value = c.id; $("cuNombre").value = c.nombre; $("cuCat").value = c.categoria;
+    $("cuValor").value = miles(c.valor); $("cuActiva").checked = c.activa; $("cuError").style.display = "none"; $("cuNombre").focus();
+  }
+  function cuentasActualizadas(r) { estado.cuentas = r.cuentas; renderCuentas(); pintarTotalCuentas(); pintarGanancias(); }
+  async function guardarCuenta() {
+    $("cuError").style.display = "none";
+    const r = await conCarga(() => api("/tienda/api/cuentas", { id: $("cuId").value || null, nombre: $("cuNombre").value,
+      categoria: $("cuCat").value, valor: digitos($("cuValor").value), activa: $("cuActiva").checked }));
+    if (!r.ok) return errorEn("cuError", r.error);
+    limpiarCuenta(); cuentasActualizadas(r);
+  }
+  async function borrarCuenta(id) {
+    if (!window.confirm("¿Borrar esta cuenta? La ganancia dejará de descontarla.")) return;
+    const r = await conCarga(() => api(`/tienda/api/cuentas/${id}/borrar`, {}));
+    if (!r.ok) return errorEn("cuError", r.error);
+    cuentasActualizadas(r);
+  }
+
   // ── Eventos ──
   document.addEventListener("click", (e) => {
     const t = e.target.closest("button, [data-cat]"); if (!t) return;
@@ -460,6 +509,8 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.qmov) quitarMov(t.dataset.qmov);
     else if (t.dataset.rango) fijarRango(t.dataset.rango);
     else if (t.dataset.anular) abrirAnular(t.dataset.anular);
+    else if (t.dataset.cedit) editarCuenta(t.dataset.cedit);
+    else if (t.dataset.cdel) borrarCuenta(t.dataset.cdel);
     else if (t.dataset.p) { ui.periodo = t.dataset.p; cargarGanancias(); }
     else if (t.hasAttribute("data-cerrar")) cerrarModales();
   });
@@ -476,6 +527,10 @@ if (typeof document !== "undefined") (function () {
   $("pGuardar").addEventListener("click", guardarProducto);
   $("rGuardar").addEventListener("click", guardarReabastecer);
   $("aGuardar").addEventListener("click", guardarAnular);
+  $("cuCat").innerHTML = CATS_CUENTA.map((c) => `<option>${esc(c)}</option>`).join("");
+  $("bCuentas").addEventListener("click", abrirCuentas);
+  $("cuGuardar").addEventListener("click", guardarCuenta);
+  money($("cuValor"));
   $("cGuardar").addEventListener("click", guardarCierre);
   $("mvGuardar").addEventListener("click", guardarMov);
   $("bGuardar").addEventListener("click", guardarBaja);
@@ -488,7 +543,7 @@ if (typeof document !== "undefined") (function () {
   (async function iniciar() {
     const r = await conCarga(() => api("/tienda/api/estado"));
     if (!r.ok) { aviso(r.error); $("tGrid").innerHTML = ""; return; }
-    estado.productos = r.productos; estado.ajustes = r.ajustes; estado.abierta = r.abierta;
+    estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta;
     fijarRango("hoy");
     irA(location.hash.replace("#", "") || "caja");
   })();
