@@ -1,0 +1,38 @@
+/* Mis cuentas (CEA): pocas cosas, letras grandes, sin gráficas */
+.mc-titulo{font-size:1.8rem;font-weight:800;margin-bottom:.25rem}
+.mc-sub{color:var(--text-muted);font-size:1rem}
+.mc-centro{text-align:center;margin:.75rem 0 1.25rem}
+.mc-mes{display:flex;align-items:center;justify-content:center;gap:1rem;margin:1rem 0}
+.mc-mes strong{font-size:1.5rem;min-width:11rem;text-align:center;text-transform:capitalize}
+.mc-mes button{width:56px;height:56px;border-radius:50%;border:2px solid var(--border-color);background:var(--bg-card);color:var(--text-main);font-size:1.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mc-mes button:disabled{opacity:.3;cursor:default}
+.mc-tres{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.mc-numero{border:2px solid var(--border-color);border-radius:18px;padding:1.2rem;text-align:center;background:var(--bg-card)}
+.mc-numero span{display:block;font-size:1.1rem;font-weight:700;color:var(--text-muted);margin-bottom:.35rem}
+.mc-numero strong{font-size:2.1rem;font-weight:800}
+.mc-numero.bien{border-color:var(--accent-green)}.mc-numero.bien strong{color:var(--accent-green)}
+.mc-numero.mal{border-color:var(--accent-red)}.mc-numero.mal strong{color:var(--accent-red)}
+.mc-grande{font-size:1.35rem;font-weight:800;margin-bottom:.75rem}
+.mc-fila{display:grid;grid-template-columns:1fr auto;gap:.5rem .9rem;align-items:center;padding:1rem 0;border-bottom:1px solid var(--border-color)}
+.mc-fila:last-child{border-bottom:none}
+.mc-fila-nombre strong{display:block;font-size:1.15rem}
+.mc-fila-nombre small{color:var(--text-muted);font-size:.9rem}
+.mc-fila-valor{font-size:1.25rem;font-weight:800;text-align:right}
+.mc-fila-btns{grid-column:1/-1;display:flex;gap:.6rem}
+.mc-fila-btns .btn-action{min-height:44px;padding:.5rem 1.1rem;font-size:1rem}
+.mc-btn-grande{width:100%;min-height:60px;margin-top:1rem;font-size:1.1rem;justify-content:center}
+.mc-hint{font-size:1rem;color:var(--text-muted);padding:1rem 0}
+
+.mc-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:1rem;z-index:200}
+.mc-modal.on{display:flex}
+.mc-modal-panel{width:min(480px,100%);max-height:92dvh;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border-color);border-radius:18px;padding:1.5rem;box-shadow:0 24px 80px rgba(0,0,0,.3)}
+.mc-modal-panel h3{margin-bottom:.8rem;font-size:1.2rem}
+.mc-modal-panel .input-clean{font-size:16px}
+.mc-modal-botones{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem}
+.mc-modal-botones .btn-action{min-height:48px}
+
+@media (max-width:700px){
+  .mc-tres{grid-template-columns:1fr}
+  .mc-numero strong{font-size:1.8rem}
+  .mc-modal-botones .btn-action{flex:1}
+}
