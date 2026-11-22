@@ -1,4 +1,5 @@
 """Lógica de la tienda: productos, ventas con descuento automático de inventario y ganancias."""
+import logging
 from datetime import date, timedelta
 
 from utils import hoy
@@ -355,12 +356,15 @@ def leer_ajustes():
             ajustes[k] = (v == "1") if isinstance(base, bool) else int(float(v)) if k == "gastosMes" else float(v)
         except (TypeError, ValueError):
             pass
+    cuentas = cuentas_seguras()
+    if cuentas is not None:               # los gastos fijos salen de la suma de las cuentas activas
+        ajustes["gastosMes"] = total_cuentas(cuentas)
     return ajustes
 
 
 def guardar_ajustes(d):
     limpio = {
-        "gastosMes": _entero(d.get("gastosMes", 0), "Gastos fijos del mes"),
+        "gastosMes": 0,                   # ya no se escribe a mano: se calcula con las cuentas del negocio
         "comision": _porcentaje(d.get("comision"), "Comisión", 20),
         "impuesto": _porcentaje(d.get("impuesto"), "Impuesto", 30),
         "reserva": _porcentaje(d.get("reserva"), "Reinversión", 100),
@@ -578,3 +582,54 @@ def reporte(desde, hasta):
                     int(m["cantidad"]) * int(m["costo"]), m["motivo"]) for m in mermas],
         "productos": [(p["nombre"], int(p["unidades"]), int(p["vendido"]), int(p["ganancia"])) for p in prods],
     }
+
+# ═════════════════ Cuentas del negocio (gastos fijos de cada mes) ═════════════════
+CATEGORIAS_CUENTA = ("Arriendo", "Energía", "Agua", "Gas", "Internet y teléfono", "Nómina",
+                     "Mantenimiento", "Impuestos y trámites", "Otros")
+
+
+def listar_cuentas():
+    filas = datos.fetchall("SELECT id, nombre, categoria, valor, activa FROM t_cuentas ORDER BY categoria, nombre")
+    return [{"id": int(f["id"]), "nombre": f["nombre"], "categoria": f["categoria"],
+             "valor": int(f["valor"]), "activa": bool(f["activa"])} for f in filas]
+
+
+def cuentas_seguras():
+    """Como listar_cuentas, pero si la tabla aún no existe (falta correr 004) no tumba la tienda."""
+    try:
+        return listar_cuentas()
+    except Exception:
+        logging.getLogger(__name__).warning("No se pudo leer t_cuentas (¿falta ejecutar 004_cuentas.sql?)")
+        return None
+
+
+def total_cuentas(cuentas):
+    return sum(c["valor"] for c in cuentas if c["activa"])
+
+
+def guardar_cuenta(d):
+    nombre = " ".join(str(d.get("nombre", "")).split())
+    categoria = str(d.get("categoria", "")).strip()
+    if not nombre or len(nombre) > 80:
+        raise TiendaError("El nombre de la cuenta es obligatorio (máximo 80 caracteres).")
+    if categoria not in CATEGORIAS_CUENTA:
+        raise TiendaError("Elige una categoría de la lista.")
+    valor = _entero(d.get("valor"), "Valor al mes", minimo=1)
+    activa = 1 if d.get("activa", True) else 0
+    cid = d.get("id")
+    with datos.transaccion() as cur:
+        if cid not in (None, "", 0):
+            cur.execute("UPDATE t_cuentas SET nombre = %s, categoria = %s, valor = %s, activa = %s WHERE id = %s",
+                        (nombre, categoria, valor, activa, _entero(cid, "Cuenta", minimo=1)))
+            if not cur.rowcount:
+                raise TiendaError("Esa cuenta ya no existe.")
+        else:
+            cur.execute("INSERT INTO t_cuentas (nombre, categoria, valor, activa) VALUES (%s, %s, %s, %s)",
+                        (nombre, categoria, valor, activa))
+    return listar_cuentas()
+
+
+def borrar_cuenta(cid):
+    if not datos.execute_rowcount("DELETE FROM t_cuentas WHERE id = %s", (_entero(cid, "Cuenta", minimo=1),)):
+        raise TiendaError("Esa cuenta ya no existe.")
+    return listar_cuentas()
