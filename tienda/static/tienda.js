@@ -482,7 +482,7 @@ if (typeof document !== "undefined") (function () {
     $("tTres").innerHTML =
       `<div class="t-numero"><span>Vendiste</span><strong>${fmt(r.vendiste)}</strong></div>`
       + `<div class="t-numero"><span>Gastaste</span><strong>${fmt(r.gastaste)}</strong></div>`
-      + `<div class="t-numero ${bien ? "bien" : "mal"}"><span>${bien ? "Te quedó" : "Perdiste"}</span><strong>${fmt(Math.abs(r.quedo))}</strong></div>`;
+      + `<div class="t-numero ${bien ? "bien" : "mal"}"><span>Te queda</span><strong>${bien ? "" : "− "}${fmt(Math.abs(r.quedo))}</strong></div>`;
     const hayCuentas = r.filas.some((f) => f.id);
     $("mcLista").innerHTML = r.filas.map((f) =>
       `<div class="t-fila-c"><span class="t-fila-nombre"><strong>${esc(f.nombre)}</strong><small>${esc(f.sub)}</small></span>`
