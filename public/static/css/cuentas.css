@@ -1,38 +1,106 @@
-/* Mis cuentas (CEA): pocas cosas, letras grandes, sin gráficas */
-.mc-titulo{font-size:1.8rem;font-weight:800;margin-bottom:.25rem}
-.mc-sub{color:var(--text-muted);font-size:1rem}
-.mc-centro{text-align:center;margin:.75rem 0 1.25rem}
-.mc-mes{display:flex;align-items:center;justify-content:center;gap:1rem;margin:1rem 0}
-.mc-mes strong{font-size:1.5rem;min-width:11rem;text-align:center;text-transform:capitalize}
-.mc-mes button{width:56px;height:56px;border-radius:50%;border:2px solid var(--border-color);background:var(--bg-card);color:var(--text-main);font-size:1.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.mc-mes button:disabled{opacity:.3;cursor:default}
-.mc-tres{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
-.mc-numero{border:2px solid var(--border-color);border-radius:18px;padding:1.2rem;text-align:center;background:var(--bg-card)}
-.mc-numero span{display:block;font-size:1.1rem;font-weight:700;color:var(--text-muted);margin-bottom:.35rem}
-.mc-numero strong{font-size:2.1rem;font-weight:800}
-.mc-numero.bien{border-color:var(--accent-green)}.mc-numero.bien strong{color:var(--accent-green)}
-.mc-numero.mal{border-color:var(--accent-red)}.mc-numero.mal strong{color:var(--accent-red)}
-.mc-grande{font-size:1.35rem;font-weight:800;margin-bottom:.75rem}
-.mc-fila{display:grid;grid-template-columns:1fr auto;gap:.5rem .9rem;align-items:center;padding:1rem 0;border-bottom:1px solid var(--border-color)}
-.mc-fila:last-child{border-bottom:none}
-.mc-fila-nombre strong{display:block;font-size:1.15rem}
-.mc-fila-nombre small{color:var(--text-muted);font-size:.9rem}
-.mc-fila-valor{font-size:1.25rem;font-weight:800;text-align:right}
-.mc-fila-btns{grid-column:1/-1;display:flex;gap:.6rem}
-.mc-fila-btns .btn-action{min-height:44px;padding:.5rem 1.1rem;font-size:1rem}
-.mc-btn-grande{width:100%;min-height:60px;margin-top:1rem;font-size:1.1rem;justify-content:center}
-.mc-hint{font-size:1rem;color:var(--text-muted);padding:1rem 0}
+/* Mis cuentas (CEA): paleta del logo (negro, naranja, rojo del aro, morado, línea amarilla de la carretera).
+   Colores pensados para leerse bien en modo claro y en modo noche; esquinas poco redondeadas. */
 
-.mc-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:1rem;z-index:200}
+.mc-pagina{
+  --mc-fondo:#F6F4F1; --mc-card:#FFFFFF; --mc-borde:#E4DFD8; --mc-tx:#1E1428; --mc-mu:#6B6477; --mc-titulo:#2B1B3D;
+  --mc-naranja:#F29A2E; --mc-verde:#0F7B55; --mc-rojo:#C2331D;
+  --mc-verde-fondo:#E6F4EE; --mc-rojo-fondo:#FBEAE6;
+  --mc-fila-alt:rgba(0,0,0,.025); --mc-fila-hover:rgba(242,154,46,.12);
+  --mc-fija-fondo:#FDEBD0; --mc-fija-txt:#7A4A05; --mc-caja-fondo:#E9E2F2; --mc-caja-txt:#2B1B3D;
+  --mc-radio:6px;
+  color:var(--mc-tx);
+}
+:root[data-theme="night"] .mc-pagina{
+  --mc-fondo:#0F0D14; --mc-card:#1A1622; --mc-borde:#2E2739; --mc-tx:#F2EFF5; --mc-mu:#A79FB5; --mc-titulo:#FFFFFF;
+  --mc-naranja:#F5A33C; --mc-verde:#3ED6A0; --mc-rojo:#FF7A63;
+  --mc-verde-fondo:#14271F; --mc-rojo-fondo:#2A1A1D;
+  --mc-fila-alt:rgba(255,255,255,.03); --mc-fila-hover:rgba(245,163,60,.14);
+  --mc-fija-fondo:#3A2A10; --mc-fija-txt:#F5B35E; --mc-caja-fondo:#2D2545; --mc-caja-txt:#CDBBFF;
+}
+
+/* Cabecera: título a la izquierda, mes a la derecha */
+.mc-cabecera{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem 1.5rem;flex-wrap:wrap}
+.mc-titulo{font-size:1.9rem;font-weight:800;line-height:1.15;color:var(--mc-titulo)}
+.mc-sub{color:var(--mc-mu);font-size:.95rem;margin-top:.3rem;max-width:34rem}
+.mc-mes{display:flex;align-items:stretch;border:1px solid var(--mc-borde);border-radius:var(--mc-radio);background:var(--mc-card);overflow:hidden}
+.mc-mes strong{display:flex;align-items:center;justify-content:center;min-width:12rem;padding:0 1rem;font-size:1.05rem;color:var(--mc-tx);border-left:1px solid var(--mc-borde);border-right:1px solid var(--mc-borde)}
+.mc-mes button{width:48px;height:48px;border:0;background:transparent;color:var(--mc-tx);font-size:1.5rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.mc-mes button:hover:not(:disabled){background:var(--mc-fila-hover)}
+.mc-mes button:disabled{opacity:.3;cursor:default}
+/* Línea amarilla punteada, como la de la carretera del logo */
+.mc-via{height:0;border-top:3px dashed #F2C811;margin:1.25rem 0}
+
+/* Los tres totales */
+.mc-tres{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.mc-numero{background:var(--mc-card);border:1px solid var(--mc-borde);border-left:6px solid var(--mc-borde);border-radius:var(--mc-radio);padding:1rem 1.25rem}
+.mc-numero span{display:block;font-size:.78rem;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--mc-mu);margin-bottom:.3rem}
+.mc-numero strong{display:block;font-size:2rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.mc-numero.entro{border-left-color:var(--mc-verde)}.mc-numero.entro strong{color:var(--mc-verde)}
+.mc-numero.salio{border-left-color:var(--mc-rojo)}.mc-numero.salio strong{color:var(--mc-rojo)}
+.mc-numero.bien{border-left-color:var(--mc-verde);background:var(--mc-verde-fondo)}.mc-numero.bien strong{color:var(--mc-verde)}
+.mc-numero.mal{border-left-color:var(--mc-rojo);background:var(--mc-rojo-fondo)}.mc-numero.mal strong{color:var(--mc-rojo)}
+.mc-centro{margin:.75rem 0 1.25rem;font-size:.88rem}
+
+/* Dos columnas: de dónde entró (angosta) y en qué se fue (ancha) */
+.mc-columnas{display:grid;grid-template-columns:1fr;gap:1.25rem;align-items:start}
+@media (min-width:1000px){.mc-columnas{grid-template-columns:minmax(0,5fr) minmax(0,7fr)}}
+.mc-pagina .card-bento{background:var(--mc-card);border:1px solid var(--mc-borde);border-radius:var(--mc-radio);margin-bottom:0;padding:1.25rem 1.5rem}
+.mc-pagina .card-bento.entra{border-top:4px solid var(--mc-verde)}
+.mc-pagina .card-bento.sale{border-top:4px solid var(--mc-rojo)}
+.mc-grande{font-size:1.15rem;font-weight:800;margin-bottom:.5rem;color:var(--mc-titulo)}
+
+/* Filas: nombre a la izquierda, valor alineado a la derecha */
+.mc-fila{display:grid;grid-template-columns:1fr auto;gap:.35rem 1rem;align-items:center;padding:.8rem .75rem;border-bottom:1px solid var(--mc-borde)}
+.mc-fila:nth-child(even){background:var(--mc-fila-alt)}
+.mc-fila:hover{background:var(--mc-fila-hover)}
+.mc-fila.con-btns{grid-template-columns:1fr auto auto}
+.mc-fila-nombre strong{display:block;font-size:1.02rem;font-weight:700}
+.mc-fila-nombre small{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;color:var(--mc-mu);font-size:.85rem;margin-top:.15rem}
+.mc-fila-valor{font-size:1.1rem;font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+.mc-entradas .mc-fila-valor{color:var(--mc-verde)}
+.mc-gastos .mc-fila-valor{color:var(--mc-rojo)}
+.mc-fila-btns{display:flex;gap:.5rem}
+.mc-pagina .mc-fila-btns .btn-action{min-height:38px;padding:.35rem .9rem;font-size:.88rem;border-radius:var(--mc-radio);background:transparent;border:1px solid var(--mc-borde);color:var(--mc-tx)}
+.mc-pagina .mc-fila-btns .btn-action:hover{background:var(--mc-fila-hover)}
+.mc-pagina .mc-fila-btns .btn-action.red{border-color:var(--mc-rojo);color:var(--mc-rojo)}
+.mc-pagina .mc-fila-btns .btn-action.red:hover{background:var(--mc-rojo-fondo)}
+
+/* Etiqueta pequeña: cuenta fija o salida de la caja */
+.mc-tag{display:inline-block;padding:2px 7px;border-radius:3px;font-size:.66rem;font-weight:800;letter-spacing:.6px;text-transform:uppercase}
+.mc-tag.fija{background:var(--mc-fija-fondo);color:var(--mc-fija-txt)}
+.mc-tag.caja{background:var(--mc-caja-fondo);color:var(--mc-caja-txt)}
+
+.mc-total{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding:.9rem .75rem .2rem;margin-top:.25rem;border-top:2px solid var(--mc-borde)}
+.mc-total span{font-size:.8rem;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--mc-mu)}
+.mc-total strong{font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums}
+.mc-entradas .mc-total strong{color:var(--mc-verde)}
+.mc-gastos .mc-total strong{color:var(--mc-rojo)}
+
+/* Botones principales en naranja del logo, con letra negra para que se lean */
+.mc-pagina .btn-action.green{background:var(--mc-naranja);border:none;color:#141414;font-weight:800}
+.mc-pagina .btn-action.green:hover{filter:brightness(1.07)}
+.mc-pagina .mc-btn-grande{width:100%;min-height:52px;margin-top:1rem;font-size:1rem;justify-content:center;border-radius:var(--mc-radio)}
+.mc-hint{font-size:.95rem;color:var(--mc-mu);padding:.9rem .75rem}
+
+/* Ventana para agregar o cambiar una cuenta */
+.mc-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:1rem;z-index:200}
 .mc-modal.on{display:flex}
-.mc-modal-panel{width:min(480px,100%);max-height:92dvh;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border-color);border-radius:18px;padding:1.5rem;box-shadow:0 24px 80px rgba(0,0,0,.3)}
-.mc-modal-panel h3{margin-bottom:.8rem;font-size:1.2rem}
-.mc-modal-panel .input-clean{font-size:16px}
+.mc-modal-panel{width:min(480px,100%);max-height:92dvh;overflow-y:auto;background:var(--mc-card);color:var(--mc-tx);border:1px solid var(--mc-borde);border-top:4px solid var(--mc-naranja);border-radius:var(--mc-radio);padding:1.5rem;box-shadow:0 24px 80px rgba(0,0,0,.4)}
+.mc-modal-panel h3{margin-bottom:1rem;font-size:1.2rem;color:var(--mc-titulo)}
+.mc-modal-panel .lbl{color:var(--mc-mu)}
+.mc-modal-panel .input-clean{font-size:16px;border-radius:var(--mc-radio);padding:.7rem .9rem;background:var(--mc-fondo);border:1px solid var(--mc-borde);color:var(--mc-tx)}
+.mc-modal-panel .input-clean:focus{border-color:var(--mc-naranja)}
 .mc-modal-botones{display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem}
-.mc-modal-botones .btn-action{min-height:48px}
+.mc-modal-panel .mc-modal-botones .btn-action{min-height:46px;border-radius:var(--mc-radio)}
+.mc-modal-panel .mc-modal-botones .btn-action:not(.green){background:transparent;border:1px solid var(--mc-borde);color:var(--mc-tx)}
 
 @media (max-width:700px){
+  .mc-cabecera{align-items:stretch}
+  .mc-mes{width:100%}
+  .mc-mes strong{flex:1;min-width:0}
   .mc-tres{grid-template-columns:1fr}
-  .mc-numero strong{font-size:1.8rem}
+  .mc-numero strong{font-size:1.7rem}
+  .mc-fila.con-btns{grid-template-columns:1fr auto}
+  .mc-fila-btns{grid-column:1/-1}
   .mc-modal-botones .btn-action{flex:1}
 }
