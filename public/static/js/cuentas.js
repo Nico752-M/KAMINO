@@ -8,7 +8,7 @@
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
   const mesDe = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-  const mesTexto = (m) => { const [y, n] = m.split("-"); return MESES[Number(n) - 1] + " de " + y; };
+  const mesTexto = (m) => { const [y, n] = m.split("-"); const nombre = MESES[Number(n) - 1]; return nombre[0].toUpperCase() + nombre.slice(1) + " de " + y; };
 
   const estado = { mes: null, datos: null };
 
@@ -44,7 +44,7 @@
   }
 
   const fila = (f, conBotones) =>
-    `<div class="mc-fila"><span class="mc-fila-nombre"><strong>${esc(f.nombre)}</strong><small>${esc(f.sub)}</small></span>`
+    `<div class="mc-fila${conBotones && f.id ? " con-btns" : ""}"><span class="mc-fila-nombre"><strong>${esc(f.nombre)}</strong><small>${conBotones ? `<span class="mc-tag ${f.id ? "fija" : "caja"}">${f.id ? "Cuenta fija" : "Caja"}</span>` : ""}${esc(f.sub)}</small></span>`
     + `<span class="mc-fila-valor">${fmt(f.valor)}</span>`
     + (conBotones && f.id ? `<span class="mc-fila-btns"><button type="button" class="btn-action" data-editar="${f.id}">Cambiar</button><button type="button" class="btn-action red" data-borrar="${f.id}">Quitar</button></span>` : "")
     + `</div>`;
@@ -55,14 +55,16 @@
     $("mesSig").disabled = r.mes >= mesDe(new Date());
     const bien = r.quedo >= 0;
     $("mcTres").innerHTML =
-      `<div class="mc-numero"><span>Entró</span><strong>${fmt(r.entro)}</strong></div>`
-      + `<div class="mc-numero"><span>Salió</span><strong>${fmt(r.salio)}</strong></div>`
+      `<div class="mc-numero entro"><span>Entró</span><strong>${fmt(r.entro)}</strong></div>`
+      + `<div class="mc-numero salio"><span>Salió</span><strong>${fmt(r.salio)}</strong></div>`
       + `<div class="mc-numero ${bien ? "bien" : "mal"}"><span>Te queda</span><strong>${bien ? "" : "− "}${fmt(Math.abs(r.quedo))}</strong></div>`;
+    const total = (texto, valor) => `<div class="mc-total"><span>${texto}</span><strong>${fmt(valor)}</strong></div>`;
     $("mcEntradas").innerHTML = r.entradas.length
-      ? r.entradas.map((f) => fila(f, false)).join("")
+      ? r.entradas.map((f) => fila(f, false)).join("") + total("Total que entró", r.entro)
       : `<p class="mc-hint">En este mes no entró plata por pagos ni por la caja.</p>`;
     const hayFijas = r.gastos.some((f) => f.id);
     $("mcGastos").innerHTML = r.gastos.map((f) => fila(f, true)).join("")
+      + (r.gastos.length ? total("Total que salió", r.salio) : "")
       + (hayFijas ? "" : `<p class="mc-hint">Todavía no has anotado cuentas fijas. Toca el botón verde para agregar la primera, por ejemplo el arriendo.</p>`);
   }
 
