@@ -4,29 +4,36 @@
 {% block buscador %}{% endblock %}
 
 {% block contenido %}
+<div class="mc-pagina">
 <div class="alerta error" id="mcAviso" style="display:none"></div>
 
-<h1 class="mc-titulo">Mis cuentas</h1>
-<p class="mc-sub">Todo lo que entró y lo que salió del CEA este mes: pagos, caja y cuentas fijas como arriendo, luz o nómina.</p>
-
-<div class="mc-mes">
-  <button type="button" id="mesAnt" aria-label="Mes anterior"><i class="ri-arrow-left-s-line"></i></button>
-  <strong id="mesNombre">—</strong>
-  <button type="button" id="mesSig" aria-label="Mes siguiente"><i class="ri-arrow-right-s-line"></i></button>
+<div class="mc-cabecera">
+  <div>
+    <h1 class="mc-titulo">Mis cuentas</h1>
+    <p class="mc-sub">Lo que entró y lo que salió del CEA este mes: pagos, caja y cuentas fijas como arriendo, luz o nómina.</p>
+  </div>
+  <div class="mc-mes">
+    <button type="button" id="mesAnt" aria-label="Mes anterior"><i class="ri-arrow-left-s-line"></i></button>
+    <strong id="mesNombre">—</strong>
+    <button type="button" id="mesSig" aria-label="Mes siguiente"><i class="ri-arrow-right-s-line"></i></button>
+  </div>
 </div>
+<div class="mc-via" aria-hidden="true"></div>
 
 <div class="mc-tres" id="mcTres"></div>
 <p class="mc-sub mc-centro">Te queda = lo que entró menos lo que salió. Si sale en rojo con un menos (−), salió más plata de la que entró.</p>
 
-<div class="card-bento">
-  <h2 class="mc-grande">¿De dónde entró la plata?</h2>
-  <div id="mcEntradas"></div>
-</div>
+<div class="mc-columnas">
+  <div class="card-bento entra">
+    <h2 class="mc-grande">¿De dónde entró la plata?</h2>
+    <div id="mcEntradas" class="mc-entradas"></div>
+  </div>
 
-<div class="card-bento">
-  <h2 class="mc-grande">¿En qué se fue la plata?</h2>
-  <div id="mcGastos"></div>
-  <button type="button" class="btn-action green mc-btn-grande" id="mcAgregar"><i class="ri-add-line"></i> Agregar una cuenta (luz, agua, arriendo, nómina…)</button>
+  <div class="card-bento sale">
+    <h2 class="mc-grande">¿En qué se fue la plata?</h2>
+    <div id="mcGastos" class="mc-gastos"></div>
+    <button type="button" class="btn-action green mc-btn-grande" id="mcAgregar"><i class="ri-add-line"></i> Agregar una cuenta (luz, agua, arriendo, nómina…)</button>
+  </div>
 </div>
 
 <div class="mc-modal" id="mCuentas" role="dialog" aria-modal="true" aria-labelledby="mCuentasTitulo">
@@ -40,6 +47,7 @@
     <p class="alerta error" id="cuError" style="display:none"></p>
     <div class="mc-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="cuGuardar"><i class="ri-check-line"></i> Guardar</button></div>
   </div>
+</div>
 </div>
 {% endblock %}
 
