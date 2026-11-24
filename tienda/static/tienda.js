@@ -42,7 +42,8 @@ if (typeof document !== "undefined") (function () {
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (inp) => inp.addEventListener("input", () => { const v = digitos(inp.value); inp.value = v ? miles(v) : ""; });
 
-  const estado = { cuentas: [], productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false };
+  const estado = { cuentas: [], productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false, permisos: [] };
+  const puede = (codigo) => estado.permisos.includes(codigo);
   const ui = { mes: null, cuActiva: true, vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
 
   // ── Comunicación con el servidor ──
@@ -65,9 +66,11 @@ if (typeof document !== "undefined") (function () {
   function aviso(msg) { const a = $("tAviso"); a.textContent = msg || ""; a.style.display = msg ? "block" : "none"; }
 
   // ── Navegación entre vistas ──
-  const VISTAS = ["caja", "inventario", "ventas", "ganancias", "cuentas"];
+  const VISTAS = ["caja", "inventario", "ventas", "ganancias", "cuentas", "usuarios"];
+  // Cada pantalla pide su permiso; quien no lo tiene vuelve a la caja.
+  const PERMISO_VISTA = { inventario: "tienda_inventario", ganancias: "tienda_ganancias", cuentas: "tienda_cuentas", usuarios: "tienda_usuarios" };
   async function irA(vista) {
-    if (!VISTAS.includes(vista)) vista = "caja";
+    if (!VISTAS.includes(vista) || (PERMISO_VISTA[vista] && !puede(PERMISO_VISTA[vista]))) vista = "caja";
     ui.vista = vista;
     VISTAS.forEach((v) => { $("vista-" + v).hidden = v !== vista; });
     document.querySelectorAll("[data-vista]").forEach((a) => a.classList.toggle("active", a.dataset.vista === vista));
@@ -77,6 +80,7 @@ if (typeof document !== "undefined") (function () {
     if (vista === "ventas") await cargarVentas();
     if (vista === "cuentas") await cargarMes();
     if (vista === "ganancias") await cargarGanancias();
+    if (vista === "usuarios") await cargarUsuarios();
   }
   window.addEventListener("hashchange", () => irA(location.hash.replace("#", "")));
 
@@ -91,8 +95,10 @@ if (typeof document !== "undefined") (function () {
     const lista = estado.productos.filter((p) => (ui.cat === "Todos" || p.cat === ui.cat) && (!q || p.nombre.toLowerCase().includes(q)));
     if (!estado.productos.length) {
       $("tGrid").innerHTML = `<div class="t-vacio-grande"><i class="ri-store-2-line"></i><strong>Aún no tienes productos</strong>
-        <p>Agrega el primero en Inventario y aparecerá aquí para vender.</p>
-        <a class="btn-action green" href="#inventario"><i class="ri-add-line"></i> Ir a Inventario</a></div>`;
+        ${puede("tienda_inventario")
+          ? `<p>Agrega el primero en Inventario y aparecerá aquí para vender.</p>
+        <a class="btn-action green" href="#inventario"><i class="ri-add-line"></i> Ir a Inventario</a>`
+          : `<p>Pídele a quien administra la tienda que agregue los productos.</p>`}</div>`;
     } else {
       $("tGrid").innerHTML = lista.length ? lista.map((p) => {
         const est = K.estadoStock(p), enCarrito = ui.carrito[p.id] || 0, quedan = p.stock - enCarrito;
@@ -165,13 +171,13 @@ if (typeof document !== "undefined") (function () {
 
   async function recargarProductos() {
     const r = await api("/tienda/api/estado");
-    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
+    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; estado.permisos = r.permisos || estado.permisos; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
   }
 
   // ── INVENTARIO ──
   function badgeBajo() {
     const n = estado.productos.filter((p) => K.estadoStock(p) !== "ok").length;
-    const b = $("badgeBajo"); b.hidden = !n; b.textContent = n;
+    const b = $("badgeBajo"); if (!b) return; b.hidden = !n; b.textContent = n;
   }
 
   function renderInventario() {
@@ -249,7 +255,8 @@ if (typeof document !== "undefined") (function () {
   function pintarCierre(r) {
     estado.abierta = r.abierta;
     $("cAbrir").hidden = r.abierta;
-    $("cAbierta").hidden = !r.abierta;
+    $("cAbierta").hidden = !r.abierta || !puede("tienda_caja");
+    $("cEstadoSimple").hidden = !(r.abierta && !puede("tienda_caja"));
     const card = (t, v, c) => `<div class="stat-card ${c || ""}"><span>${t}</span><strong>${fmt(v)}</strong></div>`;
     $("cResumen").innerHTML = card("Base", r.base) + card("Ventas en efectivo", r.efectivo, "green")
       + card("Entradas", r.ingresos) + card("Salidas", r.egresos, "red") + card("Efectivo esperado", r.esperado, "gold");
@@ -345,7 +352,7 @@ if (typeof document !== "undefined") (function () {
       return `<tr class="${v.anulada ? "t-venta-anulada" : ""}"><td><strong>${v.id}</strong></td><td>${fecha}</td>
         <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}${v.metodo2 ? " + " + esc(v.metodo2) : ""}</td><td><strong>${fmt(v.total)}</strong>${v.descuento ? `<br><small>desc. ${fmt(v.descuento)}</small>` : ""}</td><td>${esc(v.cajero)}</td>
         <td>${v.anulada ? `<span class="badge-status urgent" title="${esc(v.motivo)}">Anulada</span>` : `<span class="badge-status active">Válida</span>`}</td>
-        <td><div class="t-acciones"><a href="/tienda/pdf/venta/${v.id}" download><i class="ri-file-pdf-line"></i> PDF</a>${v.anulada ? "" : `<button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button>`}</div></td></tr>`;
+        <td><div class="t-acciones"><a href="/tienda/pdf/venta/${v.id}" download><i class="ri-file-pdf-line"></i> PDF</a>${v.anulada || !puede("tienda_anular") ? "" : `<button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button>`}</div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-receipt-line"></i><strong>Aún no hay ventas</strong></div></td></tr>`;
   }
   function abrirAnular(id) {
@@ -518,6 +525,59 @@ if (typeof document !== "undefined") (function () {
     cuentasActualizadas(r);
   }
 
+  // ── USUARIOS DE LA TIENDA ──
+  let usu = { lista: [], catalogo: {}, plantillas: {}, nombres: {} };
+  const etiquetaPermiso = (txt) => { const t = String(txt).replace(/^Tienda:\s*/, ""); return t.charAt(0).toUpperCase() + t.slice(1); };
+  function aplicarUsuarios(r) { usu = { lista: r.usuarios, catalogo: r.catalogo, plantillas: r.plantillas, nombres: r.plantillaNombres || {}, yo: r.yo }; }
+  async function cargarUsuarios() {
+    const r = await conCarga(() => api("/tienda/api/usuarios"));
+    if (!r.ok) { aviso(r.error); return; }
+    aviso(""); aplicarUsuarios(r); renderUsuarios();
+  }
+  function renderUsuarios() {
+    $("tUsuarios").querySelector("tbody").innerHTML = usu.lista.length ? usu.lista.map((u) => {
+      const acceso = u.ultimoAcceso ? hora(u.ultimoAcceso) : "Nunca";
+      const plantilla = usu.nombres[u.rol] || (u.permisos.includes("tienda_usuarios") ? "Administrador" : "Personalizado");
+      return `<tr><td><strong>${esc(u.nombre)}</strong>${u.id === usu.yo ? " <small>(tú)</small>" : ""}</td><td>${esc(u.usuario)}</td><td>${esc(plantilla)}</td>
+        <td><span class="badge-status ${u.activo ? "active" : "muted"}">${u.activo ? "Activa" : "Inactiva"}</span></td><td>${acceso}</td>
+        <td><div class="t-acciones"><button type="button" data-uedit="${u.id}"><i class="ri-edit-line"></i> Editar</button></div></td></tr>`;
+    }).join("") : `<tr><td colspan="6"><div class="t-vacio-grande"><i class="ri-user-line"></i><strong>Aún no hay usuarios</strong></div></td></tr>`;
+  }
+  function pintarPermisosUsuario(lista) {
+    const marcados = new Set(lista || []);
+    $("usPermisos").innerHTML = Object.keys(usu.catalogo).map((c) =>
+      `<label class="t-ajuste" style="border:0"><span><strong>${esc(etiquetaPermiso(usu.catalogo[c]))}</strong></span>
+        <input type="checkbox" data-perm="${c}" ${marcados.has(c) || c === "ver_tienda" ? "checked" : ""} ${c === "ver_tienda" ? "disabled" : ""}></label>`).join("");
+  }
+  function abrirUsuario(id) {
+    const u = id ? usu.lista.find((x) => x.id === Number(id)) : null;
+    $("usId").value = u ? u.id : "";
+    $("mUsuarioTitulo").textContent = u ? "Editar usuario" : "Nuevo usuario";
+    $("usNombre").value = u ? u.nombre : "";
+    $("usUsuario").value = u ? u.usuario : ""; $("usUsuario").disabled = !!u;
+    $("usRol").innerHTML = Object.keys(usu.plantillas).map((r) => `<option value="${r}">${esc(usu.nombres[r] || r)}</option>`).join("");
+    $("usRol").value = u ? (u.permisos.includes("tienda_usuarios") ? "tienda_admin" : "tienda_cajero") : "tienda_cajero";
+    $("usPass").value = ""; $("usPass2").value = "";
+    $("usPassEtq").textContent = u ? "Nueva contraseña (opcional)" : "Contraseña inicial";
+    $("usActivo").checked = u ? u.activo : true;
+    $("usActivoFila").style.display = u ? "" : "none";
+    pintarPermisosUsuario(u ? u.permisos : usu.plantillas[$("usRol").value]);
+    $("usError").style.display = "none"; abrirModal("mUsuario"); $("usNombre").focus();
+  }
+  async function guardarUsuario() {
+    const id = $("usId").value;
+    const permisos = Array.from(new Set(["ver_tienda", ...Array.from($("usPermisos").querySelectorAll("input[data-perm]:checked")).map((i) => i.dataset.perm)]));
+    if (!$("usNombre").value.trim()) return errorEn("usError", "Escribe el nombre.");
+    if (!id && !$("usUsuario").value.trim()) return errorEn("usError", "Escribe el usuario de ingreso.");
+    if (!id && !$("usPass").value) return errorEn("usError", "Escribe la contraseña inicial.");
+    if ($("usPass").value !== $("usPass2").value) return errorEn("usError", "Las contraseñas no coinciden.");
+    const cuerpo = { nombre: $("usNombre").value, rol: $("usRol").value, permisos, password: $("usPass").value, confirmacion: $("usPass2").value };
+    if (id) cuerpo.activo = $("usActivo").checked; else cuerpo.usuario = $("usUsuario").value;
+    const r = await conCarga(() => api(id ? `/tienda/api/usuarios/${id}` : "/tienda/api/usuarios", cuerpo));
+    if (!r.ok) return errorEn("usError", r.error);
+    aplicarUsuarios(r); cerrarModales(); renderUsuarios();
+  }
+
   // ── Eventos ──
   document.addEventListener("click", (e) => {
     const t = e.target.closest("button, [data-cat]"); if (!t) return;
@@ -536,6 +596,7 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.anular) abrirAnular(t.dataset.anular);
     else if (t.dataset.cedit) editarCuenta(t.dataset.cedit);
     else if (t.dataset.cdel) borrarCuenta(t.dataset.cdel);
+    else if (t.dataset.uedit) abrirUsuario(t.dataset.uedit);
     else if (t.dataset.p) { ui.periodo = t.dataset.p; cargarGanancias(); }
     else if (t.hasAttribute("data-cerrar")) cerrarModales();
   });
@@ -558,6 +619,9 @@ if (typeof document !== "undefined") (function () {
   $("mesAnt").addEventListener("click", () => mesMover(-1));
   $("mesSig").addEventListener("click", () => mesMover(1));
   $("cuGuardar").addEventListener("click", guardarCuenta);
+  $("usNuevo").addEventListener("click", () => abrirUsuario(null));
+  $("usGuardar").addEventListener("click", guardarUsuario);
+  $("usRol").addEventListener("change", () => pintarPermisosUsuario(usu.plantillas[$("usRol").value]));
   money($("cuValor"));
   $("cGuardar").addEventListener("click", guardarCierre);
   $("mvGuardar").addEventListener("click", guardarMov);
@@ -571,7 +635,7 @@ if (typeof document !== "undefined") (function () {
   (async function iniciar() {
     const r = await conCarga(() => api("/tienda/api/estado"));
     if (!r.ok) { aviso(r.error); $("tGrid").innerHTML = ""; return; }
-    estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta;
+    estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; estado.permisos = r.permisos || estado.permisos;
     fijarRango("hoy");
     irA(location.hash.replace("#", "") || "caja");
   })();
