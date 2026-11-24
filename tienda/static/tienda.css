@@ -224,3 +224,13 @@
 .t-btn-grande{width:100%;min-height:60px;margin-top:1rem;font-size:1.1rem;justify-content:center}
 .t-hint{font-size:1rem;color:var(--text-muted);padding:1rem 0}
 @media (max-width:700px){.t-tres{grid-template-columns:1fr}.t-numero strong{font-size:1.8rem}}
+
+/* ── Servicios ── */
+.t-tabs{margin-bottom:.75rem}
+.t-chip i{margin-right:.25rem}
+.t-req{display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem;flex-wrap:wrap}
+.t-req-tipo{font-size:.68rem;font-weight:800;text-transform:uppercase;color:var(--text-muted);min-width:68px}
+.t-req .input-clean{flex:1;min-width:140px}
+.t-req-ob{font-size:.75rem;display:flex;gap:.25rem;align-items:center;white-space:nowrap}
+.t-req button{background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-main);border-radius:8px;padding:.25rem .5rem;cursor:pointer}
+.t-linea .t-det-srv{display:block;font-size:.72rem;color:var(--text-muted);font-weight:400}
