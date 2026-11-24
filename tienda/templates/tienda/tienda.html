@@ -7,6 +7,7 @@
     <nav class="preview-menu" aria-label="Navegación de la tienda">
       <a href="#caja" data-vista="caja" class="active"><i class="ri-shopping-cart-2-line"></i> Caja</a>
       {% if 'tienda_inventario' in permisos %}<a href="#inventario" data-vista="inventario"><i class="ri-archive-line"></i> Inventario <span class="nav-badge" id="badgeBajo" hidden></span></a>{% endif %}
+      {% if 'tienda_servicios' in permisos %}<a href="#servicios" data-vista="servicios"><i class="ri-customer-service-2-line"></i> Servicios</a>{% endif %}
       <a href="#ventas" data-vista="ventas"><i class="ri-receipt-line"></i> Ventas</a>
       {% if 'tienda_cuentas' in permisos %}<a href="#cuentas" data-vista="cuentas"><i class="ri-wallet-3-line"></i> Mis cuentas</a>{% endif %}
       {% if 'tienda_ganancias' in permisos %}<a href="#ganancias" data-vista="ganancias"><i class="ri-line-chart-line"></i> Ganancias</a>{% endif %}
@@ -23,7 +24,7 @@
 <!-- ═════════ CAJA ═════════ -->
 <section class="t-vista" id="vista-caja">
   <h1 class="t-titulo">Caja</h1>
-  <p class="t-sub">Toca un producto para agregarlo. Al cobrar, el inventario se descuenta solo.</p>
+  <p class="t-sub">Toca un producto o un servicio para agregarlo. Al cobrar, el inventario se descuenta solo; los servicios no usan inventario.</p>
   <div class="t-caja-cerrada" id="tCajaCerrada" hidden>
     <i class="ri-lock-2-line"></i>
     <span><strong>La caja está cerrada</strong><small>Pon la base para poder vender.</small></span>
@@ -31,8 +32,12 @@
   </div>
   <div class="t-pos">
     <div class="t-pos-productos">
+      <div class="t-chips t-tabs" id="tTabs">
+        <button type="button" class="t-chip on" data-tab="productos"><i class="ri-shopping-bag-3-line"></i> Productos</button>
+        <button type="button" class="t-chip" data-tab="servicios"><i class="ri-customer-service-2-line"></i> Servicios</button>
+      </div>
       <div class="t-filtros">
-        <div class="t-buscar"><i class="ri-search-line"></i><input type="search" id="tBuscar" placeholder="Buscar producto…" autocomplete="off"></div>
+        <div class="t-buscar"><i class="ri-search-line"></i><input type="search" id="tBuscar" placeholder="Buscar…" autocomplete="off"></div>
         <div class="t-chips" id="tChips"></div>
       </div>
       <div class="t-grid" id="tGrid"></div>
@@ -40,6 +45,7 @@
     <aside class="t-carrito card-bento">
       <div class="t-carrito-head"><strong>Venta actual</strong><button type="button" class="t-link" id="tVaciar">Vaciar</button></div>
       <div id="tLineas" class="t-lineas"></div>
+      <div id="tLineasSrv" class="t-lineas"></div>
       <div class="field"><label class="lbl" for="tDescVal">Descuento (opcional)</label>
         <div style="display:flex;gap:.4rem"><input class="input-clean" id="tDescVal" inputmode="numeric" autocomplete="off" placeholder="0">
           <select class="input-clean" id="tDescTipo" style="max-width:84px"><option value="valor">$</option><option value="pct">%</option></select></div>
@@ -79,6 +85,23 @@
     <div class="t-card-titulo"><i class="ri-delete-bin-2-line"></i> Bajas recientes (mermas)</div>
     <div id="tMermas" class="t-detalle" style="max-width:none"></div>
   </div>
+</section>
+
+<!-- ═════════ SERVICIOS ═════════ -->
+<section class="t-vista" id="vista-servicios" hidden>
+  <div class="t-cabecera">
+    <div><h1 class="t-titulo">Servicios</h1>
+    <p class="t-sub">Trámites, SOAT, peritajes y asesorías. Aquí cambias precios y lo que se pide para dar cada servicio.</p></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button type="button" class="btn-action green" id="sNuevo"><i class="ri-add-line"></i> Nuevo servicio</button>
+    </div>
+  </div>
+  <div class="card-bento" style="padding:0;overflow:hidden">
+    <div class="t-tabla-wrap"><table class="table-clean" id="tServicios">
+      <thead><tr><th>Servicio</th><th>Categoría</th><th>Precio</th><th>A terceros</th><th>Tu ganancia</th><th>Requisitos</th><th>Acciones</th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+  <p class="hint">«A terceros» es lo que se paga a la aseguradora, al tránsito, etc. Esa plata no es ganancia: en Ganancias solo cuenta lo que te queda a ti.</p>
 </section>
 
 <!-- ═════════ VENTAS ═════════ -->
@@ -241,6 +264,46 @@
     <label class="t-ajuste" id="usActivoFila" style="border:0"><span><strong>Cuenta activa</strong><small>Si la desactivas, esa persona ya no puede entrar.</small></span><input type="checkbox" id="usActivo" checked></label>
     <p class="alerta error" id="usError" style="display:none"></p>
     <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="usGuardar"><i class="ri-save-line"></i> Guardar</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mServicio" role="dialog" aria-modal="true" aria-labelledby="mServicioTitulo">
+  <div class="t-modal-panel" style="max-width:560px">
+    <h3 id="mServicioTitulo">Nuevo servicio</h3>
+    <input type="hidden" id="sId">
+    <div class="field"><label class="lbl" for="sNombre">Nombre</label><input class="input-clean" id="sNombre" maxlength="80" autocomplete="off"></div>
+    <div class="field"><label class="lbl" for="sCat">Categoría</label><input class="input-clean" id="sCat" maxlength="40" list="tCatsSrv" autocomplete="off"><datalist id="tCatsSrv"></datalist></div>
+    <label class="t-ajuste" style="border:0"><span><strong>El precio se escribe al cobrar</strong><small class="hint" style="display:block">Para multas, impuestos y asesorías, donde el valor cambia cada vez.</small></span><input type="checkbox" id="sVariable"></label>
+    <div class="t-dos">
+      <div class="field"><label class="lbl" for="sPrecio" id="sPrecioEtq">Precio</label><input class="input-clean" id="sPrecio" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label class="lbl" for="sTerceros">Valor a terceros</label><input class="input-clean" id="sTerceros" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+    </div>
+    <p class="hint" id="sGanancia"></p>
+    <div class="field"><span class="lbl">Qué se pide para este servicio</span>
+      <div id="sReqs"></div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+        <button type="button" class="btn-action sm" data-radd="DOCUMENTO"><i class="ri-file-list-3-line"></i> Agregar documento</button>
+        <button type="button" class="btn-action sm" data-radd="DATO"><i class="ri-edit-box-line"></i> Agregar dato a anotar</button>
+      </div>
+      <p class="hint">Los documentos son una lista para revisar con el cliente. Los datos (placa, nombre, celular…) se escriben al cobrar y salen en el recibo.</p>
+    </div>
+    <p class="alerta error" id="sError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="sGuardar"><i class="ri-save-line"></i> Guardar</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mSrv" role="dialog" aria-modal="true" aria-labelledby="mSrvTitulo">
+  <div class="t-modal-panel" style="max-width:480px">
+    <h3 id="mSrvTitulo">Servicio</h3>
+    <p class="hint" id="mSrvFijo"></p>
+    <div id="mSrvPrecios" class="t-dos">
+      <div class="field"><label class="lbl" for="mSrvPrecio">Precio a cobrar</label><input class="input-clean" id="mSrvPrecio" inputmode="numeric" autocomplete="off"></div>
+      <div class="field"><label class="lbl" for="mSrvTerceros">Valor a terceros</label><input class="input-clean" id="mSrvTerceros" inputmode="numeric" autocomplete="off" placeholder="0"></div>
+    </div>
+    <div id="mSrvDocs"></div>
+    <div id="mSrvDatos"></div>
+    <p class="alerta error" id="mSrvError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="mSrvAgregar"><i class="ri-add-line"></i> Agregar a la venta</button></div>
   </div>
 </div>
 
