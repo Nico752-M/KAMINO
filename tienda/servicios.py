@@ -121,6 +121,147 @@ def quitar_producto(pid):
         raise TiendaError("El producto ya no existe.")
 
 
+# ═════════════════ Servicios (trámites, SOAT, peritajes, asesorías…) ═════════════════
+TIPOS_REQUISITO = ("DOCUMENTO", "DATO")
+
+
+def listar_servicios():
+    filas = datos.fetchall("""
+        SELECT id, nombre, categoria, precio, costo_terceros, precio_variable
+        FROM t_servicios WHERE activo = 1 ORDER BY categoria, nombre""")
+    reqs = datos.fetchall("""
+        SELECT id, servicio_id, tipo, texto, obligatorio FROM t_servicio_requisitos
+        ORDER BY servicio_id, orden, id""")
+    por_servicio = {}
+    for r in reqs:
+        por_servicio.setdefault(int(r["servicio_id"]), []).append(
+            {"id": int(r["id"]), "tipo": r["tipo"], "texto": r["texto"], "obligatorio": int(r["obligatorio"]) == 1})
+    return [{"id": int(f["id"]), "nombre": f["nombre"], "cat": f["categoria"], "precio": int(f["precio"]),
+             "terceros": int(f["costo_terceros"]), "variable": int(f["precio_variable"]) == 1,
+             "requisitos": por_servicio.get(int(f["id"]), [])} for f in filas]
+
+
+def servicios_seguros():
+    """Como listar_servicios, pero si las tablas aún no existen (falta correr 005) no tumba la tienda."""
+    try:
+        return listar_servicios()
+    except Exception:
+        logging.getLogger(__name__).warning("No se pudo leer t_servicios (¿falta ejecutar 005_servicios.sql?)")
+        return None
+
+
+def _requisitos_validos(lista):
+    if lista in (None, ""):
+        return []
+    if not isinstance(lista, list) or len(lista) > 30:
+        raise TiendaError("Los requisitos no son válidos (máximo 30).")
+    limpios = []
+    for r in lista:
+        if not isinstance(r, dict):
+            raise TiendaError("Los requisitos no son válidos.")
+        tipo = r.get("tipo")
+        texto = " ".join(str(r.get("texto", "")).split())
+        if tipo not in TIPOS_REQUISITO:
+            raise TiendaError("Cada requisito debe ser un documento o un dato a anotar.")
+        if not texto:
+            continue                                   # una fila vacía simplemente se ignora
+        if len(texto) > 80:
+            raise TiendaError("Cada requisito admite hasta 80 caracteres.")
+        limpios.append((tipo, texto, 1 if tipo == "DATO" and r.get("obligatorio") else 0))
+    return limpios
+
+
+def guardar_servicio(d):
+    nombre = " ".join(str(d.get("nombre", "")).split())
+    categoria = " ".join(str(d.get("categoria", "")).split()) or "General"
+    if not nombre or len(nombre) > 80:
+        raise TiendaError("El nombre es obligatorio (máximo 80 caracteres).")
+    if len(categoria) > 40:
+        raise TiendaError("La categoría admite hasta 40 caracteres.")
+    variable = 1 if d.get("variable") else 0
+    precio = _entero(d.get("precio") or 0, "Precio", minimo=0 if variable else 1)
+    terceros = _entero(d.get("terceros") or 0, "Valor a terceros")
+    if not variable and terceros > precio:
+        raise TiendaError("El valor a terceros es mayor que el precio: cobrarías con pérdida.")
+    requisitos = _requisitos_validos(d.get("requisitos"))
+    sid = d.get("id")
+    sid = _entero(sid, "Servicio", minimo=1) if sid not in (None, "", 0) else None
+
+    with datos.transaccion() as cur:
+        repetido = cur.execute(
+            "SELECT id FROM t_servicios WHERE activo = 1 AND LOWER(nombre) = LOWER(%s)", (nombre,)).fetchall()
+        if any(int(r["id"]) != (sid or 0) for r in repetido):
+            raise TiendaError("Ya existe un servicio con ese nombre.")
+        if sid:
+            if not cur.execute("SELECT id FROM t_servicios WHERE id = %s AND activo = 1 FOR UPDATE", (sid,)).fetchone():
+                raise TiendaError("El servicio ya no existe.")
+            cur.execute("""UPDATE t_servicios SET nombre = %s, categoria = %s, precio = %s, costo_terceros = %s,
+                                  precio_variable = %s WHERE id = %s""",
+                        (nombre, categoria, precio, terceros, variable, sid))
+            cur.execute("DELETE FROM t_servicio_requisitos WHERE servicio_id = %s", (sid,))
+        else:
+            cur.execute("""INSERT INTO t_servicios (id, nombre, categoria, precio, costo_terceros, precio_variable)
+                           VALUES (t_seq_servicios.NEXTVAL, %s, %s, %s, %s, %s)""",
+                        (nombre, categoria, precio, terceros, variable))
+            sid = int(cur.execute("SELECT t_seq_servicios.CURRVAL AS id FROM dual").fetchone()["id"])
+        if requisitos:
+            cur.executemany("""INSERT INTO t_servicio_requisitos (servicio_id, tipo, texto, obligatorio, orden)
+                               VALUES (%s, %s, %s, %s, %s)""",
+                            [(sid, tipo, texto, oblig, i) for i, (tipo, texto, oblig) in enumerate(requisitos)])
+
+
+def quitar_servicio(sid):
+    """Lo oculta (no se borra) para conservar el historial de ventas."""
+    n = datos.execute_rowcount("UPDATE t_servicios SET activo = 0 WHERE id = %s AND activo = 1", (sid,))
+    if not n:
+        raise TiendaError("El servicio ya no existe.")
+
+
+def _preparar_servicios(cur, pedidos):
+    """Valida las líneas de servicio de una venta. Precio y costo salen de la base, salvo en los de precio variable."""
+    if not pedidos:
+        return []
+    if any(not isinstance(p, dict) for p in pedidos):
+        raise TiendaError("La venta no es válida.")
+    ids = sorted({_entero(p.get("id"), "Servicio", minimo=1) for p in pedidos})
+    filas = cur.execute(f"""
+        SELECT id, nombre, precio, costo_terceros, precio_variable FROM t_servicios
+        WHERE activo = 1 AND id IN ({_marcadores(len(ids))})""", tuple(ids)).fetchall()
+    base = {int(f["id"]): f for f in filas}
+    if len(base) != len(ids):
+        raise TiendaError("Un servicio de la venta ya no está disponible. Recarga la pantalla.")
+    reqs = {}
+    for r in cur.execute(f"""
+            SELECT id, servicio_id, texto, obligatorio FROM t_servicio_requisitos
+            WHERE tipo = 'DATO' AND servicio_id IN ({_marcadores(len(ids))}) ORDER BY orden, id""",
+            tuple(ids)).fetchall():
+        reqs.setdefault(int(r["servicio_id"]), []).append(r)
+    lineas = []
+    for p in pedidos:
+        f = base[int(p["id"])]
+        nombre = f["nombre"]
+        if int(f["precio_variable"]) == 1:
+            precio = _entero(p.get("precio"), f"Precio de «{nombre}»", minimo=1)
+            costo = _entero(p.get("terceros") or 0, f"Valor a terceros de «{nombre}»")
+        else:
+            precio, costo = int(f["precio"]), int(f["costo_terceros"])
+            if precio <= 0:
+                raise TiendaError(f"«{nombre}» no tiene precio. Ponlo en Servicios o márcalo como precio variable.")
+        if costo > precio:
+            raise TiendaError(f"«{nombre}»: el valor a terceros es mayor que el precio cobrado.")
+        escritos = p.get("datos") if isinstance(p.get("datos"), dict) else {}
+        partes = []
+        for r in reqs.get(int(f["id"]), []):
+            valor = " ".join(str(escritos.get(str(int(r["id"])), "")).split())[:80]
+            if not valor and int(r["obligatorio"]) == 1:
+                raise TiendaError(f"«{nombre}»: falta anotar {r['texto']}.")
+            if valor:
+                partes.append(f"{r['texto']}: {valor}")
+        lineas.append({"id": int(f["id"]), "nombre": nombre, "precio": precio, "costo": costo,
+                       "detalle": " · ".join(partes)[:500] or None})
+    return lineas
+
+
 # ═════════════════ Ventas ═════════════════
 def _descuento(d, subtotal):
     """Descuento en $ o % ya convertido a pesos. 0 si no hay."""
@@ -141,11 +282,17 @@ def caja_abierta():
     return cierre_hoy()["abierta"]
 
 
-def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None):
+def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None, servicios_items=None):
     if metodo not in METODOS:
         raise TiendaError("Elige un método de pago válido.")
-    if not isinstance(items, list) or not items or len(items) > 60:
-        raise TiendaError("Agrega al menos un producto a la venta.")
+    items = items if items is not None else []
+    servicios_items = servicios_items if servicios_items is not None else []
+    if not isinstance(items, list) or not isinstance(servicios_items, list):
+        raise TiendaError("La venta no es válida.")
+    if not items and not servicios_items:
+        raise TiendaError("Agrega al menos un producto o un servicio a la venta.")
+    if len(items) + len(servicios_items) > 60:
+        raise TiendaError("La venta tiene demasiadas líneas (máximo 60).")
     pedido = {}
     for it in items:
         if not isinstance(it, dict):
@@ -158,12 +305,14 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None
 
     ids = sorted(pedido)
     with datos.transaccion() as cur:
-        filas = cur.execute(f"""
-            SELECT id, nombre, costo, precio, stock, stock_minimo FROM t_productos
-            WHERE activo = 1 AND id IN ({_marcadores(len(ids))}) ORDER BY id FOR UPDATE""",
-            tuple(ids)).fetchall()
-        if len(filas) != len(ids):
-            raise TiendaError("Un producto de la venta ya no está disponible. Recarga la pantalla.")
+        filas = []
+        if ids:
+            filas = cur.execute(f"""
+                SELECT id, nombre, costo, precio, stock, stock_minimo FROM t_productos
+                WHERE activo = 1 AND id IN ({_marcadores(len(ids))}) ORDER BY id FOR UPDATE""",
+                tuple(ids)).fetchall()
+            if len(filas) != len(ids):
+                raise TiendaError("Un producto de la venta ya no está disponible. Recarga la pantalla.")
         total = costo_total = 0
         lineas = []
         for f in filas:                      # precios y costos salen de la base, no del navegador
@@ -173,6 +322,10 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None
             total += cant * int(f["precio"])
             costo_total += cant * int(f["costo"])
             lineas.append((f, cant))
+        lineas_srv = _preparar_servicios(cur, servicios_items)
+        for sv in lineas_srv:                # el costo de un servicio es lo que se paga a terceros
+            total += sv["precio"]
+            costo_total += sv["costo"]
         desc = _descuento(descuento, total)
         total -= desc
         metodo2, monto2 = None, 0
@@ -191,22 +344,30 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None
                     (metodo, total, costo_total, recibido, cambio, usuario["id"], usuario["nombre"][:100],
                      metodo2, monto2, desc))
         vid = int(cur.execute("SELECT t_seq_ventas.CURRVAL AS id FROM dual").fetchone()["id"])
-        cur.executemany("UPDATE t_productos SET stock = stock - %s WHERE id = %s",
-                        [(c, int(f["id"])) for f, c in lineas])
-        cur.executemany("""INSERT INTO t_venta_items (venta_id, producto_id, nombre, cantidad, precio, costo)
-                           VALUES (%s, %s, %s, %s, %s, %s)""",
-                        [(vid, int(f["id"]), f["nombre"], c, int(f["precio"]), int(f["costo"])) for f, c in lineas])
-        cur.executemany("""INSERT INTO t_movimientos
-                             (producto_id, tipo, cantidad, stock_resultante, venta_id, usuario_id)
-                           VALUES (%s, 'VENTA', %s, %s, %s, %s)""",
-                        [(int(f["id"]), -c, int(f["stock"]) - c, vid, usuario["id"]) for f, c in lineas])
+        if lineas:
+            cur.executemany("UPDATE t_productos SET stock = stock - %s WHERE id = %s",
+                            [(c, int(f["id"])) for f, c in lineas])
+            cur.executemany("""INSERT INTO t_venta_items (venta_id, producto_id, nombre, cantidad, precio, costo)
+                               VALUES (%s, %s, %s, %s, %s, %s)""",
+                            [(vid, int(f["id"]), f["nombre"], c, int(f["precio"]), int(f["costo"])) for f, c in lineas])
+            cur.executemany("""INSERT INTO t_movimientos
+                                 (producto_id, tipo, cantidad, stock_resultante, venta_id, usuario_id)
+                               VALUES (%s, 'VENTA', %s, %s, %s, %s)""",
+                            [(int(f["id"]), -c, int(f["stock"]) - c, vid, usuario["id"]) for f, c in lineas])
+        if lineas_srv:
+            cur.executemany("""INSERT INTO t_venta_items (venta_id, servicio_id, nombre, cantidad, precio, costo, detalle)
+                               VALUES (%s, %s, %s, 1, %s, %s, %s)""",
+                            [(vid, sv["id"], sv["nombre"], sv["precio"], sv["costo"], sv["detalle"]) for sv in lineas_srv])
 
     bajos = [{"nombre": f["nombre"], "stock": int(f["stock"]) - c}
              for f, c in lineas if int(f["stock"]) - c <= int(f["stock_minimo"])]
     return {
         "venta": {"id": vid, "metodo": metodo, "total": total, "metodo2": metodo2, "monto2": monto2,
                   "descuento": desc,
-                  "items": [{"nombre": f["nombre"], "cant": c, "precio": int(f["precio"])} for f, c in lineas]},
+                  "items": [{"nombre": f["nombre"], "cant": c, "precio": int(f["precio"]), "detalle": None}
+                            for f, c in lineas]
+                           + [{"nombre": sv["nombre"], "cant": 1, "precio": sv["precio"], "detalle": sv["detalle"]}
+                              for sv in lineas_srv]},
         "devuelta": cambio, "bajos": bajos,
         "stocks": [{"id": int(f["id"]), "stock": int(f["stock"]) - c} for f, c in lineas],
     }
@@ -220,12 +381,13 @@ def listar_ventas(limite=60):
         return []
     ids = [int(v["id"]) for v in ventas]
     items = datos.fetchall(f"""
-        SELECT venta_id, nombre, cantidad, precio FROM t_venta_items
+        SELECT venta_id, nombre, cantidad, precio, detalle FROM t_venta_items
         WHERE venta_id IN ({_marcadores(len(ids))}) ORDER BY id""", tuple(ids))
     por_venta = {}
     for it in items:
         por_venta.setdefault(int(it["venta_id"]), []).append(
-            {"nombre": it["nombre"], "cant": int(it["cantidad"]), "precio": int(it["precio"])})
+            {"nombre": it["nombre"], "cant": int(it["cantidad"]), "precio": int(it["precio"]),
+             "detalle": it["detalle"]})
     return [{"id": int(v["id"]), "fecha": v["fecha"].isoformat() if v["fecha"] else None,
              "metodo": v["metodo"], "metodo2": v["metodo2"], "total": int(v["total"]),
              "descuento": int(v["descuento"]), "cajero": v["usuario_nombre"],
@@ -239,7 +401,7 @@ def obtener_venta(vid):
     if not v:
         raise TiendaError("La venta no existe.")
     items = datos.fetchall(
-        "SELECT nombre, cantidad, precio FROM t_venta_items WHERE venta_id = %s ORDER BY id", (vid,))
+        "SELECT nombre, cantidad, precio, detalle FROM t_venta_items WHERE venta_id = %s ORDER BY id", (vid,))
     return v, items
 
 
@@ -253,22 +415,24 @@ def anular_venta(vid, motivo, usuario):
             raise TiendaError("La venta no existe.")
         if int(venta["anulada"]) == 1:
             raise TiendaError("Esa venta ya estaba anulada.")
-        items = cur.execute("SELECT producto_id, cantidad FROM t_venta_items WHERE venta_id = %s", (vid,)).fetchall()
+        items = cur.execute("""SELECT producto_id, cantidad FROM t_venta_items
+                               WHERE venta_id = %s AND producto_id IS NOT NULL""", (vid,)).fetchall()
         pids = sorted({int(i["producto_id"]) for i in items})
-        stock = {int(f["id"]): int(f["stock"]) for f in cur.execute(
-            f"SELECT id, stock FROM t_productos WHERE id IN ({_marcadores(len(pids))}) ORDER BY id FOR UPDATE",
-            tuple(pids)).fetchall()}
-        movimientos, cambios = [], []
-        for i in items:
-            pid, cant = int(i["producto_id"]), int(i["cantidad"])
-            stock[pid] += cant
-            cambios.append((cant, pid))
-            movimientos.append((pid, cant, stock[pid], vid, usuario["id"]))
-        cur.executemany("UPDATE t_productos SET stock = stock + %s WHERE id = %s", cambios)
-        cur.executemany("""INSERT INTO t_movimientos
-                             (producto_id, tipo, cantidad, stock_resultante, venta_id, usuario_id, nota)
-                           VALUES (%s, 'ANULACION', %s, %s, %s, %s, 'Venta anulada: el producto regresa al stock')""",
-                        movimientos)
+        if pids:                              # los servicios no mueven inventario
+            stock = {int(f["id"]): int(f["stock"]) for f in cur.execute(
+                f"SELECT id, stock FROM t_productos WHERE id IN ({_marcadores(len(pids))}) ORDER BY id FOR UPDATE",
+                tuple(pids)).fetchall()}
+            movimientos, cambios = [], []
+            for i in items:
+                pid, cant = int(i["producto_id"]), int(i["cantidad"])
+                stock[pid] += cant
+                cambios.append((cant, pid))
+                movimientos.append((pid, cant, stock[pid], vid, usuario["id"]))
+            cur.executemany("UPDATE t_productos SET stock = stock + %s WHERE id = %s", cambios)
+            cur.executemany("""INSERT INTO t_movimientos
+                                 (producto_id, tipo, cantidad, stock_resultante, venta_id, usuario_id, nota)
+                               VALUES (%s, 'ANULACION', %s, %s, %s, %s, 'Venta anulada: el producto regresa al stock')""",
+                            movimientos)
         cur.execute("""UPDATE t_ventas SET anulada = 1, motivo_anulacion = %s, fecha_anulacion = CURRENT_TIMESTAMP,
                               anulada_por = %s WHERE id = %s""", (motivo, usuario["nombre"][:100], vid))
 
@@ -306,6 +470,11 @@ def ganancias(periodo):
             WHERE i.producto_id = p.id AND v.anulada = 0 AND v.fecha >= %s)
         ORDER BY parado DESC FETCH FIRST 8 ROWS ONLY""", (hoy_ - timedelta(days=29),))
 
+    srv = datos.fetchone("""
+        SELECT NVL(SUM(i.precio), 0) AS cobrado, NVL(SUM(i.costo), 0) AS terceros, COUNT(*) AS n
+        FROM t_venta_items i JOIN t_ventas v ON v.id = i.venta_id
+        WHERE i.servicio_id IS NOT NULL AND v.anulada = 0 AND v.fecha >= %s""", (desde,))
+
     nuevo = lambda: {"n": 0, "ventas": 0, "costo": 0, "noEfectivo": 0, "gastos": 0, "mermas": 0}
     por_fecha, metodos, horas = {}, {}, {}
     ant = {"n": 0, "ventas": 0, "bruta": 0}
@@ -338,6 +507,7 @@ def ganancias(periodo):
     return {"dias": dias, "porDia": por_dia,
             "top": [{"nombre": t["nombre"], "unidades": int(t["unidades"]), "ganancia": int(t["ganancia"])} for t in top],
             "anterior": ant,
+            "servicios": {"n": int(srv["n"]), "cobrado": int(srv["cobrado"]), "terceros": int(srv["terceros"])},
             "metodos": [{"metodo": m, "valor": val} for m, val in sorted(metodos.items(), key=lambda kv: -kv[1])],
             "horas": [{"h": h, **horas[h]} for h in sorted(horas)],
             "quietos": [{"nombre": q["nombre"], "stock": int(q["stock"]), "parado": int(q["parado"])} for q in quietos]}
