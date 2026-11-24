@@ -51,12 +51,28 @@
     return true;
   }
 
+  const abonoInicial = document.getElementById("abonoInicial");
+  const saldoPendiente = document.getElementById("saldoPendienteAbono");
+
+  function mostrarSaldo() {
+    const total = soloDigitos(precioTotal.value);
+    const abono = soloDigitos(abonoInicial.value);
+    if (!total || !abono) {
+      saldoPendiente.style.display = "none";
+      return;
+    }
+    const saldo = Math.max(total - abono, 0);
+    saldoPendiente.textContent = "Saldo pendiente tras el abono: $ " + window.formatearMiles(saldo);
+    saldoPendiente.style.display = "block";
+  }
+
   function calcularTotal() {
     const base = soloDigitos(precioBase.value);
     const pesos = soloDigitos(descuentoPesos.value);
     const porcentaje = Number(descuentoPorcentaje.value) || 0;
     const descuento = pesos || Math.round(base * porcentaje / 100);
     precioTotal.value = base ? window.formatearMiles(Math.max(base - descuento, 0)) : "";
+    mostrarSaldo();
   }
 
   const opcionesTarifas = [...categoria.options].map((opcion) => ({
@@ -164,7 +180,9 @@
     const total = soloDigitos(precioTotal.value);
     descuentoPesos.value = base && total <= base ? window.formatearMiles(base - total) : "";
     descuentoPorcentaje.value = "";
+    mostrarSaldo();
   });
+  abonoInicial.addEventListener("input", mostrarSaldo);
 
   // Alumno que ya venía cursando: pide la fecha original y trata el abono como "ya pagado"
   const enCurso = document.getElementById("alumnoEnCurso");
@@ -195,6 +213,7 @@
     descuentoPorcentaje.value = "";
     form.querySelectorAll("[data-money-input]").forEach(window.formatearCampoMoneda);
     filtrarTarifas();
+    mostrarSaldo();
     mostrarPaso(0);
     modal.classList.add("open");
     document.getElementById("matriculaDocumento").focus();
@@ -208,10 +227,4 @@
   });
   document.getElementById("btnCerrarMatricula").addEventListener("click", cerrar);
   document.getElementById("btnCancelarMatricula").addEventListener("click", cerrar);
-  modal.addEventListener("click", (evento) => {
-    if (evento.target === modal) cerrar();
-  });
-  document.addEventListener("keydown", (evento) => {
-    if (evento.key === "Escape") cerrar();
-  });
 })();
