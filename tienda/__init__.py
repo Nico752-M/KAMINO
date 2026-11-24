@@ -13,6 +13,6 @@ bp = Blueprint(
     static_url_path="/static",     # queda en /tienda/static/...
 )
 
-from . import datos, rutas  # noqa: E402,F401  (registra las rutas)
+from . import datos, rutas, usuarios  # noqa: E402,F401  (registra las rutas)
 
 bp.teardown_app_request(datos.cerrar_conexion)
