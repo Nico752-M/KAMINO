@@ -42,9 +42,9 @@ if (typeof document !== "undefined") (function () {
   const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (inp) => inp.addEventListener("input", () => { const v = digitos(inp.value); inp.value = v ? miles(v) : ""; });
 
-  const estado = { cuentas: [], productos: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false, permisos: [] };
+  const estado = { cuentas: [], productos: [], servicios: [], ajustes: {}, ventas: [], ganancias: null, ganCache: {}, abierta: false, permisos: [] };
   const puede = (codigo) => estado.permisos.includes(codigo);
-  const ui = { mes: null, cuActiva: true, vista: "caja", cat: "Todos", q: "", carrito: {}, periodo: "30", enviando: false };
+  const ui = { mes: null, cuActiva: true, vista: "caja", cat: "Todos", q: "", carrito: {}, carritoSrv: [], kSrv: 0, tab: "productos", srv: null, reqs: [], periodo: "30", enviando: false };
 
   // ── Comunicación con el servidor ──
   async function api(url, cuerpo) {
@@ -66,9 +66,9 @@ if (typeof document !== "undefined") (function () {
   function aviso(msg) { const a = $("tAviso"); a.textContent = msg || ""; a.style.display = msg ? "block" : "none"; }
 
   // ── Navegación entre vistas ──
-  const VISTAS = ["caja", "inventario", "ventas", "ganancias", "cuentas", "usuarios"];
+  const VISTAS = ["caja", "inventario", "servicios", "ventas", "ganancias", "cuentas", "usuarios"];
   // Cada pantalla pide su permiso; quien no lo tiene vuelve a la caja.
-  const PERMISO_VISTA = { inventario: "tienda_inventario", ganancias: "tienda_ganancias", cuentas: "tienda_cuentas", usuarios: "tienda_usuarios" };
+  const PERMISO_VISTA = { inventario: "tienda_inventario", servicios: "tienda_servicios", ganancias: "tienda_ganancias", cuentas: "tienda_cuentas", usuarios: "tienda_usuarios" };
   async function irA(vista) {
     if (!VISTAS.includes(vista) || (PERMISO_VISTA[vista] && !puede(PERMISO_VISTA[vista]))) vista = "caja";
     ui.vista = vista;
@@ -77,6 +77,7 @@ if (typeof document !== "undefined") (function () {
     document.body.classList.remove("sidebar-open");
     if (vista === "caja") { await cargarCierre(); renderCaja(); }
     if (vista === "inventario") { renderInventario(); cargarMermas(); }
+    if (vista === "servicios") renderServicios();
     if (vista === "ventas") await cargarVentas();
     if (vista === "cuentas") await cargarMes();
     if (vista === "ganancias") await cargarGanancias();
@@ -86,12 +87,35 @@ if (typeof document !== "undefined") (function () {
 
   // ── CAJA ──
   const categorias = () => ["Todos", ...Array.from(new Set(estado.productos.map((p) => p.cat))).sort()];
+  const categoriasSrv = () => ["Todos", ...Array.from(new Set(estado.servicios.map((x) => x.cat))).sort()];
 
   function renderCaja() {
     $("tCajaCerrada").hidden = estado.abierta;
-    $("tChips").innerHTML = categorias().length > 2 ? categorias().map((c) =>
+    const esSrv = ui.tab === "servicios";
+    document.querySelectorAll("#tTabs [data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === ui.tab));
+    $("tBuscar").placeholder = esSrv ? "Buscar servicio…" : "Buscar producto…";
+    const cats = esSrv ? categoriasSrv() : categorias();
+    $("tChips").innerHTML = cats.length > 2 ? cats.map((c) =>
       `<button type="button" class="t-chip ${c === ui.cat ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("") : "";
     const q = ui.q.trim().toLowerCase();
+    if (esSrv) {
+      const lista = estado.servicios.filter((x) => (ui.cat === "Todos" || x.cat === ui.cat) && (!q || x.nombre.toLowerCase().includes(q)));
+      if (!estado.servicios.length) {
+        $("tGrid").innerHTML = `<div class="t-vacio-grande"><i class="ri-customer-service-2-line"></i><strong>Aún no hay servicios</strong>
+          ${puede("tienda_servicios")
+            ? `<p>Agrega el primero en Servicios y aparecerá aquí para cobrar.</p>
+          <a class="btn-action green" href="#servicios"><i class="ri-add-line"></i> Ir a Servicios</a>`
+            : `<p>Pídele a quien administra la tienda que agregue los servicios.</p>`}</div>`;
+      } else {
+        $("tGrid").innerHTML = lista.length ? lista.map((x) =>
+          `<button type="button" class="t-prod" data-sadd="${x.id}" ${!estado.abierta ? "disabled" : ""}>
+            <strong>${esc(x.nombre)}</strong><span class="precio">${x.variable ? "Precio variable" : fmt(x.precio)}</span>
+            <small>${esc(x.cat)}</small></button>`).join("")
+          : `<p class="t-vacio" style="grid-column:1/-1">No hay servicios con ese filtro.</p>`;
+      }
+      renderCarrito(); badgeBajo();
+      return;
+    }
     const lista = estado.productos.filter((p) => (ui.cat === "Todos" || p.cat === ui.cat) && (!q || p.nombre.toLowerCase().includes(q)));
     if (!estado.productos.length) {
       $("tGrid").innerHTML = `<div class="t-vacio-grande"><i class="ri-store-2-line"></i><strong>Aún no tienes productos</strong>
@@ -114,6 +138,7 @@ if (typeof document !== "undefined") (function () {
   function renderCarrito() {
     const ids = Object.keys(ui.carrito).filter((id) => ui.carrito[id] > 0);
     let total = 0;
+    const hayLineas = ids.length > 0 || ui.carritoSrv.length > 0;
     $("tLineas").innerHTML = ids.length ? ids.map((id) => {
       const p = estado.productos.find((x) => x.id === Number(id));
       if (!p) return "";
@@ -121,7 +146,12 @@ if (typeof document !== "undefined") (function () {
       return `<div class="t-linea"><strong>${esc(p.nombre)}</strong><span class="sub">${fmt(cant * p.precio)}</span>
         <div class="t-cant"><button type="button" data-menos="${id}" aria-label="Quitar uno">−</button><span>${cant}</span>
         <button type="button" data-mas="${id}" aria-label="Agregar uno">+</button></div><span></span></div>`;
-    }).join("") : `<p class="t-vacio">Aún no hay productos en la venta.</p>`;
+    }).join("") : (hayLineas ? "" : `<p class="t-vacio">Aún no hay nada en la venta.</p>`);
+    $("tLineasSrv").innerHTML = ui.carritoSrv.map((l) => {
+      total += l.precio;
+      return `<div class="t-linea"><strong>${esc(l.nombre)}${l.txt ? `<span class="t-det-srv">${esc(l.txt)}</span>` : ""}</strong><span class="sub">${fmt(l.precio)}</span>
+        <div class="t-cant"><button type="button" data-sdel="${l.k}" aria-label="Quitar servicio">×</button></div><span></span></div>`;
+    }).join("");
     const dv = digitos($("tDescVal").value);
     const desc = $("tDescTipo").value === "pct" ? Math.round(total * Math.min(dv, 100) / 100) : dv;
     const descMal = desc > 0 && desc >= total;
@@ -131,7 +161,7 @@ if (typeof document !== "undefined") (function () {
     $("tTotal").textContent = fmt(neto);
     const efectivo = $("tMetodo").value === "Efectivo";
     const rec = digitos($("tRecibido").value);
-    $("tCobrar").disabled = !estado.abierta || !ids.length || ui.enviando || descMal || (efectivo && rec <= 0);
+    $("tCobrar").disabled = !estado.abierta || !hayLineas || ui.enviando || descMal || (efectivo && rec <= 0);
     $("tCampoRecibido").style.display = efectivo ? "" : "none";
     $("tCampoResto").style.display = efectivo && rec > 0 && rec < neto ? "" : "none";
     $("tDevuelta").textContent = efectivo && rec ? (rec >= neto ? `Devuelta: ${fmt(rec - neto)}` : `Resto por cobrar: ${fmt(neto - rec)}`) : "";
@@ -148,30 +178,70 @@ if (typeof document !== "undefined") (function () {
     ui.carrito[id]--; if (ui.carrito[id] <= 0) delete ui.carrito[id]; renderCaja();
   }
 
+  // ── Servicios en la venta ──
+  const reqsDe = (s, tipo) => (s.requisitos || []).filter((r) => r.tipo === tipo);
+  function abrirSrv(id) {
+    const s = estado.servicios.find((x) => x.id === Number(id));
+    if (!s || !estado.abierta) return;
+    ui.srv = s;
+    $("mSrvTitulo").textContent = s.nombre;
+    $("mSrvPrecios").style.display = s.variable ? "" : "none";
+    $("mSrvPrecio").value = s.variable && s.precio ? miles(s.precio) : "";
+    $("mSrvTerceros").value = s.variable && s.terceros ? miles(s.terceros) : "";
+    $("mSrvFijo").textContent = s.variable ? "El precio cambia en cada cobro: escríbelo aquí." : `Precio: ${fmt(s.precio)}`;
+    const docs = reqsDe(s, "DOCUMENTO"), datosR = reqsDe(s, "DATO");
+    $("mSrvDocs").innerHTML = docs.length ? `<span class="lbl">Documentos que debe traer el cliente</span>`
+      + docs.map((d) => `<label class="t-ajuste" style="border:0"><span>${esc(d.texto)}</span><input type="checkbox"></label>`).join("") : "";
+    $("mSrvDatos").innerHTML = datosR.map((d) => `<div class="field"><label class="lbl" for="sd${d.id}">${esc(d.texto)}${d.obligatorio ? " *" : ""}</label>
+      <input class="input-clean" id="sd${d.id}" data-dato="${d.id}" maxlength="80" autocomplete="off"></div>`).join("");
+    $("mSrvError").style.display = "none"; abrirModal("mSrv");
+    const primero = $("mSrvDatos").querySelector("input") || (s.variable ? $("mSrvPrecio") : null);
+    if (primero) primero.focus();
+  }
+  function agregarServicio() {
+    const s = ui.srv; if (!s) return;
+    const precio = s.variable ? digitos($("mSrvPrecio").value) : s.precio;
+    const terceros = s.variable ? digitos($("mSrvTerceros").value) : 0;
+    if (precio <= 0) return errorEn("mSrvError", s.variable ? "Escribe el precio que vas a cobrar." : "Este servicio no tiene precio. Ponlo en Servicios.");
+    if (terceros > precio) return errorEn("mSrvError", "El valor a terceros es mayor que el precio cobrado.");
+    const datosR = {}; let falta = null;
+    $("mSrvDatos").querySelectorAll("[data-dato]").forEach((inp) => {
+      const v = inp.value.trim(); datosR[inp.dataset.dato] = v;
+      const r = (s.requisitos || []).find((x) => String(x.id) === inp.dataset.dato);
+      if (!v && r && r.obligatorio && !falta) falta = r.texto;
+    });
+    if (falta) return errorEn("mSrvError", `Falta anotar: ${falta}.`);
+    const txt = reqsDe(s, "DATO").map((r) => (datosR[r.id] ? `${r.texto}: ${datosR[r.id]}` : "")).filter(Boolean).join(" · ");
+    ui.carritoSrv.push({ k: ++ui.kSrv, id: s.id, nombre: s.nombre, precio, terceros, datos: datosR, txt });
+    cerrarModales(); renderCaja();
+  }
+  function quitarServicioVenta(k) { ui.carritoSrv = ui.carritoSrv.filter((l) => l.k !== Number(k)); renderCaja(); }
+
   async function cobrar() {
     if (ui.enviando) return;
     const items = Object.entries(ui.carrito).map(([id, cant]) => ({ id: Number(id), cant }));
+    const lineasSrv = ui.carritoSrv.map((l) => ({ id: l.id, precio: l.precio, terceros: l.terceros, datos: l.datos }));
     ui.enviando = true; $("tCobrar").disabled = true;
-    const r = await api("/tienda/api/ventas", { items, metodo: $("tMetodo").value, recibido: digitos($("tRecibido").value), resto: $("tResto").value,
+    const r = await api("/tienda/api/ventas", { items, servicios: lineasSrv, metodo: $("tMetodo").value, recibido: digitos($("tRecibido").value), resto: $("tResto").value,
       descuento: { tipo: $("tDescTipo").value, valor: digitos($("tDescVal").value) } });
     ui.enviando = false;
     if (!r.ok) { $("tError").textContent = r.error; $("tError").style.display = "block"; $("tCobrar").disabled = false; await recargarProductos(); return; }
     r.stocks.forEach((s) => { const p = estado.productos.find((x) => x.id === s.id); if (p) p.stock = s.stock; });
-    $("vResumen").innerHTML = r.venta.items.map((i) => `<div><span>${i.cant} × ${esc(i.nombre)}</span><strong>${fmt(i.cant * i.precio)}</strong></div>`).join("")
+    $("vResumen").innerHTML = r.venta.items.map((i) => `<div><span>${i.cant} × ${esc(i.nombre)}${i.detalle ? ` <small>(${esc(i.detalle)})</small>` : ""}</span><strong>${fmt(i.cant * i.precio)}</strong></div>`).join("")
       + (r.venta.descuento ? `<div><span>Descuento</span><strong>− ${fmt(r.venta.descuento)}</strong></div>` : "")
       + `<div><span>Total (${esc(r.venta.metodo)}) · venta #${r.venta.id}</span><strong>${fmt(r.venta.total)}</strong></div>`
       + (r.venta.monto2 ? `<div><span>Resto con ${esc(r.venta.metodo2)}</span><strong>${fmt(r.venta.monto2)}</strong></div>` : "")
       + (r.devuelta ? `<div><span>Devuelta</span><strong>${fmt(r.devuelta)}</strong></div>` : "");
     $("vAvisos").innerHTML = r.bajos.map((b) =>
       `<div class="t-aviso"><i class="ri-alert-line"></i> ${b.stock <= 0 ? "Se agotó" : "Queda poco de"} «${esc(b.nombre)}»${b.stock > 0 ? ` (${b.stock})` : ""}.</div>`).join("");
-    ui.carrito = {}; $("tRecibido").value = ""; $("tDescVal").value = "";
+    ui.carrito = {}; ui.carritoSrv = []; $("tRecibido").value = ""; $("tDescVal").value = "";
     $("vTicket").href = "/tienda/pdf/venta/" + r.venta.id;
     abrirModal("mVenta"); renderCaja();
   }
 
   async function recargarProductos() {
     const r = await api("/tienda/api/estado");
-    if (r.ok) { estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; estado.permisos = r.permisos || estado.permisos; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
+    if (r.ok) { estado.productos = r.productos; estado.servicios = r.servicios || estado.servicios; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; estado.permisos = r.permisos || estado.permisos; for (const id of Object.keys(ui.carrito)) if (!estado.productos.some((p) => p.id === Number(id))) delete ui.carrito[id]; renderCaja(); }
   }
 
   // ── INVENTARIO ──
@@ -200,6 +270,67 @@ if (typeof document !== "undefined") (function () {
         <button type="button" data-baja="${p.id}"><i class="ri-delete-bin-line"></i> Baja</button></div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-archive-line"></i><strong>Tu inventario está vacío</strong><p>Agrega tu primer producto con «Nuevo producto».</p></div></td></tr>`;
     badgeBajo();
+  }
+
+  // ── SERVICIOS (administración) ──
+  function renderServicios() {
+    const ls = estado.servicios;
+    $("tServicios").querySelector("tbody").innerHTML = ls.length ? ls.map((x) => {
+      const gana = x.variable ? "—" : fmt(x.precio - (x.terceros || 0));
+      const nDoc = reqsDe(x, "DOCUMENTO").length, nDat = reqsDe(x, "DATO").length;
+      const reqs = nDoc || nDat ? `${nDoc} documento${nDoc === 1 ? "" : "s"} · ${nDat} dato${nDat === 1 ? "" : "s"}` : "Ninguno";
+      return `<tr><td><strong>${esc(x.nombre)}</strong></td><td>${esc(x.cat)}</td>
+        <td>${x.variable ? `<span class="badge-status pending">Variable</span>${x.precio ? `<br><small>sugerido ${fmt(x.precio)}</small>` : ""}` : fmt(x.precio)}</td>
+        <td>${x.terceros ? fmt(x.terceros) : "—"}</td><td>${gana}</td><td><small>${reqs}</small></td>
+        <td><div class="t-acciones"><button type="button" data-sedit="${x.id}"><i class="ri-edit-line"></i> Editar</button>
+        <button type="button" data-squitar="${x.id}"><i class="ri-delete-bin-line"></i> Quitar</button></div></td></tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="t-vacio-grande"><i class="ri-customer-service-2-line"></i><strong>Aún no hay servicios</strong><p>Agrega el primero con «Nuevo servicio».</p></div></td></tr>`;
+  }
+  function pintarReqs() {
+    $("sReqs").innerHTML = ui.reqs.length ? ui.reqs.map((r, i) => `<div class="t-req">
+      <span class="t-req-tipo">${r.tipo === "DATO" ? "Dato" : "Documento"}</span>
+      <input class="input-clean" data-rtxt="${i}" maxlength="80" value="${esc(r.texto)}" placeholder="${r.tipo === "DATO" ? "Ej: Placa" : "Ej: Cédula"}" autocomplete="off">
+      ${r.tipo === "DATO" ? `<label class="t-req-ob"><input type="checkbox" data-robl="${i}" ${r.obligatorio ? "checked" : ""}> Obligatorio</label>` : ""}
+      <button type="button" data-rup="${i}" aria-label="Subir" ${i === 0 ? "disabled" : ""}>↑</button>
+      <button type="button" data-rdown="${i}" aria-label="Bajar" ${i === ui.reqs.length - 1 ? "disabled" : ""}>↓</button>
+      <button type="button" data-rdel="${i}" aria-label="Quitar requisito">×</button></div>`).join("")
+      : `<p class="hint">Sin requisitos todavía. Agrega lo que se pide para este servicio.</p>`;
+  }
+  function pintarGananciaServicio() {
+    const variable = $("sVariable").checked, precio = digitos($("sPrecio").value), terc = digitos($("sTerceros").value);
+    $("sPrecioEtq").textContent = variable ? "Precio sugerido (opcional)" : "Precio";
+    $("sGanancia").textContent = variable ? "Al cobrar se escribe el precio y el valor a terceros de ese día."
+      : (precio ? (terc > precio ? "El valor a terceros es mayor que el precio." : `Te queda ${fmt(precio - terc)} por cada servicio.`) : "");
+  }
+  function abrirServicio(id) {
+    const x = id ? estado.servicios.find((v) => v.id === Number(id)) : null;
+    $("mServicioTitulo").textContent = x ? "Editar servicio" : "Nuevo servicio";
+    $("sId").value = x ? x.id : ""; $("sNombre").value = x ? x.nombre : ""; $("sCat").value = x ? x.cat : "";
+    $("sPrecio").value = x && x.precio ? miles(x.precio) : ""; $("sTerceros").value = x && x.terceros ? miles(x.terceros) : "";
+    $("sVariable").checked = x ? x.variable : false;
+    $("tCatsSrv").innerHTML = categoriasSrv().filter((c) => c !== "Todos").map((c) => `<option value="${esc(c)}">`).join("");
+    ui.reqs = x ? (x.requisitos || []).map((r) => ({ tipo: r.tipo, texto: r.texto, obligatorio: r.obligatorio })) : [];
+    pintarReqs(); pintarGananciaServicio();
+    $("sError").style.display = "none"; abrirModal("mServicio"); $("sNombre").focus();
+  }
+  async function guardarServicio() {
+    const cuerpo = { id: Number($("sId").value) || null, nombre: $("sNombre").value, categoria: $("sCat").value,
+      variable: $("sVariable").checked, precio: digitos($("sPrecio").value), terceros: digitos($("sTerceros").value),
+      requisitos: ui.reqs.filter((r) => r.texto.trim()) };
+    if (!cuerpo.nombre.trim()) return errorEn("sError", "Escribe el nombre del servicio.");
+    if (!cuerpo.variable && cuerpo.precio <= 0) return errorEn("sError", "Escribe el precio, o marca «El precio se escribe al cobrar».");
+    if (!cuerpo.variable && cuerpo.terceros > cuerpo.precio) return errorEn("sError", "El valor a terceros es mayor que el precio.");
+    const r = await conCarga(() => api("/tienda/api/servicios", cuerpo));
+    if (!r.ok) return errorEn("sError", r.error);
+    estado.servicios = r.servicios; cerrarModales(); renderServicios();
+    ui.carritoSrv = ui.carritoSrv.filter((l) => estado.servicios.some((x) => x.id === l.id));
+  }
+  async function quitarServicio(id) {
+    if (!confirm("¿Quitar este servicio? Deja de aparecer en la caja; las ventas anteriores se conservan.")) return;
+    const r = await conCarga(() => api(`/tienda/api/servicios/${id}/quitar`, {}));
+    if (!r.ok) return aviso(r.error);
+    aviso(""); estado.servicios = r.servicios; renderServicios();
+    ui.carritoSrv = ui.carritoSrv.filter((l) => estado.servicios.some((x) => x.id === l.id));
   }
 
   // ── Modales ──
@@ -347,7 +478,7 @@ if (typeof document !== "undefined") (function () {
   }
   function renderVentas() {
     $("tVentas").querySelector("tbody").innerHTML = estado.ventas.length ? estado.ventas.map((v) => {
-      const detalle = v.items.map((i) => `${i.cant} × ${esc(i.nombre)}`).join(", ");
+      const detalle = v.items.map((i) => `${i.cant} × ${esc(i.nombre)}${i.detalle ? ` <small>(${esc(i.detalle)})</small>` : ""}`).join(", ");
       const fecha = v.fecha ? new Date(v.fecha).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" }) : "";
       return `<tr class="${v.anulada ? "t-venta-anulada" : ""}"><td><strong>${v.id}</strong></td><td>${fecha}</td>
         <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}${v.metodo2 ? " + " + esc(v.metodo2) : ""}</td><td><strong>${fmt(v.total)}</strong>${v.descuento ? `<br><small>desc. ${fmt(v.descuento)}</small>` : ""}</td><td>${esc(v.cajero)}</td>
@@ -398,10 +529,11 @@ if (typeof document !== "undefined") (function () {
        <div class="stat-card ${r.neta >= 0 ? "green" : "red"}"><span>Ganancia neta</span><strong>${fmt(r.neta)}</strong><small>margen ${r.margen.toFixed(1)} %</small></div>
        <div class="stat-card gold"><span>Ganancia bruta</span><strong>${fmt(r.gananciaBruta)}</strong><small>${cmp(r.gananciaBruta, ant.bruta)}</small></div>
        <div class="stat-card"><span>Ticket promedio</span><strong>${fmt(r.numVentas ? r.bruto / r.numVentas : 0)}</strong><small>por venta</small></div>
+       ${g.servicios && g.servicios.n ? `<div class="stat-card"><span>Dinero de terceros</span><strong>${fmt(g.servicios.terceros)}</strong><small>${g.servicios.n} servicio${g.servicios.n > 1 ? "s" : ""} · ya descontado como costo</small></div>` : ""}
        ${a.usarReserva ? `<div class="stat-card green"><span>Libre para ti</span><strong>${fmt(r.disponible)}</strong><small>tras reservar ${fmt(r.reserva)}</small></div>` : ""}`;
     const fila = (txt, val, cls) => `<div class="t-casc ${cls || ""}"><span>${txt}</span><span>${cls && cls.includes("resta") && val ? "− " : ""}${fmt(val)}</span></div>`;
     $("tCascada").innerHTML =
-      fila("Ventas", r.bruto) + fila("Costo de la mercancía", r.costo, "resta") + fila("Ganancia bruta", r.gananciaBruta, "sub")
+      fila("Ventas", r.bruto) + fila("Costo de la mercancía y pagos a terceros", r.costo, "resta") + fila("Ganancia bruta", r.gananciaBruta, "sub")
       + fila(`Comisión Nequi y tarjeta (${a.comision} %)`, r.comision, "resta" + (a.usarComision ? "" : " apagado"))
       + fila(`Impuesto sobre ventas (${a.impuesto} %)`, r.impuesto, "resta" + (a.usarImpuesto ? "" : " apagado"))
       + fila(`Cuentas del negocio (${r.dias} día${r.dias > 1 ? "s" : ""})`, r.gastos, "resta" + (a.usarGastos ? "" : " apagado")) + detalleCuentas(r.dias, a.usarGastos)
@@ -585,6 +717,15 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.mas) agregar(t.dataset.mas);
     else if (t.dataset.menos) quitar(t.dataset.menos);
     else if (t.dataset.cat) { ui.cat = t.dataset.cat; renderCaja(); }
+    else if (t.dataset.tab) { ui.tab = t.dataset.tab; ui.cat = "Todos"; ui.q = ""; $("tBuscar").value = ""; renderCaja(); }
+    else if (t.dataset.sadd) abrirSrv(t.dataset.sadd);
+    else if (t.dataset.sdel) quitarServicioVenta(t.dataset.sdel);
+    else if (t.dataset.sedit) abrirServicio(t.dataset.sedit);
+    else if (t.dataset.squitar) quitarServicio(t.dataset.squitar);
+    else if (t.dataset.radd) { ui.reqs.push({ tipo: t.dataset.radd, texto: "", obligatorio: false }); pintarReqs(); const c = $("sReqs").querySelectorAll("[data-rtxt]"); if (c.length) c[c.length - 1].focus(); }
+    else if (t.dataset.rdel !== undefined) { ui.reqs.splice(Number(t.dataset.rdel), 1); pintarReqs(); }
+    else if (t.dataset.rup !== undefined) { const i = Number(t.dataset.rup); if (i > 0) { [ui.reqs[i - 1], ui.reqs[i]] = [ui.reqs[i], ui.reqs[i - 1]]; pintarReqs(); } }
+    else if (t.dataset.rdown !== undefined) { const i = Number(t.dataset.rdown); if (i < ui.reqs.length - 1) { [ui.reqs[i + 1], ui.reqs[i]] = [ui.reqs[i], ui.reqs[i + 1]]; pintarReqs(); } }
     else if (t.dataset.reab) abrirReabastecer(t.dataset.reab);
     else if (t.dataset.edit) abrirProducto(t.dataset.edit);
     else if (t.dataset.hist) abrirHistorial(t.dataset.hist);
@@ -611,6 +752,14 @@ if (typeof document !== "undefined") (function () {
   $("tCobrar").addEventListener("click", cobrar);
   $("tNuevo").addEventListener("click", () => abrirProducto(null));
   $("pGuardar").addEventListener("click", guardarProducto);
+  $("sNuevo").addEventListener("click", () => abrirServicio(null));
+  $("sGuardar").addEventListener("click", guardarServicio);
+  $("mSrvAgregar").addEventListener("click", agregarServicio);
+  $("sReqs").addEventListener("input", (e) => { if (e.target.dataset.rtxt !== undefined) ui.reqs[Number(e.target.dataset.rtxt)].texto = e.target.value; });
+  $("sReqs").addEventListener("change", (e) => { if (e.target.dataset.robl !== undefined) ui.reqs[Number(e.target.dataset.robl)].obligatorio = e.target.checked; });
+  ["sPrecio", "sTerceros", "mSrvPrecio", "mSrvTerceros"].forEach((id) => money($(id)));
+  ["sPrecio", "sTerceros"].forEach((id) => $(id).addEventListener("input", pintarGananciaServicio));
+  $("sVariable").addEventListener("change", pintarGananciaServicio);
   $("rGuardar").addEventListener("click", guardarReabastecer);
   $("aGuardar").addEventListener("click", guardarAnular);
   $("cuCat").innerHTML = CATS_CUENTA.map((c) => `<option>${esc(c)}</option>`).join("");
@@ -635,7 +784,7 @@ if (typeof document !== "undefined") (function () {
   (async function iniciar() {
     const r = await conCarga(() => api("/tienda/api/estado"));
     if (!r.ok) { aviso(r.error); $("tGrid").innerHTML = ""; return; }
-    estado.productos = r.productos; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; estado.permisos = r.permisos || estado.permisos;
+    estado.productos = r.productos; estado.servicios = r.servicios || []; estado.ajustes = r.ajustes; estado.cuentas = r.cuentas || estado.cuentas || []; estado.abierta = r.abierta; estado.permisos = r.permisos || estado.permisos;
     fijarRango("hoy");
     irA(location.hash.replace("#", "") || "caja");
   })();
