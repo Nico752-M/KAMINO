@@ -59,7 +59,8 @@ def inventario(productos):
 def ventas(lista):
     validas = [v for v in lista if not v["anulada"]]
     filas = [(v["id"], (v["fecha"] or "")[:16].replace("T", " "),
-              ", ".join(f"{i['cant']} x {i['nombre']}" for i in v["items"]),
+              ", ".join(f"{i['cant']} x {i['nombre']}" + (f" ({i['detalle']})" if i.get("detalle") else "")
+                        for i in v["items"]),
               v["metodo"] + (" + " + v["metodo2"] if v["metodo2"] else ""),
               cop(v["total"]), v["cajero"], "Anulada" if v["anulada"] else "Válida")
              for v in lista]
@@ -98,7 +99,10 @@ def ticket_venta(v, items):
     from reportlab.pdfgen import canvas
 
     mm = 72 / 25.4
-    ancho, alto = 80 * mm, (70 + 5 * len(items)) * mm   # medidas del ticket
+    from textwrap import wrap
+    detalles = {n: wrap(i["detalle"], 34)[:4] for n, i in enumerate(items) if i.get("detalle")}
+    lineas_extra = sum(len(v) for v in detalles.values())
+    ancho, alto = 80 * mm, (70 + 5 * len(items) + 4 * lineas_extra) * mm   # medidas del ticket
     pagina_ancho, pagina_alto = A4
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -128,8 +132,10 @@ def ticket_venta(v, items):
     fila(v["fecha"].strftime("%d/%m/%Y %H:%M"), s=7, centro=True)
     fila(f"Atendió: {v['usuario_nombre']}", s=7)
     fila("-" * 48, s=7)
-    for i in items:
+    for n, i in enumerate(items):
         fila(f"{i['cantidad']} x {i['nombre']}", cop(int(i["cantidad"]) * int(i["precio"])))
+        for linea in detalles.get(n, []):
+            fila(linea, s=6.5)
     fila("-" * 48, s=7)
     if v["descuento"]:
         fila("Subtotal", cop(int(v["total"]) + int(v["descuento"])))
