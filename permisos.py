@@ -18,11 +18,28 @@ PERMISOS = {
     "gestionar_costos": "Gestionar costos de las matrículas",
     "ver_ganancias": "Ver ganancia de las matrículas",
     "gestionar_usuarios": "Gestionar usuarios y permisos",
-    "ver_tienda": "Usar la tienda (caja, inventario y ganancias)",
+    "ver_tienda": "Tienda: entrar y cobrar (productos y servicios)",
+    "tienda_anular": "Tienda: anular ventas",
+    "tienda_inventario": "Tienda: inventario (productos, entradas de stock y bajas)",
+    "tienda_servicios": "Tienda: editar servicios, precios y requisitos",
+    "tienda_caja": "Tienda: entradas, salidas, cierre de caja y reportes",
+    "tienda_ganancias": "Tienda: ver ganancias",
+    "tienda_cuentas": "Tienda: Mis cuentas (luz, agua, arriendo, nómina…)",
+    "tienda_usuarios": "Tienda: crear y administrar usuarios de la tienda",
     "ver_cuentas": "Ver y administrar Mis cuentas (ingresos y gastos del CEA)",
 }
 
-ROLES = ("admin", "cajera", "secretaria", "contadora", "tienda")
+ROLES = ("admin", "cajera", "secretaria", "contadora", "tienda", "tienda_admin", "tienda_cajero")
+
+# Permisos que pertenecen solo a la tienda «Todo en Tránsito».
+PERMISOS_TIENDA = (
+    "ver_tienda", "tienda_anular", "tienda_inventario", "tienda_servicios",
+    "tienda_caja", "tienda_ganancias", "tienda_cuentas", "tienda_usuarios",
+)
+# Plantillas con las que el administrador de la tienda puede crear usuarios.
+ROLES_TIENDA = ("tienda_admin", "tienda_cajero")
+# Roles que se consideran «de la tienda» (incluye «tienda», el rol de antes).
+ROLES_DE_TIENDA = ("tienda", "tienda_admin", "tienda_cajero")
 
 GRUPOS_PERMISOS = {
     "Alumnos": (
@@ -36,7 +53,7 @@ GRUPOS_PERMISOS = {
     ),
     "Trámites": ("ver_tramites", "marcar_runt"),
     "Administración": ("ver_dashboard", "gestionar_usuarios", "ver_cuentas"),
-    "Tienda": ("ver_tienda",),
+    "Tienda": PERMISOS_TIENDA,
 }
 
 _PANTALLAS = {
@@ -52,4 +69,6 @@ PERMISOS_POR_ROL = {
     "secretaria": _PANTALLAS | {"registrar_pagos", "ver_recibos", "marcar_runt"},
     "contadora": _PANTALLAS | {"ver_recibos"},
     "tienda": {"ver_tienda"},
+    "tienda_admin": set(PERMISOS_TIENDA),
+    "tienda_cajero": {"ver_tienda"},
 }
