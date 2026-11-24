@@ -52,6 +52,13 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         "gestionar_caja": "ver_caja",
         "marcar_runt": "ver_tramites",
         "ver_todas_cajas": "ver_caja",
+        "tienda_anular": "ver_tienda",
+        "tienda_inventario": "ver_tienda",
+        "tienda_servicios": "ver_tienda",
+        "tienda_caja": "ver_tienda",
+        "tienda_ganancias": "ver_tienda",
+        "tienda_cuentas": "ver_tienda",
+        "tienda_usuarios": "ver_tienda",
     }
     for accion, pantalla in dependencias.items():
         if accion in permisos and pantalla not in permisos:
