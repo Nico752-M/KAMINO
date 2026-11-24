@@ -6,10 +6,11 @@
     <a class="preview-brand" href="#caja"><span class="preview-brand-badge"></span> TODO EN TRANSITO</a>
     <nav class="preview-menu" aria-label="Navegación de la tienda">
       <a href="#caja" data-vista="caja" class="active"><i class="ri-shopping-cart-2-line"></i> Caja</a>
-      <a href="#inventario" data-vista="inventario"><i class="ri-archive-line"></i> Inventario <span class="nav-badge" id="badgeBajo" hidden></span></a>
+      {% if 'tienda_inventario' in permisos %}<a href="#inventario" data-vista="inventario"><i class="ri-archive-line"></i> Inventario <span class="nav-badge" id="badgeBajo" hidden></span></a>{% endif %}
       <a href="#ventas" data-vista="ventas"><i class="ri-receipt-line"></i> Ventas</a>
-      <a href="#cuentas" data-vista="cuentas"><i class="ri-wallet-3-line"></i> Mis cuentas</a>
-      <a href="#ganancias" data-vista="ganancias"><i class="ri-line-chart-line"></i> Ganancias</a>
+      {% if 'tienda_cuentas' in permisos %}<a href="#cuentas" data-vista="cuentas"><i class="ri-wallet-3-line"></i> Mis cuentas</a>{% endif %}
+      {% if 'tienda_ganancias' in permisos %}<a href="#ganancias" data-vista="ganancias"><i class="ri-line-chart-line"></i> Ganancias</a>{% endif %}
+      {% if 'tienda_usuarios' in permisos %}<a href="#usuarios" data-vista="usuarios"><i class="ri-user-settings-line"></i> Usuarios</a>{% endif %}
       {% if volver %}<a href="{{ volver }}"><i class="ri-arrow-left-line"></i> Volver al CEA</a>{% endif %}
       <a href="#" id="update-nav" class="update-nav" hidden><i class="ri-download-cloud-2-line"></i> Actualización disponible <span class="nav-badge">1</span></a>
     </nav>
@@ -85,7 +86,7 @@
   <div class="t-cabecera">
     <div><h1 class="t-titulo">Ventas</h1>
     <p class="t-sub">Las últimas ventas. Si una se hizo por error, anúlala y el producto vuelve al inventario.</p></div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap{% if 'tienda_caja' not in permisos %};display:none{% endif %}">
       <a class="btn-action" href="/tienda/excel/ventas" download><i class="ri-file-excel-2-line"></i> Excel</a>
       <a class="btn-action" href="/tienda/pdf/ventas" download><i class="ri-file-pdf-line"></i> PDF</a>
     </div>
@@ -97,6 +98,7 @@
       <span><strong>Abrir caja · Poner base</strong>
         <small>Registra con cuánto efectivo empiezas el día</small></span>
     </button>
+    <p class="hint" id="cEstadoSimple" hidden><i class="ri-lock-unlock-line"></i> La caja de hoy está abierta. Cuando termines, quien administra la caja hace el cierre.</p>
     <div id="cAbierta" hidden>
       <div class="t-stats" id="cResumen"></div>
       <div class="t-mov-botones">
@@ -114,12 +116,12 @@
       </div>
       <p class="alerta error" id="cError" style="display:none;margin-top:.6rem"></p>
     </div>
-    <details class="t-det">
+    <details class="t-det"{% if 'tienda_caja' not in permisos %} style="display:none"{% endif %}>
       <summary><i class="ri-history-line"></i> Cierres anteriores</summary>
       <div id="cLista" class="t-detalle" style="margin-top:.6rem;max-width:none"></div>
     </details>
   </div>
-  <details class="card-bento t-det">
+  <details class="card-bento t-det"{% if 'tienda_caja' not in permisos %} style="display:none"{% endif %}>
     <summary class="t-card-titulo"><i class="ri-file-chart-line"></i> Reporte de caja por fechas</summary>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-top:.6rem">
       <div class="field" style="margin:0"><label class="lbl" for="rDesde">Desde</label><input class="input-clean" type="date" id="rDesde"></div>
@@ -206,7 +208,42 @@
   </div>
 </section>
 
+<!-- ═════════ USUARIOS ═════════ -->
+<section class="t-vista" id="vista-usuarios" hidden>
+  <div class="t-cabecera">
+    <div><h1 class="t-titulo">Usuarios</h1>
+    <p class="t-sub">Quién puede entrar a la tienda y qué puede hacer cada uno. Aquí solo ves a los usuarios de la tienda.</p></div>
+    <button type="button" class="btn-action green" id="usNuevo"><i class="ri-user-add-line"></i> Nuevo usuario</button>
+  </div>
+  <div class="card-bento" style="padding:0;overflow:hidden">
+    <div class="t-tabla-wrap"><table class="table-clean" id="tUsuarios">
+      <thead><tr><th>Nombre</th><th>Usuario</th><th>Plantilla</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
+      <tbody></tbody></table></div>
+  </div>
+</section>
+
 <!-- ═════════ Modales ═════════ -->
+<div class="t-modal" id="mUsuario" role="dialog" aria-modal="true" aria-labelledby="mUsuarioTitulo">
+  <div class="t-modal-panel" style="max-width:520px">
+    <h3 id="mUsuarioTitulo">Nuevo usuario</h3>
+    <input type="hidden" id="usId">
+    <div class="t-dos">
+      <div class="field"><label class="lbl" for="usNombre">Nombre</label><input class="input-clean" id="usNombre" maxlength="100" autocomplete="off"></div>
+      <div class="field"><label class="lbl" for="usUsuario">Usuario de ingreso</label><input class="input-clean" id="usUsuario" maxlength="50" autocapitalize="none" autocomplete="off"></div>
+    </div>
+    <div class="t-dos">
+      <div class="field"><label class="lbl" for="usPass" id="usPassEtq">Contraseña inicial</label><input class="input-clean" id="usPass" type="password" maxlength="128" autocomplete="new-password"></div>
+      <div class="field"><label class="lbl" for="usPass2">Repetir contraseña</label><input class="input-clean" id="usPass2" type="password" maxlength="128" autocomplete="new-password"></div>
+    </div>
+    <div class="field"><label class="lbl" for="usRol">Plantilla</label><select class="input-clean" id="usRol"></select>
+      <p class="hint">La plantilla marca los permisos de partida; puedes ajustarlos uno por uno.</p></div>
+    <div class="field"><span class="lbl">Qué puede hacer</span><div id="usPermisos"></div></div>
+    <label class="t-ajuste" id="usActivoFila" style="border:0"><span><strong>Cuenta activa</strong><small>Si la desactivas, esa persona ya no puede entrar.</small></span><input type="checkbox" id="usActivo" checked></label>
+    <p class="alerta error" id="usError" style="display:none"></p>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="usGuardar"><i class="ri-save-line"></i> Guardar</button></div>
+  </div>
+</div>
+
 <div class="t-modal" id="mProducto" role="dialog" aria-modal="true" aria-labelledby="mProductoTitulo">
   <div class="t-modal-panel">
     <h3 id="mProductoTitulo">Nuevo producto</h3>
