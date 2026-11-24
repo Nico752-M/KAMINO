@@ -1,9 +1,10 @@
-"""Páginas y API JSON de la tienda. Todo exige iniciar sesión y el permiso «ver_tienda»."""
+"""Páginas y API JSON de la tienda. Todo exige iniciar sesión y «ver_tienda»; cada acción pide además su permiso fino (tienda_*)."""
 from functools import wraps
 
 from flask import Response, current_app, jsonify, render_template, request, session, url_for
 
 from auth import login_required, permiso_requerido, permisos_actuales
+from permisos import PERMISOS_TIENDA
 
 from . import bp, excel, pdf, servicios
 from .datos import TiendaNoConfigurada
@@ -22,22 +23,48 @@ def _usuario():
     return {"id": session["uid"], "nombre": session.get("nombre", "Usuario")}
 
 
-def api(fn):
-    """Protege la ruta y convierte errores en respuestas JSON claras."""
-    @wraps(fn)
-    @login_required
-    @permiso_requerido("ver_tienda")
-    def envoltura(*args, **kwargs):
-        try:
-            return fn(*args, **kwargs)
-        except TiendaError as e:
-            return jsonify(ok=False, error=str(e)), 400
-        except TiendaNoConfigurada as e:
-            return jsonify(ok=False, error=str(e)), 503
-        except Exception:
-            current_app.logger.exception("Error en la API de la tienda (%s)", request.path)
-            return jsonify(ok=False, error="No se pudo completar la operación. Intenta de nuevo."), 500
-    return envoltura
+class SinPermiso(Exception):
+    pass
+
+
+def _exigir(codigo):
+    """Para rutas que dependen de un dato (ej. el tipo de reporte) y no solo de la ruta."""
+    if codigo not in permisos_actuales():
+        raise SinPermiso()
+
+
+def api(fn=None, *, permiso="ver_tienda"):
+    """Protege la ruta con el permiso indicado y convierte errores en respuestas JSON claras.
+
+    Uso:  @api                          -> solo «ver_tienda» (entrar y cobrar)
+          @api(permiso="tienda_caja")   -> exige ese permiso fino
+    """
+    def decorador(fn):
+        @wraps(fn)
+        @login_required
+        @permiso_requerido(permiso)
+        def envoltura(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except SinPermiso:
+                return jsonify(ok=False, error="No tienes permiso para esta acción."), 403
+            except TiendaError as e:
+                return jsonify(ok=False, error=str(e)), 400
+            except TiendaNoConfigurada as e:
+                return jsonify(ok=False, error=str(e)), 503
+            except Exception:
+                current_app.logger.exception("Error en la API de la tienda (%s)", request.path)
+                return jsonify(ok=False, error="No se pudo completar la operación. Intenta de nuevo."), 500
+        return envoltura
+    return decorador(fn) if fn else decorador
+
+
+def _productos():
+    """Lista de productos; quien no administra el inventario no ve lo que cuesta cada uno."""
+    lista = servicios.listar_productos()
+    if "tienda_inventario" in permisos_actuales():
+        return lista
+    return [{**p, "costo": None} for p in lista]
 
 
 def _json():
@@ -58,30 +85,35 @@ def inicio():
 @bp.route("/api/estado")
 @api
 def api_estado():
-    return jsonify(ok=True, productos=servicios.listar_productos(), ajustes=servicios.leer_ajustes(),
-                   abierta=servicios.caja_abierta(), cuentas=servicios.cuentas_seguras() or [])
+    permisos = permisos_actuales()
+    puede_ver_ajustes = "tienda_ganancias" in permisos or "tienda_cuentas" in permisos
+    return jsonify(ok=True, productos=_productos(),
+                   ajustes=servicios.leer_ajustes() if puede_ver_ajustes else {},
+                   abierta=servicios.caja_abierta(),
+                   cuentas=(servicios.cuentas_seguras() or []) if "tienda_cuentas" in permisos else [],
+                   permisos=sorted(p for p in permisos if p in PERMISOS_TIENDA))
 
 
 @bp.route("/api/productos", methods=["POST"])
-@api
+@api(permiso="tienda_inventario")
 def api_guardar_producto():
     servicios.guardar_producto(_json(), _usuario())
-    return jsonify(ok=True, productos=servicios.listar_productos())
+    return jsonify(ok=True, productos=_productos())
 
 
 @bp.route("/api/productos/<int:pid>/entrada", methods=["POST"])
-@api
+@api(permiso="tienda_inventario")
 def api_entrada(pid):
     d = _json()
     servicios.entrada_stock(pid, d.get("cantidad"), d.get("nota"), _usuario())
-    return jsonify(ok=True, productos=servicios.listar_productos())
+    return jsonify(ok=True, productos=_productos())
 
 
 @bp.route("/api/productos/<int:pid>/quitar", methods=["POST"])
-@api
+@api(permiso="tienda_inventario")
 def api_quitar(pid):
     servicios.quitar_producto(pid)
-    return jsonify(ok=True, productos=servicios.listar_productos())
+    return jsonify(ok=True, productos=_productos())
 
 
 @bp.route("/api/ventas", methods=["POST"])
@@ -100,25 +132,25 @@ def api_ventas():
 
 
 @bp.route("/api/ventas/<int:vid>/anular", methods=["POST"])
-@api
+@api(permiso="tienda_anular")
 def api_anular(vid):
     servicios.anular_venta(vid, _json().get("motivo"), _usuario())
-    return jsonify(ok=True, productos=servicios.listar_productos(), ventas=servicios.listar_ventas())
+    return jsonify(ok=True, productos=_productos(), ventas=servicios.listar_ventas())
 
 
 @bp.route("/api/ganancias")
-@api
+@api(permiso="tienda_ganancias")
 def api_ganancias():
     return jsonify(ok=True, **servicios.ganancias(request.args.get("periodo", "30")))
 
 
 @bp.route("/api/ajustes", methods=["POST"])
-@api
+@api(permiso="tienda_ganancias")
 def api_ajustes():
     return jsonify(ok=True, ajustes=servicios.guardar_ajustes(_json()))
 
 @bp.route("/api/mes")
-@api
+@api(permiso="tienda_cuentas")
 def api_mes():
     return jsonify(ok=True, **servicios.resumen_mes(request.args.get("mes") or servicios.hoy().strftime("%Y-%m")))
 
@@ -128,19 +160,19 @@ def _respuesta_cuentas(cuentas):
 
 
 @bp.route("/api/cuentas")
-@api
+@api(permiso="tienda_cuentas")
 def api_cuentas():
     return _respuesta_cuentas(servicios.listar_cuentas())
 
 
 @bp.route("/api/cuentas", methods=["POST"])
-@api
+@api(permiso="tienda_cuentas")
 def api_guardar_cuenta():
     return _respuesta_cuentas(servicios.guardar_cuenta(_json()))
 
 
 @bp.route("/api/cuentas/<int:cid>/borrar", methods=["POST"])
-@api
+@api(permiso="tienda_cuentas")
 def api_borrar_cuenta(cid):
     return _respuesta_cuentas(servicios.borrar_cuenta(cid))
 
@@ -159,26 +191,26 @@ def pdf_venta(vid):
 
 
 @bp.route("/pdf/inventario")
-@api
+@api(permiso="tienda_inventario")
 def pdf_inventario():
     return _pdf(pdf.inventario(servicios.listar_productos()), "inventario.pdf")
 
 
 @bp.route("/pdf/ventas")
-@api
+@api(permiso="tienda_caja")
 def pdf_ventas():
     return _pdf(pdf.ventas(servicios.listar_ventas(200)), "ventas.pdf")
 
 
 @bp.route("/pdf/ganancias")
-@api
+@api(permiso="tienda_ganancias")
 def pdf_ganancias():
     periodo = request.args.get("periodo", "30")
     return _pdf(pdf.ganancias(servicios.ganancias(periodo), servicios.leer_ajustes(), periodo),
                 f"ganancias-{periodo}.pdf")
 
 @bp.route("/pdf/reposicion")
-@api
+@api(permiso="tienda_inventario")
 def pdf_reposicion():
     return _pdf(pdf.reposicion(servicios.listar_productos()), "pedido-reposicion.pdf")
 
@@ -186,6 +218,8 @@ def pdf_reposicion():
 @bp.route("/excel/<que>")
 @api
 def excel_descarga(que):
+    _exigir({"inventario": "tienda_inventario", "ventas": "tienda_caja",
+             "ganancias": "tienda_ganancias", "reporte": "tienda_caja"}.get(que, "ver_tienda"))
     if que == "inventario":
         hojas = [("Inventario", ["Producto", "Categoría", "Costo", "Precio", "Stock", "Mínimo"],
                   [(p["nombre"], p["cat"], p["costo"], p["precio"], p["stock"], p["minimo"])
@@ -229,7 +263,7 @@ def excel_descarga(que):
 
 
 @bp.route("/api/productos/<int:pid>/movimientos")
-@api
+@api(permiso="tienda_inventario")
 def api_movimientos(pid):
     return jsonify(ok=True, movimientos=servicios.movimientos_producto(pid))
 
@@ -241,13 +275,13 @@ def api_cierre():
 
 
 @bp.route("/api/cierre", methods=["POST"])
-@api
+@api(permiso="tienda_caja")
 def api_cerrar():
     servicios.guardar_cierre(_json().get("contado"), _usuario())
     return jsonify(ok=True, **servicios.cierre_hoy())
 
 @bp.route("/pdf/reporte")
-@api
+@api(permiso="tienda_caja")
 def pdf_reporte():
     r = servicios.reporte(request.args.get("desde"), request.args.get("hasta"))
     return _pdf(pdf.reporte(r), f"reporte-{r['desde']}_{r['hasta']}.pdf")
@@ -256,33 +290,36 @@ def pdf_reporte():
 @bp.route("/api/caja/mov", methods=["POST"])
 @api
 def api_mov():
-    servicios.registrar_mov(_json(), _usuario())
+    d = _json()
+    if d.get("tipo") != "BASE":
+        _exigir("tienda_caja")
+    servicios.registrar_mov(d, _usuario())
     return jsonify(ok=True, **servicios.cierre_hoy())
 
 
 @bp.route("/api/caja/mov/<int:mid>/quitar", methods=["POST"])
-@api
+@api(permiso="tienda_caja")
 def api_quitar_mov(mid):
     servicios.quitar_mov(mid)
     return jsonify(ok=True, **servicios.cierre_hoy())
 
 
 @bp.route("/api/productos/<int:pid>/baja", methods=["POST"])
-@api
+@api(permiso="tienda_inventario")
 def api_baja(pid):
     d = _json()
     servicios.registrar_merma(pid, d.get("cantidad"), d.get("motivo"), d.get("nota"), _usuario())
-    return jsonify(ok=True, productos=servicios.listar_productos(), mermas=servicios.listar_mermas())
+    return jsonify(ok=True, productos=_productos(), mermas=servicios.listar_mermas())
 
 
 @bp.route("/api/mermas")
-@api
+@api(permiso="tienda_inventario")
 def api_mermas():
     return jsonify(ok=True, mermas=servicios.listar_mermas())
 
 
 @bp.route("/api/mermas/<int:mid>/anular", methods=["POST"])
-@api
+@api(permiso="tienda_inventario")
 def api_anular_merma(mid):
     servicios.anular_merma(mid, _usuario())
-    return jsonify(ok=True, productos=servicios.listar_productos(), mermas=servicios.listar_mermas())
+    return jsonify(ok=True, productos=_productos(), mermas=servicios.listar_mermas())
