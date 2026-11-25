@@ -20,6 +20,7 @@
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+{% if pagos_por_confirmar %}<div class="alerta error"><i class="ri-time-line"></i> Hay <strong>{{ pagos_por_confirmar }}</strong> pago(s) pendientes de confirmar. Búscalos en el historial (insignia «Pendiente») o en el historial de pagos de cada alumno.</div>{% endif %}
 {% if recibo_nuevo and 'ver_recibos' in permisos %}
 <div class="alerta ok">Imprime el comprobante original:
   <a class="btn-action green sm" target="_blank" rel="noopener"
@@ -227,7 +228,8 @@
         <td>{{ m.detalle }}
           {% if m.categoria %}<br><small>Categoría: {{ m.categoria }}</small>{% endif %}
           <br><small>{{ m.recibo }}
-          {% if m.anulado %}<span class="badge-status urgent">Anulado</span>{% endif %}
+          {% if m.anulado %}<span class="badge-status urgent">Anulado</span>
+          {% elif m.tipo == 'pago' %}<span class="badge-status {{ 'paid' if m.confirmado else 'urgent' }}">{{ 'Confirmado' if m.confirmado else 'Pendiente' }}</span>{% endif %}
         </small>{% if m.anulado and m.motivo_anulacion %}<br><small>Motivo: {{ m.motivo_anulacion }}</small>{% endif %}</td>
         {% if admin %}<td>{{ m.cajero or '—' }}</td>{% endif %}
         <td>{{ m.metodo }}</td>
