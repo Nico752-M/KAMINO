@@ -21,6 +21,10 @@
   {% block head %}{% endblock %}
 </head>
 <body data-login="{{ '1' if aviso_login else '0' }}" data-version="{{ version_actual }}" data-nueva="{{ '1' if hay_version_nueva else '0' }}">
+  <div class="sin-conexion" id="sinConexion" role="alert" aria-live="assertive">
+    <i class="ri-wifi-off-line"></i>
+    <span id="sinConexionTxt"><strong>No tienes conexión a internet.</strong> El programa está bien: el problema es la red. Lo que hagas ahora no se guardará hasta que vuelva la conexión.</span>
+  </div>
   <div class="update-banner" id="update-banner" hidden role="status">
     <span><i class="ri-download-cloud-2-line"></i> Hay una actualización disponible</span>
     <div>

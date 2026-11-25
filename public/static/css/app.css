@@ -343,3 +343,10 @@ body.login-page{overflow:auto;align-items:center;justify-content:center}
 #cargando.on{display:flex}
 .rueda{width:56px;height:56px;border:5px solid rgba(255,255,255,.35);border-top-color:var(--accent-gold);border-radius:50%;animation:girar .8s linear infinite}
 @keyframes girar{to{transform:rotate(360deg)}}
+
+/* ===== Aviso de sin conexión ===== */
+.sin-conexion{position:fixed;top:0;left:0;right:0;z-index:4000;display:none;align-items:center;justify-content:center;gap:.7rem;padding:.7rem 1rem;background:var(--accent-red);color:#fff;font-size:.95rem;font-weight:600;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.sin-conexion.on{display:flex}
+.sin-conexion.ok{background:var(--accent-green)}
+.sin-conexion i{font-size:1.4rem;flex-shrink:0}
+.sin-conexion strong{font-weight:800}

@@ -241,6 +241,46 @@
     }
   }
 
+  // ── Aviso de "sin conexión a internet" ──
+  const avisoRed = document.getElementById("sinConexion");
+  if (avisoRed) {
+    const textoRed = document.getElementById("sinConexionTxt");
+    const MENSAJE_OFF = textoRed.innerHTML;
+    let sinRed = false, tRestablecida;
+    function mostrarSinRed() {
+      clearTimeout(tRestablecida);
+      sinRed = true;
+      textoRed.innerHTML = MENSAJE_OFF;
+      avisoRed.classList.remove("ok");
+      avisoRed.classList.add("on");
+    }
+    function mostrarConRed() {
+      if (!sinRed) return;
+      sinRed = false;
+      textoRed.innerHTML = "<strong>Conexión restablecida.</strong>";
+      avisoRed.classList.add("ok");
+      tRestablecida = setTimeout(() => avisoRed.classList.remove("on", "ok"), 3000);
+    }
+    async function comprobarRed() {
+      if (!navigator.onLine) { mostrarSinRed(); return; }
+      const control = new AbortController();
+      const corte = setTimeout(() => control.abort(), 6000);
+      try {
+        await fetch("/healthz?t=" + Date.now(), { cache: "no-store", credentials: "same-origin", signal: control.signal });
+        mostrarConRed();
+      } catch (e) {
+        mostrarSinRed();
+      } finally {
+        clearTimeout(corte);
+      }
+    }
+    window.addEventListener("offline", mostrarSinRed);
+    window.addEventListener("online", comprobarRed);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) comprobarRed(); });
+    setInterval(() => { if (!document.hidden) comprobarRed(); }, 15000);
+    if (!navigator.onLine) mostrarSinRed();
+  }
+
   // ── Service worker (PWA) ──
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("/static/sw.js", { scope: "/" }).catch(() => {}));

@@ -13,6 +13,10 @@
   <script>(function(){try{var t=localStorage.getItem('tema');if(t==='night'||t==='light'){document.documentElement.setAttribute('data-theme',t);}var m=document.querySelector('meta[name="theme-color"]');if(m){m.setAttribute('content',document.documentElement.getAttribute('data-theme')==='night'?'#080c14':'#f7f5f0');}}catch(e){}})();</script>
 </head>
 <body class="login-page">
+  <div class="sin-conexion" id="sinConexion" role="alert" aria-live="assertive">
+    <i class="ri-wifi-off-line"></i>
+    <span><strong>No tienes conexión a internet.</strong> El programa está bien: el problema es la red. Revisa tu internet e intenta de nuevo.</span>
+  </div>
   <form class="login-card" method="post" autocomplete="on">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h1>CEA LA 30</h1>
@@ -33,5 +37,21 @@
     <button class="btn-action red" type="submit" style="width:100%;margin-top:.5rem">Ingresar al sistema</button>
   </form>
   <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/static/sw.js",{scope:"/"}).catch(function(){});</script>
+  <script>
+  (function(){
+    var aviso=document.getElementById("sinConexion");
+    function off(){aviso.classList.add("on");}
+    function on(){aviso.classList.remove("on");}
+    function comprobar(){
+      if(!navigator.onLine){off();return;}
+      var c=new AbortController(),t=setTimeout(function(){c.abort();},6000);
+      fetch("/healthz?t="+Date.now(),{cache:"no-store",signal:c.signal}).then(on,off).then(function(){clearTimeout(t);});
+    }
+    window.addEventListener("offline",off);
+    window.addEventListener("online",comprobar);
+    setInterval(function(){if(!document.hidden)comprobar();},15000);
+    if(!navigator.onLine)off();
+  })();
+  </script>
 </body>
 </html>
