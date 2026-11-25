@@ -70,7 +70,7 @@ def _datos_cierre(caja_id: int) -> dict | None:
     pagos = db.fetchall("""
         SELECT p.fecha_pago AS momento, p.numero_recibo, p.concepto, m.categoria,
                TRIM(a.nombres || ' ' || a.apellidos) AS alumno,
-               p.metodo_pago, p.valor, p.anulado, p.motivo_anulacion
+               p.metodo_pago, p.valor, p.anulado, p.motivo_anulacion, p.confirmado
         FROM pagos p
         LEFT JOIN matriculas m ON m.id = p.id_matricula
         LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -178,11 +178,13 @@ def exportar_cierre_pdf(caja_id: int):
 
     fecha = lambda fila: fila["momento"].strftime("%d/%m/%Y %H:%M")
     estado = lambda fila: "ANULADO" if fila["anulado"] else "Válido"
+    estado_pago = lambda fila: ("ANULADO" if fila["anulado"]
+                                else "Confirmado" if fila["confirmado"] else "Pendiente")
     tabla_movimientos(
         "Pagos", ["Fecha", "Recibo", "Alumno", "Categoría", "Concepto", "Medio", "Valor", "Estado"],
         datos["pagos"],
         lambda r: (fecha(r), r["numero_recibo"], r["alumno"], r["categoria"], r["concepto"],
-                   r["metodo_pago"], cop(r["valor"]), estado(r)),
+                   r["metodo_pago"], cop(r["valor"]), estado_pago(r)),
     )
     for titulo, registros in (("Ingresos", datos["ingresos"]), ("Salidas", datos["salidas"])):
         tabla_movimientos(
@@ -242,7 +244,8 @@ def exportar_cierre_excel(caja_id: int):
         ("Pagos", ["Fecha", "Recibo", "Alumno", "Categoría", "Concepto", "Medio", "Valor", "Estado", "Motivo"],
          datos["pagos"],
          lambda r: (r["momento"], r["numero_recibo"], r["alumno"], r["categoria"], r["concepto"],
-                    r["metodo_pago"], r["valor"], "Anulado" if r["anulado"] else "Válido",
+                    r["metodo_pago"], r["valor"],
+                    "Anulado" if r["anulado"] else "Confirmado" if r["confirmado"] else "Pendiente",
                     r["motivo_anulacion"])),
         ("Ingresos", ["Fecha", "Recibo", "Categoría", "Concepto", "Valor", "Estado", "Motivo"],
          datos["ingresos"],
@@ -334,7 +337,7 @@ def resumen():
                    COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
                        || ' — ' || p.concepto AS detalle,
                    p.metodo_pago AS metodo, m.categoria, p.valor, u.nombre AS cajero,
-                   p.anulado, p.motivo_anulacion
+                   p.anulado, p.motivo_anulacion, p.confirmado
             FROM pagos p
             LEFT JOIN matriculas m ON m.id = p.id_matricula
             LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -343,13 +346,13 @@ def resumen():
               AND p.concepto <> 'Abono histórico previo'{filtro_pago}
             UNION ALL
             SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
-                   'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion
+                   'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion, 1
             FROM ingresos_caja i
             LEFT JOIN usuarios u ON u.id = i.usuario_id
             WHERE i.fecha_ingreso >= %s AND i.fecha_ingreso < %s{filtro_ingreso}
             UNION ALL
             SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
-                   'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion
+                   'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion, 1
             FROM salidas_caja s
             LEFT JOIN usuarios u ON u.id = s.usuario_id
             WHERE s.fecha_salida >= %s AND s.fecha_salida < %s{filtro_salida}
@@ -370,6 +373,7 @@ def resumen():
                 "categoria": movimiento["categoria"],
                 "valor": -valor if tipo == "salida" else valor,
                 "cajero": movimiento["cajero"] or "—", "anulado": anulado,
+                "confirmado": bool(movimiento["confirmado"]),
                 "motivo_anulacion": movimiento["motivo_anulacion"],
             })
         movs.sort(key=lambda mov: mov["momento"])
@@ -440,7 +444,7 @@ def resumen():
                            COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
                                || ' — ' || p.concepto AS detalle,
                            p.metodo_pago AS metodo, m.categoria, p.valor, u.nombre AS cajero,
-                           p.anulado, p.motivo_anulacion
+                           p.anulado, p.motivo_anulacion, p.confirmado
                     FROM pagos p
                     LEFT JOIN matriculas m ON m.id = p.id_matricula
                     LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -448,13 +452,13 @@ def resumen():
                     WHERE p.concepto <> 'Abono histórico previo'{filtro_pago_todos}
                     UNION ALL
                     SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
-                           'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion
+                           'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion, 1
                     FROM ingresos_caja i
                     LEFT JOIN usuarios u ON u.id = i.usuario_id
                     WHERE 1 = 1{filtro_ingreso_todos}
                     UNION ALL
                     SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
-                           'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion
+                           'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion, 1
                     FROM salidas_caja s
                     LEFT JOIN usuarios u ON u.id = s.usuario_id
                     WHERE 1 = 1{filtro_salida_todos}
@@ -469,6 +473,7 @@ def resumen():
                 "categoria": fila["categoria"],
                 "valor": -float(fila["valor"]) if fila["tipo"] == "salida" else float(fila["valor"]),
                 "cajero": fila["cajero"] or "—", "anulado": bool(fila["anulado"]),
+                "confirmado": bool(fila["confirmado"]),
                 "motivo_anulacion": fila["motivo_anulacion"],
             } for fila in filas_historial[:50]]
         except Exception:
@@ -584,7 +589,16 @@ def resumen():
             current_app.logger.exception("No se pudo consultar la caja abierta del usuario")
             error = error or "No se pudo consultar tu caja abierta."
 
-    return render_template("tesoreria.html", dia=dia, movs=movs, cajas=cajas,
+    pagos_por_confirmar = 0
+    if "confirmar_pagos" in permisos_actuales():
+        try:
+            pagos_por_confirmar = db.fetchone(
+                "SELECT COUNT(*) AS total FROM pagos WHERE anulado = 0 AND confirmado = 0 "
+                "AND concepto <> 'Abono histórico previo'")["total"]
+        except Exception:
+            current_app.logger.exception("No se pudo contar los pagos por confirmar")
+
+    return render_template("tesoreria.html", pagos_por_confirmar=pagos_por_confirmar, dia=dia, movs=movs, cajas=cajas,
                            t=totales, error=error, admin=admin, cajeros=admin_cajeros,
                            movimientos_hoy=movimientos_hoy,
                            cajero_filtro=cajero_filtro, caja_actual=caja_actual,
@@ -679,6 +693,11 @@ def cerrar():
                 "WHERE caja_id = %s AND anulado = 0",
                 (caja["id"],),
             ).fetchone()["total"]
+            pendientes = cur.execute(
+                "SELECT COUNT(*) AS total FROM pagos WHERE caja_id = %s "
+                "AND anulado = 0 AND confirmado = 0 AND concepto <> 'Abono histórico previo'",
+                (caja["id"],),
+            ).fetchone()["total"]
             esperado = int(caja["monto_apertura"]) + int(pagos) + int(ingresos) - int(salidas)
             diferencia = monto - esperado
             cur.execute("""
@@ -695,6 +714,9 @@ def cerrar():
         return redirect(url_for("caja.resumen"))
 
     flash(f"Caja cerrada. Efectivo esperado: {cop(esperado)}; diferencia: {cop(diferencia)}.", "ok")
+    if pendientes:
+        flash(f"Quedan {pendientes} pago(s) de esta caja pendientes de confirmar por el administrador. "
+              "La caja se cerró normalmente.", "error")
     return redirect(url_for("caja.resumen"))
 
 
