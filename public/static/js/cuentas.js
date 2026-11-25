@@ -44,7 +44,7 @@
   }
 
   const fila = (f, conBotones) =>
-    `<div class="mc-fila${conBotones && f.id ? " con-btns" : ""}"><span class="mc-fila-nombre"><strong>${esc(f.nombre)}</strong><small>${conBotones ? `<span class="mc-tag ${f.id ? "fija" : "caja"}">${f.id ? "Cuenta fija" : "Caja"}</span>` : ""}${esc(f.sub)}</small></span>`
+    `<div class="mc-fila${conBotones && f.id ? " con-btns" : ""}"><span class="mc-fila-nombre"><strong>${esc(f.nombre)}</strong><small>${conBotones ? `<span class="mc-tag ${f.id ? "fija" : "caja"}">${f.tag || (f.id ? "Cuenta fija" : "Caja")}</span>` : ""}${esc(f.sub)}</small></span>`
     + `<span class="mc-fila-valor">${fmt(f.valor)}</span>`
     + (conBotones && f.id ? `<span class="mc-fila-btns"><button type="button" class="btn-action" data-editar="${f.id}">Cambiar</button><button type="button" class="btn-action red" data-borrar="${f.id}">Quitar</button></span>` : "")
     + `</div>`;
@@ -66,6 +66,54 @@
     $("mcGastos").innerHTML = r.gastos.map((f) => fila(f, true)).join("")
       + (r.gastos.length ? total("Total que salió", r.salio) : "")
       + (hayFijas ? "" : `<p class="mc-hint">Todavía no has anotado cuentas fijas. Toca el botón verde para agregar la primera, por ejemplo el arriendo.</p>`);
+    pintarVeh(r);
+  }
+
+  // ── Gastos de vehículos ──
+  let vhTipo = null;
+  const hoyIso = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  const fila2 = (a, b) => `<div class="mc-veh-fila"><span>${a}</span><span>${b}</span></div>`;
+
+  function pintarVeh(r) {
+    const lista = r.vehiculos || [];
+    $("mcVeh").innerHTML = lista.length
+      ? lista.map((v) => `<div class="mc-veh-tarjeta"><div class="mc-veh-cab"><strong>${esc(v.vehiculo)}</strong><span>${fmt(v.total)}</span></div>`
+          + v.tipos.map((t) => fila2(esc(t.tipo), fmt(t.valor))).join("") + `</div>`).join("")
+      : `<p class="mc-hint">En este mes no hay gastos de vehículos. Toca el botón verde para anotar el primero.</p>`;
+    const sem = r.semanas || [];
+    $("mcSemanas").innerHTML = sem.length
+      ? `<h3 class="mc-veh-sub">Por semana</h3>` + sem.map((s) => fila2(esc(s.nombre), fmt(s.valor))).join("") : "";
+    const movs = r.movimientos_veh || [];
+    $("mcVehLista").innerHTML = movs.length ? movs.map((m) =>
+      `<div class="mc-veh-mov"><span><strong>${esc(m.vehiculo)} · ${esc(m.tipo)}</strong><small>${m.fecha.slice(8, 10)}/${m.fecha.slice(5, 7)}${m.nota ? " · " + esc(m.nota) : ""}</small></span>`
+      + `<span class="mc-fila-valor">${fmt(m.valor)}</span><button type="button" class="btn-action red" data-vdel="${m.id}">Quitar</button></div>`).join("")
+      : `<p class="mc-hint">Sin gastos este mes.</p>`;
+  }
+
+  function marcarTipo(t) {
+    vhTipo = t;
+    document.querySelectorAll("#vhTipos [data-tipo]").forEach((b) => b.classList.toggle("on", b.dataset.tipo === t));
+  }
+  function abrirVeh() {
+    $("vhVehiculo").value = ""; marcarTipo(null); $("vhValor").value = ""; $("vhNota").value = "";
+    $("vhFecha").value = hoyIso(); $("vhFecha").max = hoyIso(); $("vhError").style.display = "none";
+    $("vhChips").innerHTML = ((estado.datos && estado.datos.nombres_vehiculos) || []).map((n) =>
+      `<button type="button" class="mc-chip" data-vchip="${esc(n)}">${esc(n)}</button>`).join("");
+    $("mVeh").classList.add("on"); $("vhVehiculo").focus();
+  }
+  async function guardarVeh() {
+    $("vhError").style.display = "none";
+    const r = await conCarga(() => api("/cuentas/api/vehiculos", {
+      vehiculo: $("vhVehiculo").value, tipo: vhTipo, valor: digitos($("vhValor").value),
+      fecha: $("vhFecha").value, nota: $("vhNota").value }));
+    if (!r.ok) { $("vhError").textContent = r.error; $("vhError").style.display = "block"; return; }
+    $("mVeh").classList.remove("on"); cargar();
+  }
+  async function borrarVeh(id) {
+    if (!window.confirm("¿Quitar este gasto de vehículo?")) return;
+    const r = await conCarga(() => api(`/cuentas/api/vehiculos/${id}/borrar`, {}));
+    if (!r.ok) return aviso(r.error);
+    cargar();
   }
 
   // ── Ventana para agregar o cambiar una cuenta ──
@@ -111,6 +159,18 @@
     const t = e.target.closest("button"); if (!t) return;
     if (t.dataset.editar) abrirCuenta((estado.datos.gastos || []).find((x) => x.id === Number(t.dataset.editar)));
     else if (t.dataset.borrar) borrar(t.dataset.borrar);
+  });
+
+  $("vhAgregar").addEventListener("click", abrirVeh);
+  $("vhGuardar").addEventListener("click", guardarVeh);
+  $("vhValor").addEventListener("input", (e) => { const v = digitos(e.target.value); e.target.value = v ? miles(v) : ""; });
+  $("mVeh").addEventListener("click", (e) => { if (e.target === $("mVeh") || e.target.closest("[data-cerrar]")) $("mVeh").classList.remove("on"); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("mVeh").classList.remove("on"); });
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("button"); if (!t) return;
+    if (t.dataset.vchip) $("vhVehiculo").value = t.dataset.vchip;
+    else if (t.dataset.tipo) marcarTipo(t.dataset.tipo);
+    else if (t.dataset.vdel) borrarVeh(t.dataset.vdel);
   });
 
   cargar();

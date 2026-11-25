@@ -36,6 +36,37 @@
   </div>
 </div>
 
+<div class="card-bento sale mc-veh">
+  <h2 class="mc-grande">Gastos de vehículos</h2>
+  <p class="mc-sub" style="margin:0 0 1rem">Anota cada gasto de un vehículo: gasolina, arreglos, llantas… El sistema suma por vehículo, por tipo y por semana, y lo cuenta en «Salió».</p>
+  <div id="mcVeh"></div>
+  <div id="mcSemanas"></div>
+  <button type="button" class="btn-action green mc-btn-grande" id="vhAgregar"><i class="ri-add-line"></i> Anotar un gasto de vehículo</button>
+  <details class="mc-veh-lista">
+    <summary>Ver cada gasto del mes</summary>
+    <div id="mcVehLista"></div>
+  </details>
+</div>
+
+<div class="mc-modal" id="mVeh" role="dialog" aria-modal="true" aria-labelledby="mVehTitulo">
+  <div class="mc-modal-panel">
+    <h3 id="mVehTitulo">Anotar un gasto de vehículo</h3>
+    <div class="field"><label class="lbl" for="vhVehiculo">¿De qué vehículo?</label>
+      <input class="input-clean" id="vhVehiculo" maxlength="40" placeholder="Toca uno abajo o escribe uno nuevo" autocomplete="off">
+      <div class="mc-chips" id="vhChips"></div></div>
+    <div class="field"><span class="lbl">¿En qué se gastó?</span>
+      <div class="mc-chips" id="vhTipos">{% for t in tipos_vehiculo %}<button type="button" class="mc-chip" data-tipo="{{ t }}">{{ t }}</button>{% endfor %}</div></div>
+    <div class="field"><label class="lbl" for="vhValor">¿Cuánto se gastó?</label>
+      <input class="input-clean" id="vhValor" inputmode="numeric" placeholder="Ej: 50.000" autocomplete="off"></div>
+    <div class="field"><label class="lbl" for="vhFecha">¿Qué día?</label>
+      <input class="input-clean" id="vhFecha" type="date"></div>
+    <div class="field"><label class="lbl" for="vhNota">Nota (opcional)</label>
+      <input class="input-clean" id="vhNota" maxlength="200" placeholder="Ej: cambio de llanta trasera" autocomplete="off"></div>
+    <p class="alerta error" id="vhError" style="display:none"></p>
+    <div class="mc-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="vhGuardar"><i class="ri-check-line"></i> Guardar gasto</button></div>
+  </div>
+</div>
+
 <div class="mc-modal" id="mCuentas" role="dialog" aria-modal="true" aria-labelledby="mCuentasTitulo">
   <div class="mc-modal-panel">
     <h3 id="mCuentasTitulo">Agregar una cuenta</h3>
