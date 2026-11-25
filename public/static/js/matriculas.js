@@ -52,18 +52,21 @@
   }
 
   const abonoInicial = document.getElementById("abonoInicial");
-  const saldoPendiente = document.getElementById("saldoPendienteAbono");
+  const saldoVisible = document.getElementById("saldoVisible");
+  const hintTotalCurso = document.getElementById("hintTotalCurso");
 
   function mostrarSaldo() {
     const total = soloDigitos(precioTotal.value);
     const abono = soloDigitos(abonoInicial.value);
-    if (!total || !abono) {
-      saldoPendiente.style.display = "none";
+    if (!total) {
+      saldoVisible.value = "";
+      hintTotalCurso.textContent = "El total se calcula con el precio y el descuento.";
       return;
     }
     const saldo = Math.max(total - abono, 0);
-    saldoPendiente.textContent = "Saldo pendiente tras el abono: $ " + window.formatearMiles(saldo);
-    saldoPendiente.style.display = "block";
+    saldoVisible.value = "$ " + window.formatearMiles(saldo);
+    hintTotalCurso.textContent = "Total del curso: $ " + window.formatearMiles(total) +
+      " − abono: $ " + window.formatearMiles(Math.min(abono, total));
   }
 
   function calcularTotal() {
@@ -71,7 +74,7 @@
     const pesos = soloDigitos(descuentoPesos.value);
     const porcentaje = Number(descuentoPorcentaje.value) || 0;
     const descuento = pesos || Math.round(base * porcentaje / 100);
-    precioTotal.value = base ? window.formatearMiles(Math.max(base - descuento, 0)) : "";
+    precioTotal.value = base ? String(Math.max(base - descuento, 0)) : "";
     mostrarSaldo();
   }
 
@@ -175,13 +178,7 @@
     if (descuentoPorcentaje.value) descuentoPesos.value = "";
     calcularTotal();
   });
-  precioTotal.addEventListener("input", () => {
-    const base = soloDigitos(precioBase.value);
-    const total = soloDigitos(precioTotal.value);
-    descuentoPesos.value = base && total <= base ? window.formatearMiles(base - total) : "";
-    descuentoPorcentaje.value = "";
-    mostrarSaldo();
-  });
+  // El total ya no se edita a mano: se calcula con el precio base y el descuento.
   abonoInicial.addEventListener("input", mostrarSaldo);
 
   // Alumno que ya venía cursando: pide la fecha original y trata el abono como "ya pagado"
