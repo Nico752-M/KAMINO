@@ -128,13 +128,19 @@ def registrar():
                 raise PagoInvalido("Abre tu caja antes de registrar un pago.")
 
             numero = numero_recibo(cur)
+            # Quien puede confirmar pagos no necesita esperar a nadie: su pago nace confirmado.
+            # Para los demás queda pendiente; la caja suma igual y el trabajo no se detiene.
+            autoconfirma = 1 if "confirmar_pagos" in permisos_actuales() else 0
             cambio = max(recibido - valor, 0) if metodo == "Efectivo" else 0
             cur.execute("""
                 INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago,
-                                   numero_recibo, usuario_id, observaciones, acompanante, caja_id, cambio)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                   numero_recibo, usuario_id, observaciones, acompanante, caja_id, cambio,
+                                   confirmado, confirmado_por, fecha_confirmacion)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        CASE WHEN %s = 1 THEN CURRENT_TIMESTAMP END)
             """, (mid, concepto, valor, metodo, numero,
-                  session["uid"], observaciones, acompanante, caja["id"], cambio))
+                  session["uid"], observaciones, acompanante, caja["id"], cambio,
+                  autoconfirma, session["uid"] if autoconfirma else None, autoconfirma))
 
             if distribucion:
                 if sum(v for _, v in distribucion) != valor:
@@ -169,7 +175,7 @@ def registrar():
 
     url = url_for("pagos.recibo", numero=numero)
     return jsonify(ok=True, numero_recibo=numero, saldo=max(saldo - valor, 0),
-                   cambio=cambio, recibo_url=url)
+                   cambio=cambio, recibo_url=url, confirmado=bool(autoconfirma))
 
 
 @bp.route("/pagos/recibo/<numero>")
