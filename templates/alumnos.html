@@ -1,227 +1,336 @@
+{% extends "base.html" %}
+{% set nav = 'alumnos' %}
+{% block titulo %}Alumnos — CEA La 30{% endblock %}
+
+{% macro tabla(filas, vacio) %}
+  {% if filas %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Código / inscripción</th><th>Nombre Alumno</th><th>Categoría</th><th>Saldo Pendiente</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody>
+    {% for f in filas %}
+      <tr>
+        <td><strong>{{ f.codigo }}</strong><br><small>{{ f.fecha_registro.strftime('%d/%m/%Y') if f.fecha_registro else '—' }}</small></td>
+        <td>{{ f.nombres }} {{ f.apellidos }}<br><small>CC: {{ f.numero_documento }}</small></td>
+        <td><span class="badge-status active">{{ f.categoria }}</span></td>
+        <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
+        <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
+        <td class="student-row-actions">
+          {% if f.saldo > 0 and f.estado not in ('Histórico', 'Archivado') and 'registrar_pagos' in permisos %}
+          <button class="btn-action green sm js-cobrar" type="button"
+                  data-matricula="{{ f.matricula_id }}"
+                  data-nombre="{{ f.nombres }} {{ f.apellidos }}"
+                  data-saldo="{{ f.saldo|int }}"
+                  data-concepto="{{ f.concepto }}"><i class="ri-hand-coin-line"></i> Cobrar</button>
+          {% endif %}
+          {% if 'ver_historial_pagos' in permisos or 'ver_ganancias' in permisos or ('editar_alumnos' in permisos and f.estado != 'Archivado') or 'eliminar_alumnos' in permisos %}
+          <details class="student-actions-menu">
+            <summary class="btn-action sm"><i class="ri-more-2-fill"></i> Más</summary>
+            <div class="student-actions-list">
+              {% if 'ver_historial_pagos' in permisos %}
+              <a href="{{ url_for('alumnos.historial', matricula_id=f.matricula_id) }}"><i class="ri-history-line"></i> Historial</a>
+              {% endif %}
+              {% if 'ver_ganancias' in permisos %}
+              <a href="{{ url_for('costos.cuenta', matricula_id=f.matricula_id) }}"><i class="ri-money-dollar-circle-line"></i> Cuenta y ganancia</a>
+              {% endif %}
+              {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
+              <a href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
+              {% endif %}
+              {% if 'eliminar_alumnos' in permisos %}
+              <form method="post" action="{{ url_for('alumnos.borrar_matricula', matricula_id=f.matricula_id) }}"
+                    data-reason-confirm
+                    data-reason-prompt="Escribe el motivo obligatorio para borrar a este alumno."
+                    data-confirm-message="¿Borrar este alumno con todos sus pagos, costos y datos? Esta acción NO se puede deshacer.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="motivo" maxlength="500">
+                <button type="submit"><i class="ri-delete-bin-line"></i> Borrar</button>
+              </form>
+              {% endif %}
+            </div>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="vacio">{{ vacio }}</div>{% endif %}
+{% endmacro %}
+
+{% block contenido %}
+<div class="section-header">
+  <div>
+    <h2 class="section-title">Alumnos y Matriculas</h2>
+    <p class="section-desc">Gestión de inscritos a cursos completos y renovaciones rápidas.</p>
+  </div>
+  {% if 'crear_matricula' in permisos %}<button class="btn-action red" id="btnNuevaMatricula" type="button"><i class="ri-user-add-line"></i> Nueva Matrícula</button>{% endif %}
+</div>
+
+{% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+{% if recibo_nuevo and 'ver_recibos' in permisos %}
+<div class="alerta ok">Imprime el recibo original del abono inicial:
+  <a class="btn-action green sm" target="_blank" rel="noopener"
+     href="{{ url_for('pagos.recibo', numero=recibo_nuevo) }}"><i class="ri-printer-line"></i> Imprimir recibo</a>
+</div>
+{% endif %}
+<form class="student-filters" method="get" action="{{ url_for('alumnos.lista') }}">
+  <div class="field student-filter-search">
+    <label class="lbl" for="filtroAlumno">Buscar alumno</label>
+    <input class="input-clean" id="filtroAlumno" type="search" name="q" value="{{ q }}"
+           placeholder="Nombre, documento, categoría o código">
+  </div>
+  <div class="field">
+    <label class="lbl" for="fechaDesde">Inscrito desde</label>
+    <input class="input-clean" id="fechaDesde" type="date" name="desde" value="{{ desde }}">
+  </div>
+  <div class="field">
+    <label class="lbl" for="fechaHasta">Inscrito hasta</label>
+    <input class="input-clean" id="fechaHasta" type="date" name="hasta" value="{{ hasta }}">
+  </div>
+  <button class="btn-action" type="submit"><i class="ri-search-line"></i> Buscar</button>
+  {% if q or desde or hasta %}<a class="btn-action" href="{{ url_for('alumnos.lista') }}">Limpiar</a>{% endif %}
+</form>
+{% if not hay_filtros %}
+<p class="student-list-note">Mostrando las últimas 10 matrículas. Usa la búsqueda o las fechas para encontrar las anteriores.</p>
+{% else %}
+<p class="student-list-note">Resultados filtrados · 10 por página.</p>
+{% endif %}
+
+<div id="listaAlumnos">
+<div class="tabs-scope">
+  <div class="internal-tabs">
+    <button type="button" class="active" data-tab="sub-cursos"><i class="ri-user-star-line"></i> Cursos Completos</button>
+    <button type="button" data-tab="sub-renovaciones"><i class="ri-refresh-line"></i> Renovaciones</button>
+  </div>
+  <div id="sub-cursos" class="subtab-content active"><div class="card-bento">{{ tabla(cursos, 'No hay alumnos para mostrar.') }}</div></div>
+  <div id="sub-renovaciones" class="subtab-content"><div class="card-bento">{{ tabla(renovaciones, 'No hay renovaciones para mostrar.') }}</div></div>
+</div>
+<nav class="student-pagination" aria-label="Páginas de alumnos">
+  <span>{% if primer_resultado %}Mostrando {{ primer_resultado }}–{{ ultimo_resultado }}{% else %}Sin resultados{% endif %}</span>
+  <div>
+    {% if hay_anterior %}<a class="btn-action sm" href="{{ url_for('alumnos.lista', q=q, desde=desde, hasta=hasta, pagina=pagina-1) }}"><i class="ri-arrow-left-line"></i> Anterior</a>{% endif %}
+    {% if hay_siguiente %}<a class="btn-action sm" href="{{ url_for('alumnos.lista', q=q, desde=desde, hasta=hasta, pagina=pagina+1) }}">Siguientes 10 <i class="ri-arrow-right-line"></i></a>{% endif %}
+  </div>
+</nav>
+</div>
+
+{% include "parciales/modal_pago.html" %}
+
+{% if 'crear_matricula' in permisos %}
+<div class="modal-overlay" id="matriculaModal">
+  <div class="modal-panel matricula-dialog">
+    <div class="modal-header">
+      <div><span class="eyebrow">NUEVO REGISTRO</span><h3 class="modal-title">Registrar alumno</h3>
+        <p class="hint">Completa los datos por pasos. <span class="required-mark">*</span> Obligatorio</p></div>
+      <button class="modal-close-btn" id="btnCerrarMatricula" type="button" aria-label="Cerrar">&times;</button>
+    </div>
+    <form method="post" action="{{ url_for('alumnos.crear_matricula') }}" class="matricula-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <ol class="form-stepper" aria-label="Pasos del registro">
+        <li class="active" data-step-indicator="0"><span>1</span><div><strong>Identificación</strong></div></li>
+        <li data-step-indicator="1"><span>2</span><div><strong>Alumno</strong></div></li>
+        <li data-step-indicator="2"><span>3</span><div><strong>Contacto</strong></div></li>
+        <li data-step-indicator="3"><span>4</span><div><strong>Matrícula</strong></div></li>
+      </ol>
+      <div class="matricula-grid">
+        <div class="form-step active" data-step-pane="0">
+          <section class="form-section">
+            <h4>Identificación</h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="matriculaDocumento">Documento <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaDocumento" name="numero_documento" maxlength="20"
+                       data-document-lookup-url="{{ url_for('alumnos.buscar_documento', documento='DOCUMENTO') }}" required></div>
+              <div class="field"><label class="lbl" for="matriculaTipoDocumento">Tipo <span class="required-mark">*</span></label>
+                <select class="input-clean" id="matriculaTipoDocumento" name="tipo_documento" required>
+                  <option value="">Selecciona</option><option>CC</option><option>CE</option><option>TI</option>
+                  <option>RC</option><option>Pasaporte</option><option>PPT</option><option>Otro</option>
+                </select></div>
+              <div class="field"><label class="lbl" for="matriculaCategoria">Categoría <span class="required-mark">*</span></label>
+                <select class="input-clean" id="matriculaCategoria" name="categoria"
+                        data-tariff-select required {{ 'disabled' if not tarifas }}>
+                  <option value="">Selecciona</option>
+                  {% for tarifa in tarifas %}
+                  <option value="{{ tarifa.categoria }}" data-price="{{ tarifa.precio_base }}"
+                          data-tariff-type="{{ tarifa.tipo }}">{{ tarifa.categoria }}</option>
+                  {% endfor %}
+                </select>
+                {% if not tarifas %}
+                <p class="hint">{{ error_tarifas or 'Primero configura las tarifas en Usuarios y permisos.' }}</p>
+                {% endif %}
+              </div>
+              <div class="field"><label class="lbl" for="tipoMatricula">Proceso <span class="required-mark">*</span></label>
+                <select class="input-clean" id="tipoMatricula" name="tipo_matricula" required>
+                  <option value="curso">Curso completo</option><option value="renovacion">Renovación</option>
+                </select></div>
+            </div>
+            <p class="hint" id="matriculaLookupMessage" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+
+        <div class="form-step" data-step-pane="1" hidden>
+          <section class="form-section">
+            <h4>Datos del alumno</h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="matriculaNombres">Nombres <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaNombres" name="nombres" maxlength="100" required></div>
+              <div class="field"><label class="lbl" for="matriculaApellidos">Apellidos <span class="required-mark">*</span></label>
+                <input class="input-clean" id="matriculaApellidos" name="apellidos" maxlength="100" required></div>
+            </div>
+            <details class="optional-details">
+              <summary>Más datos (opcional)</summary>
+              <div class="form-grid two">
+                <div class="field"><label class="lbl" for="fechaNacimiento">Fecha de nacimiento</label>
+                  <input class="input-clean" id="fechaNacimiento" name="fecha_nacimiento" type="date"></div>
+                <div class="field"><label class="lbl" for="lugarNacimiento">Lugar</label>
+                  <input class="input-clean" id="lugarNacimiento" name="lugar_nacimiento" maxlength="120" placeholder="Ciudad, departamento"></div>
+                <div class="field"><label class="lbl" for="sexoAlumno">Sexo</label>
+                  <select class="input-clean" id="sexoAlumno" name="sexo"><option value="">Selecciona</option><option>F</option><option>M</option><option>Otro</option></select></div>
+                <div class="field"><label class="lbl" for="estadoCivil">Estado civil</label>
+                  <select class="input-clean" id="estadoCivil" name="estado_civil">
+                    <option value="">Selecciona</option><option>Soltero/a</option><option>Casado/a</option>
+                    <option>Unión libre</option><option>Separado/a</option><option>Viudo/a</option>
+                  </select></div>
+                <div class="field"><label class="lbl" for="grupoSanguineo">Grupo sanguíneo</label>
+                  <select class="input-clean" id="grupoSanguineo" name="grupo_sanguineo">
+                    <option value="">Selecciona</option><option>O+</option><option>O-</option><option>A+</option><option>A-</option>
+                    <option>B+</option><option>B-</option><option>AB+</option><option>AB-</option>
+                  </select></div>
+                <div class="field"><label class="lbl" for="ocupacionAlumno">Ocupación</label>
+                  <input class="input-clean" id="ocupacionAlumno" name="ocupacion" maxlength="120"></div>
+              </div>
+            </details>
+          </section>
+        </div>
+
+        <div class="form-step" data-step-pane="2" hidden>
+          <section class="form-section">
+            <h4>Contacto <span class="optional-label">Opcional</span></h4>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="celularAlumno">Celular</label>
+                <input class="input-clean" id="celularAlumno" name="celular" maxlength="30" inputmode="tel"></div>
+              <div class="field"><label class="lbl" for="emailAlumno">Correo electrónico</label>
+                <input class="input-clean" id="emailAlumno" name="email" type="email" maxlength="254"></div>
+            </div>
+            <details class="optional-details responsible-section">
+              <summary>Responsable (opcional)</summary>
+              <p class="hint">Si agregas un responsable, documento, nombres, apellidos y relación son obligatorios.</p>
+              <div class="form-grid two">
+                <div class="field"><label class="lbl" for="responsableTipoDocumento">Tipo <span class="required-mark">*</span></label>
+                  <select class="input-clean" id="responsableTipoDocumento" name="responsable_tipo_documento">
+                    <option value="">Selecciona</option><option>CC</option><option>CE</option><option>TI</option><option>RC</option><option>Pasaporte</option><option>PPT</option><option>Otro</option>
+                  </select></div>
+                <div class="field"><label class="lbl" for="responsableDocumento">Documento <span class="required-mark">*</span></label>
+                  <input class="input-clean" id="responsableDocumento" name="responsable_documento" maxlength="20"></div>
+                <div class="field"><label class="lbl" for="responsableNombres">Nombres <span class="required-mark">*</span></label>
+                  <input class="input-clean" id="responsableNombres" name="responsable_nombres" maxlength="100"></div>
+                <div class="field"><label class="lbl" for="responsableApellidos">Apellidos <span class="required-mark">*</span></label>
+                  <input class="input-clean" id="responsableApellidos" name="responsable_apellidos" maxlength="100"></div>
+                <div class="field"><label class="lbl" for="responsableCelular">Celular</label>
+                  <input class="input-clean" id="responsableCelular" name="responsable_celular" maxlength="30" inputmode="tel"></div>
+                <div class="field"><label class="lbl" for="responsableEmail">Correo electrónico</label>
+                  <input class="input-clean" id="responsableEmail" name="responsable_email" type="email" maxlength="254"></div>
+                <div class="field"><label class="lbl" for="responsableRelacion">Relación <span class="required-mark">*</span></label>
+                  <select class="input-clean" id="responsableRelacion" name="responsable_relacion">
+                    <option value="">Selecciona</option><option>Padre</option><option>Madre</option><option>Cónyuge</option>
+                    <option>Hijo/a</option><option>Hermano/a</option><option>Acudiente</option><option>Otro</option>
+                  </select></div>
+              </div>
+            </details>
+          </section>
+        </div>
+
+        <div class="form-step" data-step-pane="3" hidden>
+          <section class="form-section price-section">
+            <h4>Matrícula y pago</h4>
+            <label style="display:flex;gap:.6rem;align-items:center;font-weight:700;cursor:pointer;margin-bottom:.75rem">
+              <input type="checkbox" id="alumnoEnCurso" name="alumno_en_curso" value="1">
+              <span>Este alumno ya venía cursando (se matriculó antes de usar la app)</span>
+            </label>
+            <div id="bloqueEnCurso" class="form-grid two" style="margin-bottom:.75rem;display:none">
+              <div class="field"><label class="lbl" for="fechaMatriculaOriginal">Fecha en que se matriculó <span class="required-mark">*</span></label>
+                <input class="input-clean" type="date" id="fechaMatriculaOriginal" name="fecha_matricula"></div>
+              <div class="field"><label class="lbl" for="runtYa">¿Ya está registrado en el RUNT?</label>
+                <select class="input-clean" id="runtYa" name="runt_registrado">
+                  <option value="0">No</option><option value="1">Sí</option>
+                </select></div>
+              <p class="hint" style="grid-column:1/-1;margin:0">Lo que ya pagó se guarda como abono previo: no entra en la caja de hoy ni genera recibo.</p>
+            </div>
+            <div class="form-grid two">
+              <div class="field"><label class="lbl" for="precioBase">Precio base (COP) <span class="required-mark">*</span></label>
+                <input class="input-clean" id="precioBase" name="precio_base" inputmode="numeric" data-money-input required></div>
+              <div class="field"><label class="lbl" for="descuentoPesos">Descuento ($)</label>
+                <input class="input-clean" id="descuentoPesos" data-money-input inputmode="numeric" placeholder="Ej: 50.000"></div>
+              <div class="field"><label class="lbl" for="descuentoPorcentaje">Descuento (%)</label>
+                <input class="input-clean" id="descuentoPorcentaje" type="number" min="0" max="100" step="0.01" placeholder="Ej: 10"></div>
+              <div class="field" id="campoMetodoPago"><label class="lbl" for="metodoPagoInicial">Método de pago del abono</label>
+                <select class="input-clean" id="metodoPagoInicial" name="metodo_pago">
+                  <option>Efectivo</option><option>Transferencia</option><option>Nequi</option>
+                  <option>Daviplata</option><option>Sistecredit</option><option>Otro</option>
+                </select></div>
+              <div class="field"><label class="lbl" for="abonoInicial" id="lblAbonoInicial">Abono inicial (COP)</label>
+                <input class="input-clean" id="abonoInicial" name="abono_inicial" inputmode="numeric"
+                       data-money-input value="0">
+                <p class="hint" id="hintAbonoInicial">Escribe 0 si no paga ahora.</p></div>
+              <div class="field"><label class="lbl" for="saldoVisible">Saldo pendiente tras el abono (COP)</label>
+                <input type="hidden" id="matriculaPrecio" name="precio_total">
+                <input class="input-clean total-input" id="saldoVisible" type="text" readonly tabindex="-1">
+                <p class="hint" id="hintTotalCurso">El total se calcula con el precio y el descuento.</p></div>
+            </div>
+            <details class="optional-details">
+              <summary>Más datos del pago (opcional)</summary>
+              <div class="form-grid two">
+                <div class="field"><label class="lbl" for="acompananteInicial">Acompañante</label>
+                  <input class="input-clean" id="acompananteInicial" name="acompanante" maxlength="100"></div>
+                <div class="field"><label class="lbl" for="notasIniciales">Notas del abono</label>
+                  <input class="input-clean" id="notasIniciales" name="observaciones" maxlength="1000"></div>
+              </div>
+            </details>
+          </section>
+          <p class="step-note">Año {{ anio_actual }} · El consecutivo se asigna automáticamente.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-action" id="btnCancelarMatricula">Cancelar</button>
+        <div class="step-actions">
+          <button type="button" class="btn-action step-back" id="btnPasoAnterior" hidden><i class="ri-arrow-left-line"></i> Anterior</button>
+          <button type="button" class="btn-action green" id="btnPasoSiguiente">Continuar <i class="ri-arrow-right-line"></i></button>
+          <button type="submit" class="btn-action green" id="btnGuardarMatricula" hidden><i class="ri-save-line"></i> Guardar matrícula</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pagos.js', v=asset_v) }}"></script>
+{% if 'crear_matricula' in permisos %}<script src="{{ url_for('static', filename='js/matriculas.js', v=asset_v) }}"></script>{% endif %}
+<script>
 (function () {
-  "use strict";
-  const modal = document.getElementById("matriculaModal");
-  const abrir = document.getElementById("btnNuevaMatricula");
-  if (!modal || !abrir) return;
-
-  const precioBase = document.getElementById("precioBase");
-  const categoria = document.getElementById("matriculaCategoria");
-  const tipoMatricula = document.getElementById("tipoMatricula");
-  const documento = document.getElementById("matriculaDocumento");
-  const lookupMessage = document.getElementById("matriculaLookupMessage");
-  const descuentoPesos = document.getElementById("descuentoPesos");
-  const descuentoPorcentaje = document.getElementById("descuentoPorcentaje");
-  const precioTotal = document.getElementById("matriculaPrecio");
-  const form = modal.querySelector("form");
-  const pasos = [...modal.querySelectorAll("[data-step-pane]")];
-  const indicadores = [...modal.querySelectorAll("[data-step-indicator]")];
-  const btnAnterior = document.getElementById("btnPasoAnterior");
-  const btnSiguiente = document.getElementById("btnPasoSiguiente");
-  const btnGuardar = document.getElementById("btnGuardarMatricula");
-  let pasoActual = 0;
-  form.noValidate = true;
-  const soloDigitos = (valor) => Number.parseInt(window.soloDigitos(valor), 10) || 0;
-
-  function mostrarPaso(indice) {
-    pasoActual = indice;
-    pasos.forEach((paso, i) => {
-      paso.hidden = i !== indice;
-      paso.classList.toggle("active", i === indice);
-    });
-    indicadores.forEach((indicador, i) => {
-      indicador.classList.toggle("active", i === indice);
-      indicador.classList.toggle("done", i < indice);
-    });
-    btnAnterior.hidden = indice === 0;
-    btnSiguiente.hidden = indice === pasos.length - 1;
-    btnGuardar.hidden = indice !== pasos.length - 1;
-    pasos[indice].querySelector("input, select, textarea")?.focus({ preventScroll: true });
-    pasos[indice].scrollIntoView({ block: "nearest" });
-  }
-
-  function validarPaso() {
-    const campos = [...pasos[pasoActual].querySelectorAll("input, select, textarea")]
-      .filter((campo) => campo.willValidate);
-    for (const campo of campos) {
-      if (!campo.checkValidity()) {
-        campo.reportValidity();
-        return false;
-      }
-    }
-    return true;
-  }
-
-  const abonoInicial = document.getElementById("abonoInicial");
-  const saldoVisible = document.getElementById("saldoVisible");
-  const hintTotalCurso = document.getElementById("hintTotalCurso");
-
-  function mostrarSaldo() {
-    const total = soloDigitos(precioTotal.value);
-    const abono = soloDigitos(abonoInicial.value);
-    if (!total) {
-      saldoVisible.value = "";
-      hintTotalCurso.textContent = "El total se calcula con el precio y el descuento.";
-      return;
-    }
-    const saldo = Math.max(total - abono, 0);
-    saldoVisible.value = "$ " + window.formatearMiles(saldo);
-    hintTotalCurso.textContent = "Total del curso: $ " + window.formatearMiles(total) +
-      " − abono: $ " + window.formatearMiles(Math.min(abono, total));
-  }
-
-  function calcularTotal() {
-    const base = soloDigitos(precioBase.value);
-    const pesos = soloDigitos(descuentoPesos.value);
-    const porcentaje = Number(descuentoPorcentaje.value) || 0;
-    const descuento = pesos || Math.round(base * porcentaje / 100);
-    precioTotal.value = base ? String(Math.max(base - descuento, 0)) : "";
-    mostrarSaldo();
-  }
-
-  const opcionesTarifas = [...categoria.options].map((opcion) => ({
-    value: opcion.value,
-    text: opcion.textContent,
-    price: opcion.dataset.price || "",
-    type: opcion.dataset.tariffType || "",
-  })).filter((opcion) => opcion.value);
-
-  function filtrarTarifas() {
-    const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
-    const seleccion = categoria.value;
-    categoria.innerHTML = "";
-
-    const opcionVacia = document.createElement("option");
-    opcionVacia.value = "";
-    opcionVacia.textContent = "Selecciona";
-    categoria.appendChild(opcionVacia);
-
-    const filtradas = opcionesTarifas.filter((opcion) => opcion.type === tipo);
-    filtradas.forEach((opcion) => {
-      const elemento = document.createElement("option");
-      elemento.value = opcion.value;
-      elemento.textContent = opcion.text;
-      elemento.dataset.price = opcion.price;
-      elemento.dataset.tariffType = opcion.type;
-      categoria.appendChild(elemento);
-    });
-
-    categoria.value = filtradas.some((opcion) => opcion.value === seleccion) ? seleccion : "";
-    precioBase.value = "";
-    calcularTotal();
-  }
-  categoria.addEventListener("change", () => {
-    const precio = categoria.selectedOptions[0]?.dataset.price;
-    precioBase.value = precio ? window.formatearMiles(precio) : "";
-    calcularTotal();
-  });
-  tipoMatricula.addEventListener("change", filtrarTarifas);
-  filtrarTarifas();
-
-  const camposAlumno = {
-    tipo_documento: document.getElementById("matriculaTipoDocumento"),
-    nombres: document.getElementById("matriculaNombres"),
-    apellidos: document.getElementById("matriculaApellidos"),
-    fecha_nacimiento: document.getElementById("fechaNacimiento"),
-    lugar_nacimiento: document.getElementById("lugarNacimiento"),
-    sexo: document.getElementById("sexoAlumno"),
-    estado_civil: document.getElementById("estadoCivil"),
-    grupo_sanguineo: document.getElementById("grupoSanguineo"),
-    ocupacion: document.getElementById("ocupacionAlumno"),
-    celular: document.getElementById("celularAlumno"),
-    email: document.getElementById("emailAlumno"),
-  };
-  let autocompletados = {};
-  let consultaDocumento = 0;
-  documento.addEventListener("blur", async () => {
-    const numero = documento.value.trim();
-    if (!numero) return;
-    Object.entries(autocompletados).forEach(([nombre, valor]) => {
-      if (camposAlumno[nombre].value === valor) camposAlumno[nombre].value = "";
-    });
-    autocompletados = {};
-    const consulta = ++consultaDocumento;
-    lookupMessage.textContent = "Buscando alumno...";
+  let v = null;
+  async function revisar() {
+    if (document.hidden || document.querySelector(".modal-overlay.open, .student-actions-menu[open]")
+        || document.activeElement?.matches("input, select, textarea")) return;
     try {
-      const base = documento.dataset.documentLookupUrl.replace("DOCUMENTO", encodeURIComponent(numero));
-      const respuesta = await fetch(base, { credentials: "same-origin" });
-      const resultado = await respuesta.json();
-      if (consulta !== consultaDocumento || documento.value.trim() !== numero) return;
-      if (!respuesta.ok || !resultado.ok) {
-        lookupMessage.textContent = resultado.error || "No se pudo consultar el documento.";
-        return;
-      }
-      if (!resultado.encontrado) {
-        lookupMessage.textContent = "Alumno nuevo. Completa sus datos en el siguiente paso.";
-        return;
-      }
-      Object.entries(camposAlumno).forEach(([nombre, campo]) => {
-        const valor = resultado.alumno[nombre] || "";
-        if (valor && !campo.value) {
-          campo.value = valor;
-          autocompletados[nombre] = valor;
+      const r = await fetch("/alumnos/version", { credentials: "same-origin" });
+      if (!r.ok) return;
+      const n = (await r.json()).v;
+      if (v !== null && n !== v) {
+        const h = await fetch(location.href, { credentials: "same-origin" });
+        const nueva = new DOMParser().parseFromString(await h.text(), "text/html").getElementById("listaAlumnos");
+        const actual = document.getElementById("listaAlumnos");
+        if (nueva && actual) {
+          const tab = actual.querySelector(".subtab-content.active")?.id;
+          actual.replaceWith(nueva);
+          if (tab) nueva.querySelector('.internal-tabs button[data-tab="' + tab + '"]')?.click();
         }
-      });
-      lookupMessage.textContent = "Datos encontrados y precargados.";
-    } catch (error) {
-      if (consulta === consultaDocumento) {
-        lookupMessage.textContent = "No se pudo consultar el documento. Revisa la conexión e intenta de nuevo.";
       }
-    }
-  });
-
-  precioBase.addEventListener("input", calcularTotal);
-  descuentoPesos.addEventListener("input", () => {
-    if (descuentoPesos.value) descuentoPorcentaje.value = "";
-    calcularTotal();
-  });
-  descuentoPorcentaje.addEventListener("input", () => {
-    if (descuentoPorcentaje.value) descuentoPesos.value = "";
-    calcularTotal();
-  });
-  // El total ya no se edita a mano: se calcula con el precio base y el descuento.
-  abonoInicial.addEventListener("input", mostrarSaldo);
-
-  // Alumno que ya venía cursando: pide la fecha original y trata el abono como "ya pagado"
-  const enCurso = document.getElementById("alumnoEnCurso");
-  const bloqueEnCurso = document.getElementById("bloqueEnCurso");
-  const fechaOriginal = document.getElementById("fechaMatriculaOriginal");
-  function actualizarEnCurso() {
-    const activo = enCurso.checked;
-    bloqueEnCurso.style.display = activo ? "" : "none";   // (el atributo hidden pierde contra display:grid)
-    fechaOriginal.required = activo;
-    const hoyLocal = new Date();
-    fechaOriginal.max = hoyLocal.getFullYear() + "-" +
-      String(hoyLocal.getMonth() + 1).padStart(2, "0") + "-" + String(hoyLocal.getDate()).padStart(2, "0");
-    document.getElementById("campoMetodoPago").style.display = activo ? "none" : "";
-    document.getElementById("lblAbonoInicial").textContent =
-      activo ? "Lo que ya ha pagado hasta hoy (COP)" : "Abono inicial (COP)";
-    document.getElementById("hintAbonoInicial").textContent =
-      activo ? "Escribe 0 si aún no ha pagado nada." : "Escribe 0 si no paga ahora.";
+      v = n;
+    } catch (e) {}
   }
-  enCurso.addEventListener("change", actualizarEnCurso);
-
-  const cerrar = () => modal.classList.remove("open");
-  abrir.addEventListener("click", () => {
-    form.reset();
-    actualizarEnCurso();
-    autocompletados = {};
-    lookupMessage.textContent = "";
-    descuentoPesos.value = "";
-    descuentoPorcentaje.value = "";
-    form.querySelectorAll("[data-money-input]").forEach(window.formatearCampoMoneda);
-    filtrarTarifas();
-    mostrarSaldo();
-    mostrarPaso(0);
-    modal.classList.add("open");
-    document.getElementById("matriculaDocumento").focus();
-  });
-  btnSiguiente.addEventListener("click", () => {
-    if (validarPaso()) mostrarPaso(Math.min(pasoActual + 1, pasos.length - 1));
-  });
-  btnAnterior.addEventListener("click", () => mostrarPaso(Math.max(pasoActual - 1, 0)));
-  form.addEventListener("submit", (evento) => {
-    if (!validarPaso()) evento.preventDefault();
-  });
-  document.getElementById("btnCerrarMatricula").addEventListener("click", cerrar);
-  document.getElementById("btnCancelarMatricula").addEventListener("click", cerrar);
+  setInterval(revisar, 30000);
+  document.addEventListener("visibilitychange", revisar);
+  revisar();
 })();
+</script>
+{% endblock %}
