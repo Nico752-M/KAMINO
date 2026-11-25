@@ -6,10 +6,10 @@
   if (!modal) return;
 
   const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
-  const     cambioMetodo();
-    recalcular();
-    cargarDistribucion();
-    modal.classList.add("open");soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
+  const soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
+
+  let ctx = { matricula: 0, saldo: 0, guardando: false, costos: [], editado: false };
+  let destinos = null;
 
     $("selectDestino").value = "";
     cambioMetodo();
@@ -17,7 +17,7 @@
     recalcular();
     cargarDistribucion();
     modal.classList.add("open");
-  let destinos = null;   // bancos y bolsillos disponibles (se piden una sola vez)
+  // bancos y bolsillos disponibles (se piden una sola vez)
 
   async function cargarDestinos() {
     if (destinos === null) {
