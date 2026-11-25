@@ -589,16 +589,29 @@ def resumen():
             current_app.logger.exception("No se pudo consultar la caja abierta del usuario")
             error = error or "No se pudo consultar tu caja abierta."
 
-    pagos_por_confirmar = 0
+    # Bandeja de pendientes: todos los pagos (abonos o pagos totales) sin confirmar, de cualquier fecha.
+    pagos_pendientes = []
     if "confirmar_pagos" in permisos_actuales():
         try:
-            pagos_por_confirmar = db.fetchone(
-                "SELECT COUNT(*) AS total FROM pagos WHERE anulado = 0 AND confirmado = 0 "
-                "AND concepto <> 'Abono histórico previo'")["total"]
+            pagos_pendientes = db.fetchall("""
+                SELECT p.numero_recibo, p.fecha_pago, p.concepto, p.metodo_pago, p.valor,
+                       p.id_matricula, m.categoria,
+                       TRIM(a.nombres || ' ' || a.apellidos) AS alumno,
+                       a.numero_documento AS documento,
+                       u.nombre AS cajero
+                FROM pagos p
+                LEFT JOIN matriculas m ON m.id = p.id_matricula
+                LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
+                LEFT JOIN usuarios u ON u.id = p.usuario_id
+                WHERE p.anulado = 0 AND p.confirmado = 0
+                  AND p.concepto <> 'Abono histórico previo'
+                ORDER BY p.fecha_pago, p.numero_recibo
+            """)
         except Exception:
-            current_app.logger.exception("No se pudo contar los pagos por confirmar")
+            current_app.logger.exception("No se pudo consultar los pagos por confirmar")
+    pagos_por_confirmar = len(pagos_pendientes)
 
-    return render_template("tesoreria.html", pagos_por_confirmar=pagos_por_confirmar, dia=dia, movs=movs, cajas=cajas,
+    return render_template("tesoreria.html", pagos_por_confirmar=pagos_por_confirmar, pagos_pendientes=pagos_pendientes, dia=dia, movs=movs, cajas=cajas,
                            t=totales, error=error, admin=admin, cajeros=admin_cajeros,
                            movimientos_hoy=movimientos_hoy,
                            cajero_filtro=cajero_filtro, caja_actual=caja_actual,
