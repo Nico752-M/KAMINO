@@ -870,7 +870,9 @@ def anular_pago(numero):
 def confirmar_pago(numero):
     if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
         return "Recibo no válido.", 404
-    destino = url_for("alumnos.lista")
+    desde_bandeja = request.form.get("origen") == "pendientes"
+    bandeja = url_for("caja.resumen", pendientes=1)
+    destino = bandeja if desde_bandeja else url_for("alumnos.lista")
     try:
         with db.transaccion() as cur:
             pago = cur.execute("""
@@ -881,7 +883,8 @@ def confirmar_pago(numero):
             if not pago:
                 flash("No se encontró el pago.", "error")
                 return redirect(destino)
-            destino = url_for("alumnos.historial", matricula_id=pago["id_matricula"])
+            if not desde_bandeja:
+                destino = url_for("alumnos.historial", matricula_id=pago["id_matricula"])
             if pago["anulado"]:
                 flash("Un pago anulado no se puede confirmar.", "error")
                 return redirect(destino)
