@@ -319,6 +319,30 @@ if (typeof document !== "undefined") (function () {
     $("sGanancia").textContent = variable ? "Al cobrar se escribe el precio y el valor a terceros de ese día."
       : (precio ? (terc > precio ? "El valor a terceros es mayor que el precio." : `Te queda ${fmt(precio - terc)} por cada servicio.`) : "");
   }
+
+  // ── Pasos del formulario de servicio ──
+  let pasoSrv = 0;
+  const PASOS_SRV = 3;
+  function mostrarPasoSrv(n) {
+    pasoSrv = n;
+    document.querySelectorAll("#mServicio [data-paso]").forEach((p) => { p.hidden = Number(p.dataset.paso) !== n; });
+    document.querySelectorAll("#mServicio .t-pasos-barra i").forEach((b, i) => b.classList.toggle("on", i <= n));
+    $("sPasoTxt").textContent = `Paso ${n + 1} de ${PASOS_SRV}`;
+    $("sAtras").hidden = n === 0;
+    $("sSiguiente").hidden = n === PASOS_SRV - 1;
+    $("sGuardar").hidden = n !== PASOS_SRV - 1;
+    $("sError").style.display = "none";
+  }
+  function siguientePasoSrv() {
+    if (pasoSrv === 0 && !$("sNombre").value.trim()) return errorEn("sError", "Escribe el nombre del servicio.");
+    if (pasoSrv === 1) {
+      const variable = $("sVariable").checked, precio = digitos($("sPrecio").value), terc = digitos($("sTerceros").value);
+      if (!variable && precio <= 0) return errorEn("sError", "Escribe el precio, o elige «Cambia cada vez».");
+      if (!variable && terc > precio) return errorEn("sError", "El valor para otra entidad es mayor que el precio.");
+    }
+    mostrarPasoSrv(Math.min(pasoSrv + 1, PASOS_SRV - 1));
+  }
+
   function abrirServicio(id) {
     const x = id ? estado.servicios.find((v) => v.id === Number(id)) : null;
     $("mServicioTitulo").textContent = x ? "Cambiar servicio" : "Nuevo servicio";
@@ -328,9 +352,7 @@ if (typeof document !== "undefined") (function () {
     $("sCatChips").innerHTML = categoriasSrv().filter((c) => c !== "Todos").map((c) =>
       `<button type="button" class="t-chip" data-scat="${esc(c)}">${esc(c)}</button>`).join("");
     ui.reqs = x ? (x.requisitos || []).map((r) => ({ tipo: r.tipo, texto: r.texto, obligatorio: r.obligatorio })) : [];
-    $("sTercerosDet").open = !!(x && x.terceros);
-    $("sReqsDet").open = ui.reqs.length > 0;
-    pintarReqs(); pintarGananciaServicio();
+    pintarReqs(); pintarGananciaServicio(); mostrarPasoSrv(0);
     $("sError").style.display = "none"; abrirModal("mServicio"); $("sNombre").focus();
   }
   async function guardarServicio() {
@@ -764,8 +786,7 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.p) { ui.periodo = t.dataset.p; cargarGanancias(); }
     else if (t.hasAttribute("data-cerrar")) cerrarModales();
   });
-  document.querySelectorAll(".t-modal").forEach((m) => m.addEventListener("click", (e) => { if (e.target === m) cerrarModales(); }));
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModales(); });
+
   $("tBuscar").addEventListener("input", (e) => { ui.q = e.target.value; renderCaja(); });
   $("tVaciar").addEventListener("click", () => { ui.carrito = {}; renderCaja(); });
   $("tMetodo").addEventListener("change", renderCarrito);
@@ -777,6 +798,8 @@ if (typeof document !== "undefined") (function () {
   $("pGuardar").addEventListener("click", guardarProducto);
   $("sNuevo").addEventListener("click", () => abrirServicio(null));
   $("sBuscar").addEventListener("input", renderServicios);
+  $("sSiguiente").addEventListener("click", siguientePasoSrv);
+  $("sAtras").addEventListener("click", () => mostrarPasoSrv(Math.max(pasoSrv - 1, 0)));
   $("sGuardar").addEventListener("click", guardarServicio);
   $("mSrvAgregar").addEventListener("click", agregarServicio);
   $("sReqs").addEventListener("input", (e) => { if (e.target.dataset.rtxt !== undefined) ui.reqs[Number(e.target.dataset.rtxt)].texto = e.target.value; });
