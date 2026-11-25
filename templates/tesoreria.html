@@ -2,7 +2,7 @@
 {% set nav = 'caja' %}
 {% block titulo %}Caja — CEA La 30{% endblock %}
 {% block contenido %}
-{% set tab_inicial = 'caja-historial' if (recibo_q or request.args.get('historial') or request.args.get('pagina')) else ('caja-turno' if puede_cobrar else 'caja-cierres') %}
+{% set tab_inicial = 'caja-pendientes' if (request.args.get('pendientes') and 'confirmar_pagos' in permisos) else 'caja-historial' if (recibo_q or request.args.get('historial') or request.args.get('pagina')) else ('caja-turno' if puede_cobrar else 'caja-cierres') %}
 <div class="section-header cash-page-header">
   <div>
     <span class="eyebrow">OPERACIÓN</span>
@@ -20,7 +20,7 @@
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
-{% if pagos_por_confirmar %}<div class="alerta error"><i class="ri-time-line"></i> Hay <strong>{{ pagos_por_confirmar }}</strong> pago(s) pendientes de confirmar. Búscalos en el historial (insignia «Pendiente») o en el historial de pagos de cada alumno.</div>{% endif %}
+{% if pagos_por_confirmar %}<div class="alerta error"><i class="ri-time-line"></i> Hay <strong>{{ pagos_por_confirmar }}</strong> pago(s) pendientes de confirmar. Confírmalos en la pestaña <strong>Pendientes</strong>.</div>{% endif %}
 {% if recibo_nuevo and 'ver_recibos' in permisos %}
 <div class="alerta ok">Imprime el comprobante original:
   <a class="btn-action green sm" target="_blank" rel="noopener"
@@ -33,6 +33,7 @@
     <button type="button" class="{{ 'active' if tab_inicial == 'caja-turno' else '' }}" data-tab="caja-turno">Mi turno</button>
     <button type="button" class="{{ 'active' if tab_inicial == 'caja-cierres' else '' }}" data-tab="caja-cierres">Cierres</button>
     <button type="button" class="{{ 'active' if tab_inicial == 'caja-historial' else '' }}" data-tab="caja-historial">Historial</button>
+    {% if 'confirmar_pagos' in permisos %}<button type="button" class="{{ 'active' if tab_inicial == 'caja-pendientes' else '' }}" data-tab="caja-pendientes">Pendientes{% if pagos_por_confirmar %} ({{ pagos_por_confirmar }}){% endif %}</button>{% endif %}
   </div>
   <div id="caja-turno" class="subtab-content {{ 'active' if tab_inicial == 'caja-turno' else '' }}">
 {% if puede_cobrar %}
@@ -166,6 +167,38 @@
 </details>
 
   </div>
+  {% if 'confirmar_pagos' in permisos %}
+  <div id="caja-pendientes" class="subtab-content {{ 'active' if tab_inicial == 'caja-pendientes' else '' }}">
+<section class="card-bento cash-history">
+  <div class="cash-block-heading">
+    <div><h3>Pagos pendientes de confirmar</h3><p>Abonos y pagos totales de todas las fechas. Al confirmar, el pago queda registrado con tu nombre.</p></div>
+  </div>
+  {% if pagos_pendientes %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Fecha</th><th>Recibo</th><th>Alumno</th><th>Concepto</th><th>Método</th><th>Valor</th><th>Cajero</th><th></th></tr></thead>
+    <tbody>{% for p in pagos_pendientes %}
+      <tr>
+        <td>{{ p.fecha_pago.strftime('%d/%m/%Y %H:%M') if p.fecha_pago else '' }}</td>
+        <td>{{ p.numero_recibo }}</td>
+        <td>{{ p.alumno or '—' }}{% if p.documento %}<br><small>{{ p.documento }}</small>{% endif %}</td>
+        <td>{{ p.concepto }}</td>
+        <td>{{ p.metodo_pago }}</td>
+        <td>{{ p.valor|cop }}</td>
+        <td>{{ p.cajero or '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('alumnos.confirmar_pago', numero=p.numero_recibo) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="origen" value="pendientes">
+            <button class="btn-action sm" type="submit"><i class="ri-check-double-line"></i> Confirmar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="hint">No hay pagos pendientes de confirmar.</p>{% endif %}
+</section>
+  </div>
+  {% endif %}
   <div id="caja-historial" class="subtab-content {{ 'active' if tab_inicial == 'caja-historial' else '' }}">
 <section class="card-bento cash-history">
   <div class="cash-block-heading">
