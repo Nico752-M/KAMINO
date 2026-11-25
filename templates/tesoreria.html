@@ -191,6 +191,17 @@
             <input type="hidden" name="origen" value="pendientes">
             <button class="btn-action sm" type="submit"><i class="ri-check-double-line"></i> Confirmar</button>
           </form>
+          {% if 'anular_pagos' in permisos %}
+          <form method="post" action="{{ url_for('alumnos.anular_pago', numero=p.numero_recibo) }}"
+                data-reason-confirm
+                data-reason-prompt="Escribe el motivo obligatorio para anular este pago."
+                data-confirm-message="¿Anular este pago? Dejará de sumar en caja. El recibo y su registro no se borrarán.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="origen" value="pendientes">
+            <input type="hidden" name="motivo" maxlength="500">
+            <button class="btn-action red sm" type="submit"><i class="ri-close-circle-line"></i> Anular</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
     {% endfor %}</tbody>
