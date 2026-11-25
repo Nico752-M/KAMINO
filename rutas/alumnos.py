@@ -788,8 +788,10 @@ def historial(matricula_id):
         return "Matrícula no encontrada.", 404
     pagos = db.fetchall("""
         SELECT p.numero_recibo, p.fecha_pago, p.concepto, p.metodo_pago, p.valor,
-               p.anulado, p.motivo_anulacion, u.nombre AS cajero
+               p.anulado, p.motivo_anulacion, u.nombre AS cajero,
+               p.confirmado, uc.nombre AS confirmado_por_nombre, p.fecha_confirmacion
         FROM pagos p LEFT JOIN usuarios u ON u.id = p.usuario_id
+        LEFT JOIN usuarios uc ON uc.id = p.confirmado_por
         WHERE p.id_matricula = %s
         ORDER BY p.fecha_pago DESC
     """, (matricula_id,))
@@ -860,3 +862,42 @@ def anular_pago(numero):
         return redirect(url_for("alumnos.lista"))
     flash(f"El pago {numero} fue anulado. El recibo y el registro se conservaron.", "ok")
     return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+
+
+@bp.route("/pagos/<numero>/confirmar", methods=["POST"])
+@login_required
+@permiso_requerido("confirmar_pagos")
+def confirmar_pago(numero):
+    if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
+        return "Recibo no válido.", 404
+    destino = url_for("alumnos.lista")
+    try:
+        with db.transaccion() as cur:
+            pago = cur.execute("""
+                SELECT id, id_matricula, numero_recibo, concepto, valor, metodo_pago,
+                       anulado, confirmado
+                FROM pagos WHERE numero_recibo = %s FOR UPDATE
+            """, (numero,)).fetchone()
+            if not pago:
+                flash("No se encontró el pago.", "error")
+                return redirect(destino)
+            destino = url_for("alumnos.historial", matricula_id=pago["id_matricula"])
+            if pago["anulado"]:
+                flash("Un pago anulado no se puede confirmar.", "error")
+                return redirect(destino)
+            if pago["confirmado"]:
+                flash("Este pago ya estaba confirmado.", "error")
+                return redirect(destino)
+            cur.execute("""
+                UPDATE pagos SET confirmado = 1, confirmado_por = %s,
+                    fecha_confirmacion = CURRENT_TIMESTAMP
+                WHERE id = %s AND confirmado = 0 AND anulado = 0
+            """, (session["uid"], pago["id"]))
+            _auditar(cur, "PAGO", pago["id"], "CONFIRMACION", session["uid"],
+                     dict(pago), {**pago, "confirmado": 1})
+    except Exception:
+        current_app.logger.exception("Error confirmando recibo %s", numero)
+        flash("No se pudo confirmar el pago. Intenta de nuevo.", "error")
+        return redirect(destino)
+    flash(f"El pago {numero} quedó confirmado.", "ok")
+    return redirect(destino)
