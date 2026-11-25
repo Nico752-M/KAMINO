@@ -1,62 +1,98 @@
+
 /* Modal "Registrar Pago / Abono" */
 (function () {
   "use strict";
+
   const $ = (id) => document.getElementById(id);
   const modal = $("paymentModal");
+
   if (!modal) return;
 
   const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
   const soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
 
-  let ctx = { matricula: 0, saldo: 0, guardando: false, costos: [], editado: false };
+  let ctx = {
+    matricula: 0,
+    saldo: 0,
+    guardando: false,
+    costos: [],
+    editado: false
+  };
+
   let destinos = null;
 
-    $("selectDestino").value = "";
-    cambioMetodo();
-    cargarDestinos();
-    recalcular();
-    cargarDistribucion();
-    modal.classList.add("open");
-  // bancos y bolsillos disponibles (se piden una sola vez)
-
+  // Bancos y bolsillos disponibles (se piden una sola vez)
   async function cargarDestinos() {
     if (destinos === null) {
       try {
-        const resp = await fetch("/bancos/destinos", { credentials: "same-origin" });
+        const resp = await fetch("/bancos/destinos", {
+          credentials: "same-origin"
+        });
+
         const datos = await resp.json();
-        if (resp.ok && datos.ok) destinos = datos.destinos || [];
+
+        if (resp.ok && datos.ok) {
+          destinos = datos.destinos || [];
+        }
       } catch (e) {}
+
       if (destinos !== null) {
-        $("selectDestino").innerHTML = '<option value="">Sin asignar a un banco</option>' +
-          destinos.map((x) => '<option value="' + x.valor + '">' + escapar(x.texto) + '</option>').join("");
+        $("selectDestino").innerHTML =
+          '<option value="">Sin asignar a un banco</option>' +
+          destinos.map((x) =>
+            '<option value="' + x.valor + '">' +
+            escapar(x.texto) +
+            "</option>"
+          ).join("");
       }
     }
+
     cambioMetodo();
   }
 
   function abrir(btn) {
-    ctx = { btn, matricula: btn.dataset.matricula, saldo: Number(btn.dataset.saldo) || 0, guardando: false, costos: [], editado: false };
+    ctx = {
+      btn,
+      matricula: btn.dataset.matricula,
+      saldo: Number(btn.dataset.saldo) || 0,
+      guardando: false,
+      costos: [],
+      editado: false
+    };
+
     $("modalStudentName").textContent = btn.dataset.nombre;
     $("modalStudentBalance").textContent = fmt(ctx.saldo);
-    $("pagoConcepto").value = btn.dataset.concepto || "Pago curso de conducción";
+    $("pagoConcepto").value =
+      btn.dataset.concepto || "Pago curso de conducción";
+
     $("selectPaymentMethod").value = "Efectivo";
-    $("inputAmount").value = window.formatearMiles(Math.round(ctx.saldo));
+    $("inputAmount").value =
+      window.formatearMiles(Math.round(ctx.saldo));
+
     $("inputReceived").value = "";
     $("pagoNotas").value = "";
     $("pagoAcompanante").value = "";
+
+    $("selectDestino").value = "";
+
     $("cashCalculatorBox").classList.remove("open");
     $("pagoError").style.display = "none";
     $("pagoForm").style.display = "flex";
     $("pagoExito").style.display = "none";
     $("btnGuardarPago").disabled = false;
+
     if ($("distribDetalle")) {
       $("distribDetalle").style.display = "none";
       $("btnEditarReparto").textContent = "Cambiar";
     }
+
+    cargarDestinos();
     cambioMetodo();
     recalcular();
     cargarDistribucion();
+
     modal.classList.add("open");
+
     $("inputAmount").focus();
     $("inputAmount").select();
   }
@@ -69,11 +105,16 @@
   function actualizarFila(saldo) {
     const celdas = ctx.btn.closest("tr").children;
     const valor = celdas[3].querySelector("strong");
+
     valor.textContent = fmt(saldo);
-    valor.style.color = saldo > 0 ? "var(--accent-red)" : "var(--accent-green)";
+    valor.style.color =
+      saldo > 0 ? "var(--accent-red)" : "var(--accent-green)";
+
     const estado = celdas[4].querySelector(".badge-status");
+
     if (saldo > 0) {
       ctx.btn.dataset.saldo = saldo;
+
       if (estado.textContent.trim() === "Activo") {
         estado.textContent = "Pendiente Pago";
         estado.className = "badge-status pending";
@@ -86,55 +127,110 @@
   }
 
   function cambioMetodo() {
-    const efectivo = $("selectPaymentMethod").value === "Efectivo";
-    $("toggleChangeBtn").style.display = efectivo ? "inline-flex" : "none";
-    if (!efectivo) $("cashCalculatorBox").classList.remove("open");
+    const efectivo =
+      $("selectPaymentMethod").value === "Efectivo";
+
+    $("toggleChangeBtn").style.display =
+      efectivo ? "inline-flex" : "none";
+
+    if (!efectivo) {
+      $("cashCalculatorBox").classList.remove("open");
+    }
+
     // El efectivo entra a la caja; los demás medios pueden ir a un banco
-    $("campoDestino").style.display = !efectivo && destinos && destinos.length ? "" : "none";
-    if (efectivo) $("selectDestino").value = "";
+    $("campoDestino").style.display =
+      !efectivo && destinos && destinos.length ? "" : "none";
+
+    if (efectivo) {
+      $("selectDestino").value = "";
+    }
   }
 
   function recalcular() {
     const abono = soloDigitos($("inputAmount").value);
     const recibido = soloDigitos($("inputReceived").value);
-    $("inputAmountFmt").textContent = abono ? fmt(abono) : "";
-    $("lblChange").textContent = fmt(recibido > abono ? recibido - abono : 0);
-    if (!ctx.editado) sugerirReparto(); else actualizarPendiente();
+
+    $("inputAmountFmt").textContent =
+      abono ? fmt(abono) : "";
+
+    $("lblChange").textContent =
+      fmt(recibido > abono ? recibido - abono : 0);
+
+    if (!ctx.editado) {
+      sugerirReparto();
+    } else {
+      actualizarPendiente();
+    }
   }
 
-  // ── Reparto del pago entre costos y ganancia ──
-  const campoReparto = (clave) => document.querySelector('[data-reparto="' + clave + '"]');
+  // Reparto del pago entre costos y ganancia
+  const campoReparto = (clave) =>
+    document.querySelector('[data-reparto="' + clave + '"]');
 
   async function cargarDistribucion() {
     const caja = $("distribSection");
+
     if (!caja) return;
+
     caja.style.display = "none";
+
     const matricula = ctx.matricula;
     let datos;
+
     try {
-      const resp = await fetch("/pagos/distribucion/" + encodeURIComponent(matricula), { credentials: "same-origin" });
+      const resp = await fetch(
+        "/pagos/distribucion/" + encodeURIComponent(matricula),
+        { credentials: "same-origin" }
+      );
+
       datos = await resp.json();
+
       if (!resp.ok || datos.ok === false) return;
-    } catch (e) { return; }
-    if (matricula !== ctx.matricula) return;   // se cerró o se abrió otro alumno
+    } catch (e) {
+      return;
+    }
+
+    if (matricula !== ctx.matricula) return;
+
     const todos = datos.costos || [];
-    if (!todos.length) return;   // sin costos no hay nada que repartir
-    ctx.costos = todos.filter((c) => c.restante > 0);   // solo los que aún faltan
+
+    if (!todos.length) return;
+
+    ctx.costos = todos.filter((c) => c.restante > 0);
+
     const filas = ctx.costos.map((c) =>
-      '<div class="distrib-row"><div><strong>' + escapar(c.concepto) + '</strong>' +
-      '<small>Costo ' + fmt(c.valor) + ' · cubierto ' + fmt(c.asignado) + ' · falta ' + fmt(c.restante) + '</small></div>' +
+      '<div class="distrib-row"><div><strong>' +
+      escapar(c.concepto) +
+      "</strong>" +
+      "<small>Costo " + fmt(c.valor) +
+      " · cubierto " + fmt(c.asignado) +
+      " · falta " + fmt(c.restante) +
+      "</small></div>" +
       '<input class="input-clean" type="text" inputmode="numeric" autocomplete="off" data-money-input ' +
-      'data-reparto="' + c.id + '" data-restante="' + c.restante + '" placeholder="0"></div>'
+      'data-reparto="' + c.id +
+      '" data-restante="' + c.restante +
+      '" placeholder="0"></div>'
     );
-    filas.push('<div class="distrib-row"><div><strong>Ganancia</strong><small>Automática: lo que sobra después de los costos</small></div>' +
+
+    filas.push(
+      '<div class="distrib-row"><div><strong>Ganancia</strong>' +
+      "<small>Automática: lo que sobra después de los costos</small></div>" +
       '<input class="input-clean" type="text" autocomplete="off" readonly tabindex="-1" ' +
-      'data-reparto="ganancia" placeholder="0" style="opacity:.85"></div>');
+      'data-reparto="ganancia" placeholder="0" style="opacity:.85"></div>'
+    );
+
     $("distribFilas").innerHTML = filas.join("");
-    $("distribFilas").querySelectorAll("input:not([readonly])").forEach((inp) => inp.addEventListener("input", () => {
-      window.formatearCampoMoneda(inp);
-      ctx.editado = true;
-      actualizarPendiente();
-    }));
+
+    $("distribFilas")
+      .querySelectorAll("input:not([readonly])")
+      .forEach((inp) =>
+        inp.addEventListener("input", () => {
+          window.formatearCampoMoneda(inp);
+          ctx.editado = true;
+          actualizarPendiente();
+        })
+      );
+
     caja.style.display = "block";
     sugerirReparto();
   }
@@ -147,51 +243,100 @@
 
   // Primero cubre los costos que faltan; lo que sobra queda como ganancia.
   function sugerirReparto() {
-    if (!$("distribSection") || !ctx.costos.length && !campoReparto("ganancia")) return;
+    if (
+      !$("distribSection") ||
+      (!ctx.costos.length && !campoReparto("ganancia"))
+    ) {
+      return;
+    }
+
     let resto = soloDigitos($("inputAmount").value);
+
     ctx.costos.forEach((c) => {
       const campo = campoReparto(c.id);
+
       if (!campo) return;
+
       const parte = Math.min(c.restante, resto);
-      campo.value = parte ? window.formatearMiles(parte) : "";
+
+      campo.value = parte
+        ? window.formatearMiles(parte)
+        : "";
+
       resto -= parte;
     });
+
     actualizarPendiente();
   }
 
   function leerReparto() {
     const partes = [];
-    document.querySelectorAll("#distribFilas [data-reparto]").forEach((inp) => {
-      const valor = soloDigitos(inp.value);
-      if (valor > 0) partes.push({ costo_id: inp.dataset.reparto === "ganancia" ? null : Number(inp.dataset.reparto), valor });
-    });
+
+    document
+      .querySelectorAll("#distribFilas [data-reparto]")
+      .forEach((inp) => {
+        const valor = soloDigitos(inp.value);
+
+        if (valor > 0) {
+          partes.push({
+            costo_id:
+              inp.dataset.reparto === "ganancia"
+                ? null
+                : Number(inp.dataset.reparto),
+            valor
+          });
+        }
+      });
+
     return partes;
   }
 
-  // Suma de lo asignado a costos (todo menos la ganancia, que es automática).
+  // Suma de lo asignado a costos
   function sumaCostos() {
     let total = 0;
-    document.querySelectorAll("#distribFilas [data-reparto]:not([data-reparto='ganancia'])").forEach((inp) => {
-      total += soloDigitos(inp.value);
-    });
+
+    document
+      .querySelectorAll(
+        "#distribFilas [data-reparto]:not([data-reparto='ganancia'])"
+      )
+      .forEach((inp) => {
+        total += soloDigitos(inp.value);
+      });
+
     return total;
   }
 
-  // La ganancia es lo que sobra del pago después de los costos. Devuelve lo que
-  // falta por cuadrar: 0 si todo bien, negativo si los costos superan el pago.
   function actualizarPendiente() {
     const caja = $("distribSection");
+
     if (!caja) return 0;
+
     const abono = soloDigitos($("inputAmount").value);
     const costos = sumaCostos();
     const ganancia = Math.max(abono - costos, 0);
+
     const g = campoReparto("ganancia");
-    if (g) g.value = ganancia ? window.formatearMiles(ganancia) : "";
-    const pendiente = abono - costos - ganancia;   // 0, o negativo si los costos se pasan
+
+    if (g) {
+      g.value = ganancia
+        ? window.formatearMiles(ganancia)
+        : "";
+    }
+
+    const pendiente = abono - costos - ganancia;
     const resumen = $("distribResumen");
-    if (resumen) resumen.textContent = "Costos " + fmt(costos) + " · Ganancia " + fmt(ganancia);
+
+    if (resumen) {
+      resumen.textContent =
+        "Costos " + fmt(costos) +
+        " · Ganancia " + fmt(ganancia);
+    }
+
     $("distribPendiente").textContent = fmt(pendiente);
-    $("distribPendiente").parentElement.className = "distrib-total " + (pendiente === 0 ? "ok" : "falta");
+
+    $("distribPendiente").parentElement.className =
+      "distrib-total " + (pendiente === 0 ? "ok" : "falta");
+
     return pendiente;
   }
 
@@ -203,49 +348,91 @@
 
   async function guardar() {
     if (ctx.guardando) return;
-    const valor = soloDigitos($("inputAmount").value);
-    if (valor <= 0) return error("Escribe el valor a abonar.");
-    if (ctx.saldo > 0 && valor > ctx.saldo)
-      return error("El abono no puede superar el saldo pendiente (" + fmt(ctx.saldo) + ").");
 
-    const hayReparto = $("distribSection") && $("distribSection").style.display !== "none";
-    if (hayReparto && actualizarPendiente() !== 0)
-      return error("Los costos asignados superan el valor del pago (" + fmt(valor) + "). Ajusta los valores.");
+    const valor = soloDigitos($("inputAmount").value);
+
+    if (valor <= 0) {
+      return error("Escribe el valor a abonar.");
+    }
+
+    if (ctx.saldo > 0 && valor > ctx.saldo) {
+      return error(
+        "El abono no puede superar el saldo pendiente (" +
+        fmt(ctx.saldo) + ")."
+      );
+    }
+
+    const hayReparto =
+      $("distribSection") &&
+      $("distribSection").style.display !== "none";
+
+    if (hayReparto && actualizarPendiente() !== 0) {
+      return error(
+        "Los costos asignados superan el valor del pago (" +
+        fmt(valor) + "). Ajusta los valores."
+      );
+    }
+
     const reparto = hayReparto ? leerReparto() : [];
+
     for (const p of reparto) {
-      const campo = p.costo_id === null ? null : campoReparto(p.costo_id);
-      if (campo && p.valor > Number(campo.dataset.restante))
-        return error("Un costo recibe más de lo que le falta. Ajusta el reparto.");
+      const campo =
+        p.costo_id === null
+          ? null
+          : campoReparto(p.costo_id);
+
+      if (campo && p.valor > Number(campo.dataset.restante)) {
+        return error(
+          "Un costo recibe más de lo que le falta. Ajusta el reparto."
+        );
+      }
     }
 
     ctx.guardando = true;
     $("btnGuardarPago").disabled = true;
     $("pagoError").style.display = "none";
 
-    const r = await window.postJSON("/pagos/registrar", {
-      matricula_id: ctx.matricula,
-      valor: valor,
-      metodo: $("selectPaymentMethod").value,
-      concepto: $("pagoConcepto").value,
-      observaciones: $("pagoNotas").value,
-      acompanante: $("pagoAcompanante").value,
-      recibido: soloDigitos($("inputReceived").value),
-      destino: $("selectPaymentMethod").value === "Efectivo" ? "" : $("selectDestino").value,
-      distribucion: reparto,
-    });
+    let r;
+
+    try {
+      r = await window.postJSON("/pagos/registrar", {
+        matricula_id: ctx.matricula,
+        valor: valor,
+        metodo: $("selectPaymentMethod").value,
+        concepto: $("pagoConcepto").value,
+        observaciones: $("pagoNotas").value,
+        acompanante: $("pagoAcompanante").value,
+        recibido: soloDigitos($("inputReceived").value),
+        destino:
+          $("selectPaymentMethod").value === "Efectivo"
+            ? ""
+            : $("selectDestino").value,
+        distribucion: reparto
+      });
+    } catch (e) {
+      ctx.guardando = false;
+      $("btnGuardarPago").disabled = false;
+      return error("No se pudo conectar con el servidor. Intenta nuevamente.");
+    }
 
     ctx.guardando = false;
+
     if (!r.ok) {
       $("btnGuardarPago").disabled = false;
       return error(r.error || "No se pudo guardar el pago.");
     }
 
     actualizarFila(r.saldo);
+
     $("exitoRecibo").textContent = r.numero_recibo;
     $("exitoSaldo").textContent = fmt(r.saldo);
-    $("exitoCambioFila").style.display = r.cambio > 0 ? "block" : "none";
+
+    $("exitoCambioFila").style.display =
+      r.cambio > 0 ? "block" : "none";
+
     $("exitoCambio").textContent = fmt(r.cambio);
     $("btnImprimir").href = r.recibo_url;
+
     $("pagoForm").style.display = "none";
     $("pagoExito").style.display = "flex";
   }
@@ -253,26 +440,47 @@
   // Eventos
   document.addEventListener("click", (e) => {
     const b = e.target.closest(".js-cobrar");
-    if (b) abrir(b);
+
+    if (b) {
+      abrir(b);
+    }
   });
-  $("btnCerrarModal").addEventListener("click", () => cerrar(false));
-  $("btnCancelarPago").addEventListener("click", () => cerrar(false));
+
+  $("btnCerrarModal").addEventListener("click", cerrar);
+  $("btnCancelarPago").addEventListener("click", cerrar);
   $("btnTerminar").addEventListener("click", cerrar);
   $("btnGuardarPago").addEventListener("click", guardar);
-  if ($("btnEditarReparto")) $("btnEditarReparto").addEventListener("click", () => {
-    const detalle = $("distribDetalle");
-    const mostrar = detalle.style.display === "none";
-    detalle.style.display = mostrar ? "block" : "none";
-    $("btnEditarReparto").textContent = mostrar ? "Volver a automático" : "Cambiar";
-    if (!mostrar) { ctx.editado = false; sugerirReparto(); }
-  });
-  $("selectPaymentMethod").addEventListener("change", cambioMetodo);
+
+  if ($("btnEditarReparto")) {
+    $("btnEditarReparto").addEventListener("click", () => {
+      const detalle = $("distribDetalle");
+      const mostrar = detalle.style.display === "none";
+
+      detalle.style.display = mostrar ? "block" : "none";
+
+      $("btnEditarReparto").textContent =
+        mostrar ? "Volver a automático" : "Cambiar";
+
+      if (!mostrar) {
+        ctx.editado = false;
+        sugerirReparto();
+      }
+    });
+  }
+
+  $("selectPaymentMethod").addEventListener(
+    "change",
+    cambioMetodo
+  );
+
   $("inputAmount").addEventListener("input", recalcular);
   $("inputReceived").addEventListener("input", recalcular);
+
   $("toggleChangeBtn").addEventListener("click", () => {
     $("cashCalculatorBox").classList.toggle("open");
     $("inputReceived").focus();
   });
+
   $("btnCerrarCalc").addEventListener("click", () => {
     $("cashCalculatorBox").classList.remove("open");
     $("inputReceived").value = "";
