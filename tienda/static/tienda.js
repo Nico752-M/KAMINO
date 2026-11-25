@@ -267,7 +267,8 @@ if (typeof document !== "undefined") (function () {
         <td><div class="t-acciones"><button type="button" class="t-mas" data-reab="${p.id}"><i class="ri-add-line"></i> Reabastecer</button>
         <button type="button" data-edit="${p.id}"><i class="ri-edit-line"></i> Editar</button>
         <button type="button" data-hist="${p.id}"><i class="ri-history-line"></i> Historial</button>
-        <button type="button" data-baja="${p.id}"><i class="ri-delete-bin-line"></i> Baja</button></div></td></tr>`;
+        <button type="button" data-baja="${p.id}" title="Para unidades dañadas, vencidas o perdidas"><i class="ri-subtract-line"></i> Baja</button>
+        <button type="button" class="t-peligro" data-pquitar="${p.id}" title="Borra el producto del inventario"><i class="ri-delete-bin-line"></i> Eliminar</button></div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-archive-line"></i><strong>Tu inventario está vacío</strong><p>Agrega tu primer producto con «Nuevo producto».</p></div></td></tr>`;
     badgeBajo();
   }
@@ -326,11 +327,10 @@ if (typeof document !== "undefined") (function () {
   function mostrarPasoSrv(n) {
     pasoSrv = n;
     document.querySelectorAll("#mServicio [data-paso]").forEach((p) => { p.hidden = Number(p.dataset.paso) !== n; });
-    document.querySelectorAll("#mServicio .t-pasos-barra i").forEach((b, i) => b.classList.toggle("on", i <= n));
+    document.querySelectorAll("#mServicio .t-pasos-barra button").forEach((b, i) => b.classList.toggle("on", i === n));
     $("sPasoTxt").textContent = `Paso ${n + 1} de ${PASOS_SRV}`;
     $("sAtras").hidden = n === 0;
     $("sSiguiente").hidden = n === PASOS_SRV - 1;
-    $("sGuardar").hidden = n !== PASOS_SRV - 1;
     $("sError").style.display = "none";
   }
   function siguientePasoSrv() {
@@ -359,9 +359,9 @@ if (typeof document !== "undefined") (function () {
     const cuerpo = { id: Number($("sId").value) || null, nombre: $("sNombre").value, categoria: $("sCat").value,
       variable: $("sVariable").checked, precio: digitos($("sPrecio").value), terceros: digitos($("sTerceros").value),
       requisitos: ui.reqs.filter((r) => r.texto.trim()) };
-    if (!cuerpo.nombre.trim()) return errorEn("sError", "Escribe el nombre del servicio.");
-    if (!cuerpo.variable && cuerpo.precio <= 0) return errorEn("sError", "Escribe el precio, o marca «El precio se escribe al cobrar».");
-    if (!cuerpo.variable && cuerpo.terceros > cuerpo.precio) return errorEn("sError", "El valor a terceros es mayor que el precio.");
+    if (!cuerpo.nombre.trim()) { mostrarPasoSrv(0); return errorEn("sError", "Escribe el nombre del servicio."); }
+    if (!cuerpo.variable && cuerpo.precio <= 0) { mostrarPasoSrv(1); return errorEn("sError", "Escribe el precio, o elige «Cambia cada vez»."); }
+    if (!cuerpo.variable && cuerpo.terceros > cuerpo.precio) { mostrarPasoSrv(1); return errorEn("sError", "El valor para otra entidad es mayor que el precio."); }
     const r = await conCarga(() => api("/tienda/api/servicios", cuerpo));
     if (!r.ok) return errorEn("sError", r.error);
     estado.servicios = r.servicios; cerrarModales(); renderServicios();
@@ -414,6 +414,44 @@ if (typeof document !== "undefined") (function () {
     const r = await conCarga(() => api(`/tienda/api/productos/${$("rId").value}/entrada`, { cantidad: cant }));
     if (!r.ok) return errorEn("rError", r.error);
     estado.productos = r.productos; cerrarModales(); renderInventario();
+  }
+
+    // ── Eliminar producto ──
+  async function quitarProductoUI(id) {
+    const p = estado.productos.find((x) => x.id === Number(id));
+    if (!p) return;
+    const extra = p.stock > 0 ? ` Todavía tiene ${p.stock} unidades en stock.` : "";
+    if (!confirm(`¿Eliminar «${p.nombre}»?${extra} Desaparece del inventario y de la caja. Si ya se vendió, esas ventas se conservan en el historial.`)) return;
+    const r = await conCarga(() => api(`/tienda/api/productos/${id}/quitar`, {}));
+    if (!r.ok) return aviso(r.error);
+    aviso(""); estado.productos = r.productos; delete ui.carrito[id]; estado.ganCache = {};
+    renderInventario(); if (ui.vista === "caja") renderCaja();
+  }
+
+  // ── Vista previa del tiquete ──
+  function abrirTicket(id) {
+    const v = estado.ventas.find((x) => x.id === Number(id));
+    if (!v) return;
+    const f = (a, b, cls) => `<div class="t-tk-fila ${cls || ""}"><span>${a}</span><span>${b}</span></div>`;
+    const fecha = v.fecha ? new Date(v.fecha).toLocaleString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+    const items = v.items.map((i) => f(`${i.cant} × ${esc(i.nombre)}`, fmt(i.cant * i.precio))
+      + (i.detalle ? `<div class="t-tk-det">${esc(i.detalle)}</div>` : "")).join("");
+    let pago;
+    if (v.metodo === "Efectivo") {
+      pago = v.metodo2
+        ? f("Efectivo", fmt(v.recibido || 0)) + f(esc(v.metodo2), fmt(v.monto2 || 0))
+        : f("Pago: Efectivo", "") + f("Recibido", fmt(v.recibido || 0)) + f("Devuelta", fmt(v.cambio || 0));
+    } else pago = f("Pago: " + esc(v.metodo), "");
+    $("tTicket").innerHTML = `<div class="t-tk-titulo">TODO EN TRANSITO</div>
+      <div class="t-tk-centro">Venta #${v.id}</div><div class="t-tk-centro">${fecha}</div>
+      <div>Atendió: ${esc(v.cajero)}</div><div class="t-tk-linea"></div>${items}<div class="t-tk-linea"></div>`
+      + (v.descuento ? f("Subtotal", fmt(v.total + v.descuento)) + f("Descuento", "− " + fmt(v.descuento)) : "")
+      + f("TOTAL", fmt(v.total), "total") + pago
+      + (v.anulada ? `<div class="t-tk-anulada">VENTA ANULADA${v.motivo ? `<div class="t-tk-det" style="text-align:center">Motivo: ${esc(v.motivo)}</div>` : ""}</div>` : "")
+      + `<div class="t-tk-linea"></div><div class="t-tk-centro">¡Gracias por su compra!</div>`;
+    $("tTicketPdf").href = "/tienda/pdf/venta/" + v.id;
+    $("mTicketTitulo").textContent = `Tiquete de la venta #${v.id}`;
+    abrirModal("mTicket");
   }
 
   // ── VENTAS (historial y anulación) ──
@@ -526,7 +564,7 @@ if (typeof document !== "undefined") (function () {
       return `<tr class="${v.anulada ? "t-venta-anulada" : ""}"><td><strong>${v.id}</strong></td><td>${fecha}</td>
         <td class="t-detalle">${detalle}</td><td>${esc(v.metodo)}${v.metodo2 ? " + " + esc(v.metodo2) : ""}</td><td><strong>${fmt(v.total)}</strong>${v.descuento ? `<br><small>desc. ${fmt(v.descuento)}</small>` : ""}</td><td>${esc(v.cajero)}</td>
         <td>${v.anulada ? `<span class="badge-status urgent" title="${esc(v.motivo)}">Anulada</span>` : `<span class="badge-status active">Válida</span>`}</td>
-        <td><div class="t-acciones"><a href="/tienda/pdf/venta/${v.id}" download><i class="ri-file-pdf-line"></i> PDF</a>${v.anulada || !puede("tienda_anular") ? "" : `<button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button>`}</div></td></tr>`;
+        <td><div class="t-acciones"><button type="button" data-tiquete="${v.id}"><i class="ri-eye-line"></i> Ver tiquete</button><a href="/tienda/pdf/venta/${v.id}" download><i class="ri-file-pdf-line"></i> PDF</a>${v.anulada || !puede("tienda_anular") ? "" : `<button type="button" data-anular="${v.id}"><i class="ri-arrow-go-back-line"></i> Anular</button>`}</div></td></tr>`;
     }).join("") : `<tr><td colspan="8"><div class="t-vacio-grande"><i class="ri-receipt-line"></i><strong>Aún no hay ventas</strong></div></td></tr>`;
   }
   function abrirAnular(id) {
@@ -767,6 +805,9 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.squitar) quitarServicio(t.dataset.squitar);
     else if (t.dataset.modo) { $("sVariable").checked = t.dataset.modo === "variable"; pintarGananciaServicio(); }
     else if (t.dataset.scat) { $("sCat").value = t.dataset.scat; }
+    else if (t.dataset.irpaso !== undefined) mostrarPasoSrv(Number(t.dataset.irpaso));
+    else if (t.dataset.pquitar) quitarProductoUI(t.dataset.pquitar);
+    else if (t.dataset.tiquete) abrirTicket(t.dataset.tiquete);
     else if (t.dataset.radd) { ui.reqs.push({ tipo: t.dataset.radd, texto: "", obligatorio: false }); pintarReqs(); const c = $("sReqs").querySelectorAll("[data-rtxt]"); if (c.length) c[c.length - 1].focus(); }
     else if (t.dataset.rdel !== undefined) { ui.reqs.splice(Number(t.dataset.rdel), 1); pintarReqs(); }
     else if (t.dataset.rup !== undefined) { const i = Number(t.dataset.rup); if (i > 0) { [ui.reqs[i - 1], ui.reqs[i]] = [ui.reqs[i], ui.reqs[i - 1]]; pintarReqs(); } }

@@ -268,7 +268,11 @@
       <div><h3 id="mServicioTitulo">Nuevo servicio</h3><p class="hint" id="sPasoTxt" style="margin:0">Paso 1 de 3</p></div>
       <button type="button" class="modal-close-btn" data-cerrar aria-label="Cerrar">&times;</button>
     </div>
-    <div class="t-pasos-barra" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+    <div class="t-pasos-barra">
+      <button type="button" class="on" data-irpaso="0"><b>1</b> Nombre</button>
+      <button type="button" data-irpaso="1"><b>2</b> Precio</button>
+      <button type="button" data-irpaso="2"><b>3</b> Requisitos</button>
+    </div>
     <input type="hidden" id="sId">
 
     <!-- Paso 1 -->
@@ -315,7 +319,7 @@
     <div class="t-modal-botones">
       <button type="button" class="btn-action" id="sAtras" hidden><i class="ri-arrow-left-line"></i> Atrás</button>
       <button type="button" class="btn-action green" id="sSiguiente">Continuar <i class="ri-arrow-right-line"></i></button>
-      <button type="button" class="btn-action green" id="sGuardar" hidden><i class="ri-save-line"></i> Guardar servicio</button>
+      <button type="button" class="btn-action green" id="sGuardar"><i class="ri-save-line"></i> Guardar servicio</button>
     </div>
   </div>
 </div>
@@ -421,6 +425,20 @@
     <div class="t-tabla-wrap" style="max-height:50dvh;overflow-y:auto"><table class="table-clean">
       <thead><tr><th>Fecha</th><th>Tipo</th><th>Cant.</th><th>Stock</th></tr></thead><tbody id="hLista"></tbody></table></div>
     <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cerrar</button></div>
+  </div>
+</div>
+
+<div class="t-modal" id="mTicket" role="dialog" aria-modal="true" aria-labelledby="mTicketTitulo">
+  <div class="t-modal-panel" style="max-width:420px">
+    <div class="t-modal-cab">
+      <h3 id="mTicketTitulo">Vista previa del tiquete</h3>
+      <button type="button" class="modal-close-btn" data-cerrar aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="t-ticket" id="tTicket"></div>
+    <div class="t-modal-botones">
+      <button type="button" class="btn-action" data-cerrar>Cerrar</button>
+      <a class="btn-action green" id="tTicketPdf" download><i class="ri-file-pdf-line"></i> Descargar PDF</a>
+    </div>
   </div>
 </div>
 

@@ -115,10 +115,23 @@ def entrada_stock(pid, cantidad, nota, usuario):
 
 
 def quitar_producto(pid):
-    """Lo oculta (no se borra) para conservar el historial de ventas."""
-    n = datos.execute_rowcount("UPDATE t_productos SET activo = 0 WHERE id = %s AND activo = 1", (pid,))
-    if not n:
-        raise TiendaError("El producto ya no existe.")
+    """Elimina el producto. Si nunca se vendió ni tuvo bajas, lo borra de verdad;
+    si ya tiene historial, lo oculta para no dañar las ventas anteriores."""
+    with datos.transaccion() as cur:
+        fila = cur.execute(
+            "SELECT id FROM t_productos WHERE id = %s AND activo = 1 FOR UPDATE", (pid,)
+        ).fetchone()
+        if not fila:
+            raise TiendaError("El producto ya no existe.")
+        usado = cur.execute("""
+            SELECT (SELECT COUNT(*) FROM t_venta_items WHERE producto_id = %s)
+                 + (SELECT COUNT(*) FROM t_mermas WHERE producto_id = %s) AS n FROM dual""",
+                            (pid, pid)).fetchone()
+        if int(usado["n"]) == 0:
+            cur.execute("DELETE FROM t_movimientos WHERE producto_id = %s", (pid,))
+            cur.execute("DELETE FROM t_productos WHERE id = %s", (pid,))
+        else:
+            cur.execute("UPDATE t_productos SET activo = 0 WHERE id = %s", (pid,))
 
 
 # ═════════════════ Servicios (trámites, SOAT, peritajes, asesorías…) ═════════════════
@@ -375,7 +388,8 @@ def registrar_venta(items, metodo, recibido, usuario, resto=None, descuento=None
 
 def listar_ventas(limite=60):
     ventas = datos.fetchall(f"""
-        SELECT id, fecha, metodo, metodo2, monto_metodo2, total, descuento, usuario_nombre, anulada, motivo_anulacion
+        SELECT id, fecha, metodo, metodo2, monto_metodo2, total, descuento, recibido, cambio,
+               usuario_nombre, anulada, motivo_anulacion
         FROM t_ventas ORDER BY id DESC FETCH FIRST {int(limite)} ROWS ONLY""")
     if not ventas:
         return []
@@ -390,6 +404,8 @@ def listar_ventas(limite=60):
              "detalle": it["detalle"]})
     return [{"id": int(v["id"]), "fecha": v["fecha"].isoformat() if v["fecha"] else None,
              "metodo": v["metodo"], "metodo2": v["metodo2"], "total": int(v["total"]),
+             "monto2": int(v["monto_metodo2"] or 0), "recibido": int(v["recibido"] or 0),
+             "cambio": int(v["cambio"] or 0),
              "descuento": int(v["descuento"]), "cajero": v["usuario_nombre"],
              "anulada": int(v["anulada"]) == 1, "motivo": v["motivo_anulacion"],
              "items": por_venta.get(int(v["id"]), [])} for v in ventas]
