@@ -805,11 +805,13 @@ def historial(matricula_id):
 @permiso_requerido("anular_pagos")
 def anular_pago(numero):
     motivo = " ".join(request.form.get("motivo", "").split())
+    desde_bandeja = request.form.get("origen") == "pendientes"
+    bandeja = url_for("caja.resumen", pendientes=1)
     if not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
         return "Recibo no válido.", 404
     if not motivo or len(motivo) > 500:
         flash("El motivo de anulación es obligatorio y admite hasta 500 caracteres.", "error")
-        return redirect(url_for("alumnos.lista"))
+        return redirect(bandeja if desde_bandeja else url_for("alumnos.lista"))
     try:
         with db.transaccion() as cur:
             pago = cur.execute("""
@@ -819,10 +821,10 @@ def anular_pago(numero):
             """, (numero,)).fetchone()
             if not pago:
                 flash("No se encontró el pago.", "error")
-                return redirect(url_for("alumnos.lista"))
+                return redirect(bandeja if desde_bandeja else url_for("alumnos.lista"))
             if pago["anulado"]:
                 flash("Este pago ya fue anulado.", "error")
-                return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+                return redirect(bandeja if desde_bandeja else url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
             if pago["caja_id"]:
                 caja_pago = cur.execute(
                     "SELECT estado FROM cajas WHERE id = %s FOR UPDATE",
@@ -830,7 +832,7 @@ def anular_pago(numero):
                 ).fetchone()
                 if caja_pago and caja_pago["estado"] == "CERRADA":
                     flash("No se puede anular un pago de una caja cerrada.", "error")
-                    return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+                    return redirect(bandeja if desde_bandeja else url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
             cur.execute("""
                 UPDATE pagos SET anulado = 1, motivo_anulacion = %s,
                     anulado_por = %s, fecha_anulacion = CURRENT_TIMESTAMP
@@ -859,9 +861,9 @@ def anular_pago(numero):
     except Exception:
         current_app.logger.exception("Error anulando recibo %s", numero)
         flash("No se pudo anular el pago. Intenta de nuevo.", "error")
-        return redirect(url_for("alumnos.lista"))
+        return redirect(bandeja if desde_bandeja else url_for("alumnos.lista"))
     flash(f"El pago {numero} fue anulado. El recibo y el registro se conservaron.", "ok")
-    return redirect(url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+    return redirect(bandeja if desde_bandeja else url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
 
 
 @bp.route("/pagos/<numero>/confirmar", methods=["POST"])
