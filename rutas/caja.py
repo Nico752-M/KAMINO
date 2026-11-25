@@ -9,6 +9,7 @@ from flask import Blueprint, Response, abort, current_app, flash, redirect, rend
 
 import db
 from auth import login_required, permiso_requerido, permisos_actuales, usuario_actual
+from servicios.bancos import BancoError, catalogo_destinos, movimiento_manual, parsear_destino
 from servicios.recibos import numero_recibo
 from utils import cacheado, cop, hoy, parsear_pesos
 
@@ -611,7 +612,14 @@ def resumen():
             current_app.logger.exception("No se pudo consultar los pagos por confirmar")
     pagos_por_confirmar = len(pagos_pendientes)
 
-    return render_template("tesoreria.html", pagos_por_confirmar=pagos_por_confirmar, pagos_pendientes=pagos_pendientes, dia=dia, movs=movs, cajas=cajas,
+    destinos_banco = []
+    if "gestionar_bancos" in permisos_actuales():
+        try:
+            destinos_banco = catalogo_destinos()
+        except Exception:
+            current_app.logger.exception("No se pudieron consultar los bancos")
+
+    return render_template("tesoreria.html", destinos_banco=destinos_banco, pagos_por_confirmar=pagos_por_confirmar, pagos_pendientes=pagos_pendientes, dia=dia, movs=movs, cajas=cajas,
                            t=totales, error=error, admin=admin, cajeros=admin_cajeros,
                            movimientos_hoy=movimientos_hoy,
                            cajero_filtro=cajero_filtro, caja_actual=caja_actual,
@@ -745,6 +753,7 @@ def registrar_movimiento(tipo):
     concepto = " ".join(request.form.get("concepto", "").split())
     categoria = " ".join(request.form.get("categoria", "").upper().split()) or None
     valor = _entero_form("valor")
+    destino_texto = request.form.get("destino", "").strip()
     if not concepto or len(concepto) > 200:
         flash("El concepto es obligatorio y admite hasta 200 caracteres.", "error")
         return redirect(url_for("caja.resumen"))
@@ -756,28 +765,42 @@ def registrar_movimiento(tipo):
         return redirect(url_for("caja.resumen"))
 
     tabla, etiqueta = tablas[tipo]
+    en_banco = False
     try:
         with db.transaccion() as cur:
-            caja = caja_abierta(cur, session["uid"])
-            if not caja:
-                flash("Abre tu caja antes de registrar un movimiento.", "error")
-                return redirect(url_for("caja.resumen"))
             if categoria and not cur.execute(
                 "SELECT categoria FROM categorias_caja WHERE categoria = %s AND activo = 1",
                 (categoria,),
             ).fetchone():
                 flash("Selecciona una categoría activa o deja el campo sin categoría.", "error")
                 return redirect(url_for("caja.resumen"))
-            recibo = numero_recibo(cur)
-            cur.execute(
-                f"INSERT INTO {tabla} (numero_recibo, concepto, valor, usuario_id, caja_id, categoria) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (recibo, concepto, valor, session["uid"], caja["id"], categoria),
-            )
+            destino = parsear_destino(destino_texto)
+            if destino:
+                # El dinero entra o sale directamente de un banco: no toca el efectivo de la caja.
+                if "gestionar_bancos" not in permisos_actuales():
+                    raise BancoError("No tienes permiso para mover dinero de bancos.")
+                recibo = movimiento_manual(cur, "ENTRADA" if tipo == "ingreso" else "SALIDA",
+                                           destino, valor, concepto, categoria, session["uid"])
+                en_banco = True
+            else:
+                caja = caja_abierta(cur, session["uid"])
+                if not caja:
+                    flash("Abre tu caja antes de registrar un movimiento.", "error")
+                    return redirect(url_for("caja.resumen"))
+                recibo = numero_recibo(cur)
+                cur.execute(
+                    f"INSERT INTO {tabla} (numero_recibo, concepto, valor, usuario_id, caja_id, categoria) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (recibo, concepto, valor, session["uid"], caja["id"], categoria),
+                )
+    except BancoError as e:
+        flash(str(e), "error")
+        return redirect(url_for("caja.resumen"))
     except Exception:
         current_app.logger.exception("Error registrando %s en caja", tipo)
         flash("No se pudo registrar el movimiento. Intenta de nuevo.", "error")
         return redirect(url_for("caja.resumen"))
 
-    flash(f"{etiqueta} registrada. Recibo {recibo}.", "ok")
-    return redirect(url_for("caja.resumen", recibo_nuevo=recibo))
+    flash(f"{etiqueta}{' en banco' if en_banco else ''} registrada. Recibo {recibo}.", "ok")
+    # Los movimientos de banco no tienen comprobante térmico; los de caja sí.
+    return redirect(url_for("caja.resumen") if en_banco else url_for("caja.resumen", recibo_nuevo=recibo))

@@ -38,7 +38,7 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         raise DatosInvalidos("El nombre del perfil personal es obligatorio (máximo 100 caracteres).")
     if not permisos.issubset(PERMISOS):
         raise DatosInvalidos("La selección contiene permisos no válidos.")
-    if not permisos.intersection({"ver_dashboard", "ver_alumnos", "ver_caja", "ver_tramites", "ver_tienda", "ver_cuentas"}):
+    if not permisos.intersection({"ver_dashboard", "ver_alumnos", "ver_caja", "ver_tramites", "ver_tienda", "ver_cuentas", "ver_bancos"}):
         raise DatosInvalidos("Asigna al menos permiso para consultar una pantalla.")
     dependencias = {
         "crear_matricula": "ver_alumnos",
@@ -52,6 +52,7 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         "gestionar_caja": "ver_caja",
         "marcar_runt": "ver_tramites",
         "ver_todas_cajas": "ver_caja",
+        "gestionar_bancos": "ver_bancos",
         "tienda_anular": "ver_tienda",
         "tienda_inventario": "ver_tienda",
         "tienda_servicios": "ver_tienda",

@@ -6,6 +6,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, session, u
 import db
 from auth import login_required, permiso_requerido, permisos_actuales
 from rutas.caja import caja_abierta
+from servicios.bancos import BancoError, parsear_destino, registrar as registrar_banco, validar_destino
 from servicios.matriculas import estado_matricula
 from servicios.recibos import (generar_recibo_movimiento_pdf, generar_recibo_pago_pdf,
                                numero_recibo)
@@ -92,6 +93,9 @@ def registrar():
 
     try:
         distribucion = _leer_distribucion(d)
+        destino = parsear_destino(d.get("destino"))
+        if destino and metodo == "Efectivo":
+            raise PagoInvalido("El efectivo entra a la caja. Para llevarlo a un banco usa un traslado en Bancos.")
         if distribucion and "gestionar_costos" not in permisos_actuales():
             raise PagoInvalido("No tienes permiso para repartir el pago entre costos y ganancia.")
         if mid <= 0:
@@ -142,6 +146,11 @@ def registrar():
                   session["uid"], observaciones, acompanante, caja["id"], cambio,
                   autoconfirma, session["uid"] if autoconfirma else None, autoconfirma))
 
+            if destino:
+                cuenta = validar_destino(cur, destino)
+                registrar_banco(cur, cuenta, "ENTRADA", valor, f"Pago {numero} — {concepto}",
+                                "PAGO", numero, session["uid"])
+
             if distribucion:
                 if sum(v for _, v in distribucion) != valor:
                     raise PagoInvalido("El reparto debe sumar exactamente el valor del pago.")
@@ -167,7 +176,7 @@ def registrar():
             if nuevo_estado != mat["estado"]:
                 cur.execute("UPDATE matriculas SET estado = %s WHERE id = %s", (nuevo_estado, mid))
 
-    except PagoInvalido as e:
+    except (PagoInvalido, BancoError) as e:
         return jsonify(ok=False, error=str(e)), 400
     except Exception:
         current_app.logger.exception("Error registrando pago")

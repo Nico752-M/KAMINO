@@ -79,10 +79,22 @@ def resumen_mes(mes) -> dict:
         "AND fecha_pago >= %s AND fecha_pago < %s", p)
     otros = db.fetchone(
         "SELECT NVL(SUM(valor), 0) AS v FROM ingresos_caja "
-        "WHERE anulado = 0 AND fecha_ingreso >= %s AND fecha_ingreso < %s", p)
+        "WHERE anulado = 0 AND es_traslado = 0 AND fecha_ingreso >= %s AND fecha_ingreso < %s", p)
+    try:
+        banco_in = db.fetchone(
+            "SELECT NVL(SUM(valor), 0) AS v FROM movimientos_banco "
+            "WHERE anulado = 0 AND origen = 'MANUAL' AND tipo = 'ENTRADA' "
+            "AND fecha >= %s AND fecha < %s", p)
+        banco_out = db.fetchall(
+            "SELECT NVL(categoria, 'Sin categoría') AS categoria, SUM(valor) AS v FROM movimientos_banco "
+            "WHERE anulado = 0 AND origen = 'MANUAL' AND tipo = 'SALIDA' "
+            "AND fecha >= %s AND fecha < %s GROUP BY NVL(categoria, 'Sin categoría')", p)
+    except Exception:
+        current_app.logger.warning("No se pudo leer movimientos_banco (¿falta ejecutar 013?)")
+        banco_in, banco_out = {"v": 0}, []
     salidas = db.fetchall(
         "SELECT NVL(categoria, 'Sin categoría') AS categoria, SUM(valor) AS v FROM salidas_caja "
-        "WHERE anulado = 0 AND fecha_salida >= %s AND fecha_salida < %s "
+        "WHERE anulado = 0 AND es_traslado = 0 AND fecha_salida >= %s AND fecha_salida < %s "
         "GROUP BY NVL(categoria, 'Sin categoría') ORDER BY SUM(valor) DESC", p)
     # Una cuenta fija cuenta desde el mes en que se anotó, para no cambiar los meses ya pasados.
     fijas = db.fetchall(
@@ -91,13 +103,17 @@ def resumen_mes(mes) -> dict:
 
     entradas = [{"nombre": "Pagos de alumnos", "sub": "Cursos, matrículas y demás pagos", "valor": int(pagos["v"])},
                 {"nombre": "Otros ingresos de la caja", "sub": "Plata que entró a la caja por otros motivos",
-                 "valor": int(otros["v"])}]
+                 "valor": int(otros["v"])},
+                {"nombre": "Ingresos en bancos", "sub": "Plata que entró directo a un banco",
+                 "valor": int(banco_in["v"])}]
     entradas = [f for f in entradas if f["valor"]]
 
     gastos = [{"id": int(c["id"]), "nombre": c["nombre"], "sub": c["categoria"], "categoria": c["categoria"],
                "valor": int(c["valor"])} for c in fijas]
     gastos += [{"nombre": f"Salidas de la caja: {s['categoria']}", "sub": "Plata que salió de la caja para pagar cosas",
                 "valor": int(s["v"])} for s in salidas if int(s["v"])]
+    gastos += [{"nombre": f"Salidas de bancos: {s['categoria']}", "sub": "Plata que salió de un banco para pagar cosas",
+                "valor": int(s["v"])} for s in banco_out if int(s["v"])]
 
     # Gastos de vehículos: se agrupan por vehículo, por tipo y por semana del mes.
     try:

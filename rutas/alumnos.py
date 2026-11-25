@@ -838,6 +838,10 @@ def anular_pago(numero):
                     anulado_por = %s, fecha_anulacion = CURRENT_TIMESTAMP
                 WHERE id = %s AND anulado = 0
             """, (motivo, session["uid"], pago["id"]))
+            cur.execute("""
+                UPDATE movimientos_banco SET anulado = 1, motivo_anulacion = %s
+                WHERE origen = 'PAGO' AND referencia = %s AND anulado = 0
+            """, (f"Pago anulado: {motivo}"[:500], numero))
             _auditar(cur, "PAGO", pago["id"], "ANULACION", session["uid"],
                      dict(pago), {**pago, "anulado": 1, "motivo_anulacion": motivo}, motivo)
             matricula = cur.execute(

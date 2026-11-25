@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% set nav = 'bancos' %}
+{% block titulo %}Bancos — CEA La 30{% endblock %}
+{% block contenido %}
+{% set gestiona = 'gestionar_bancos' in permisos %}
+{% set origenes = {'PAGO': 'Pago de alumno', 'MANUAL': 'Manual', 'TRASLADO_CAJA': 'Traslado caja', 'TRASLADO_BANCO': 'Entre bancos'} %}
+<div class="section-header">
+  <div>
+    <span class="eyebrow">TESORERÍA</span>
+    <h2 class="section-title">Bancos</h2>
+    <p class="section-desc">Saldos por banco y bolsillo. Traslada dinero entre la caja y los bancos.</p>
+  </div>
+</div>
+
+{% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
+{% if recibo_nuevo and 'ver_recibos' in permisos %}
+<div class="alerta ok">Imprime el comprobante del traslado:
+  <a class="btn-action green sm" target="_blank" rel="noopener"
+     href="{{ url_for('pagos.recibo', numero=recibo_nuevo) }}"><i class="ri-printer-line"></i> Imprimir comprobante</a>
+</div>
+{% endif %}
+
+<div class="grid-stats">
+  <div class="stat-card gold"><div class="stat-label">Total en bancos</div>
+    <div class="stat-value" style="color:{{ 'var(--accent-red)' if total < 0 else 'var(--accent-green)' }}">{{ total|cop }}</div></div>
+  <div class="stat-card"><div class="stat-label">Bancos</div><div class="stat-value">{{ bancos|length }}</div></div>
+</div>
+
+{% if gestiona %}
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-exchange-line"></i> Trasladar dinero</div>
+  <form method="post" action="{{ url_for('bancos.traslado') }}" class="tariff-create-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label class="lbl" for="trDesde">Desde</label>
+      <select class="input-clean" id="trDesde" name="desde" required>
+        <option value="">Selecciona</option>
+        <option value="caja">Caja (efectivo){{ '' if caja_abierta else ' — ábrela primero' }}</option>
+        {% for d in destinos %}<option value="{{ d.valor }}">{{ d.texto }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label class="lbl" for="trHacia">Hacia</label>
+      <select class="input-clean" id="trHacia" name="hacia" required>
+        <option value="">Selecciona</option>
+        <option value="caja">Caja (efectivo){{ '' if caja_abierta else ' — ábrela primero' }}</option>
+        {% for d in destinos %}<option value="{{ d.valor }}">{{ d.texto }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label class="lbl" for="trValor">Valor (COP)</label>
+      <input class="input-clean" id="trValor" name="valor" type="text" inputmode="numeric" data-money-input required></div>
+    <button class="btn-action green" type="submit"><i class="ri-send-plane-line"></i> Trasladar</button>
+  </form>
+  <p class="hint">Los traslados desde o hacia la caja usan tu caja abierta y quedan en tu cierre.</p>
+</section>
+
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-add-circle-line"></i> Ingreso o egreso directo en un banco</div>
+  <form method="post" action="{{ url_for('bancos.movimiento') }}" class="tariff-create-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label class="lbl" for="mvTipo">Tipo</label>
+      <select class="input-clean" id="mvTipo" name="tipo"><option value="ENTRADA">Ingreso</option><option value="SALIDA">Egreso</option></select></div>
+    <div class="field"><label class="lbl" for="mvDestino">Banco / bolsillo</label>
+      <select class="input-clean" id="mvDestino" name="destino" required>
+        <option value="">Selecciona</option>
+        {% for d in destinos %}<option value="{{ d.valor }}">{{ d.texto }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label class="lbl" for="mvValor">Valor (COP)</label>
+      <input class="input-clean" id="mvValor" name="valor" type="text" inputmode="numeric" data-money-input required></div>
+    <div class="field"><label class="lbl" for="mvConcepto">Concepto</label>
+      <input class="input-clean" id="mvConcepto" name="concepto" maxlength="200" required></div>
+    <div class="field"><label class="lbl" for="mvCategoria">Categoría (opcional)</label>
+      <select class="input-clean" id="mvCategoria" name="categoria"><option value="">Sin categoría</option>
+        {% for c in categorias %}<option value="{{ c.categoria }}">{{ c.categoria }}</option>{% endfor %}</select></div>
+    <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar</button>
+  </form>
+</section>
+
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-bank-line"></i> Agregar un banco</div>
+  <form method="post" action="{{ url_for('bancos.crear') }}" class="tariff-create-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label class="lbl" for="nuevoBanco">Nombre (Ej. Bancolombia, Nequi)</label>
+      <input class="input-clean" id="nuevoBanco" name="nombre" maxlength="60" required></div>
+    <span></span><span></span>
+    <button class="btn-action red" type="submit"><i class="ri-add-line"></i> Agregar banco</button>
+  </form>
+</section>
+{% endif %}
+
+<h3 class="section-title admin-list-title">Cuentas</h3>
+{% for b in bancos %}
+<section class="card-bento" {% if not b.activo %}style="opacity:.6"{% endif %}>
+  <div class="cash-block-heading">
+    <div><h3>{{ b.nombre }} {% if not b.activo %}<span class="badge-status muted">Inactivo</span>{% endif %}</h3>
+      <p>Total: <strong style="color:{{ 'var(--accent-red)' if b.total < 0 else 'var(--accent-green)' }}">{{ b.total|cop }}</strong></p></div>
+    {% if gestiona %}
+    <form method="post" action="{{ url_for('bancos.estado_banco', banco_id=b.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="activo" value="{{ 0 if b.activo else 1 }}">
+      <button class="btn-action sm {{ 'red' if b.activo }}" type="submit">{{ 'Desactivar' if b.activo else 'Activar' }}</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Bolsillo</th><th>Saldo</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><em>Sin bolsillo (general)</em></td>
+        <td><strong style="color:{{ 'var(--accent-red)' if b.general < 0 }}">{{ b.general|cop }}</strong></td><td></td></tr>
+      {% for p in b.bolsillos %}
+      <tr {% if not p.activo %}style="opacity:.55"{% endif %}>
+        <td>{{ p.nombre }}{% if not p.activo %} <span class="badge-status muted">Inactivo</span>{% endif %}</td>
+        <td><strong style="color:{{ 'var(--accent-red)' if p.saldo < 0 }}">{{ p.saldo|cop }}</strong></td>
+        <td>{% if gestiona %}
+          <form method="post" action="{{ url_for('bancos.estado_bolsillo', bolsillo_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="activo" value="{{ 0 if p.activo else 1 }}">
+            <button class="btn-action sm" type="submit">{{ 'Desactivar' if p.activo else 'Activar' }}</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% if gestiona and b.activo %}
+  <form method="post" action="{{ url_for('bancos.crear_bolsillo', banco_id=b.id) }}"
+        style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input class="input-clean" name="nombre" maxlength="60" placeholder="Nuevo bolsillo (Ej. Ahorros, Nómina)" required style="flex:1;min-width:200px">
+    <button class="btn-action green sm" type="submit"><i class="ri-add-line"></i> Agregar bolsillo</button>
+  </form>
+  {% endif %}
+</section>
+{% else %}
+<section class="card-bento"><div class="vacio">Aún no hay bancos. {% if gestiona %}Agrega el primero arriba.{% endif %}</div></section>
+{% endfor %}
+
+<section class="card-bento">
+  <div class="cash-block-heading"><div><h3>Movimientos</h3><p>Los últimos 100.</p></div>
+    <form method="get" class="cash-history-filter">
+      <select class="input-clean" name="banco" aria-label="Filtrar por banco">
+        <option value="">Todos los bancos</option>
+        {% for b in bancos %}<option value="{{ b.id }}" {{ 'selected' if filtro == b.id|string }}>{{ b.nombre }}</option>{% endfor %}
+      </select>
+      <button class="btn-action" type="submit"><i class="ri-search-line"></i> Filtrar</button>
+    </form>
+  </div>
+  {% if movimientos %}
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Fecha</th><th>Banco</th><th>Concepto</th><th>Origen</th><th>Valor</th><th>Usuario</th><th></th></tr></thead>
+    <tbody>{% for m in movimientos %}
+      <tr {% if m.anulado %}style="opacity:.55"{% endif %}>
+        <td>{{ m.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td><strong>{{ m.banco }}</strong>{% if m.bolsillo %}<br><small>{{ m.bolsillo }}</small>{% endif %}</td>
+        <td>{{ m.concepto }}{% if m.categoria %}<br><small>Categoría: {{ m.categoria }}</small>{% endif %}
+          {% if m.referencia %}<br><small>{{ m.referencia }}</small>{% endif %}
+          {% if m.anulado %}<br><span class="badge-status urgent">Anulado</span> <small>{{ m.motivo_anulacion }}</small>{% endif %}</td>
+        <td>{{ origenes.get(m.origen, m.origen) }}</td>
+        <td><strong style="color:{{ 'var(--text-muted)' if m.anulado else 'var(--accent-green)' if m.tipo == 'ENTRADA' else 'var(--accent-red)' }}">
+          {{ '+' if m.tipo == 'ENTRADA' else '−' }} {{ m.valor|cop }}</strong></td>
+        <td>{{ m.usuario or '—' }}</td>
+        <td>{% if gestiona and m.origen == 'MANUAL' and not m.anulado %}
+          <form method="post" action="{{ url_for('bancos.anular', mov_id=m.id) }}" data-reason-confirm
+                data-reason-prompt="Escribe el motivo obligatorio para anular este movimiento."
+                data-confirm-message="¿Anular este movimiento? Dejará de sumar al saldo del banco.">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="motivo" maxlength="500">
+            <button class="btn-action red sm" type="submit"><i class="ri-close-circle-line"></i> Anular</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="vacio">Sin movimientos todavía.</div>{% endif %}
+</section>
+{% endblock %}

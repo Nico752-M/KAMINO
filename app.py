@@ -31,10 +31,10 @@ def create_app() -> Flask:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # ── Blueprints ──
-    from rutas import alumnos, caja, costos, cuentas, dashboard, pagos, tramites, usuarios
+    from rutas import alumnos, bancos, caja, costos, cuentas, dashboard, pagos, tramites, usuarios
     from tienda import bp as tienda_bp
     app.register_blueprint(auth.bp)
-    for modulo in (dashboard, alumnos, pagos, caja, costos, cuentas, tramites, usuarios):
+    for modulo in (dashboard, alumnos, pagos, caja, bancos, costos, cuentas, tramites, usuarios):
         app.register_blueprint(modulo.bp)
     app.register_blueprint(tienda_bp)   # carpeta propia: tienda/
 

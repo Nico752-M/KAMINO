@@ -13,6 +13,8 @@ PERMISOS = {
     "ver_recibos": "Ver e imprimir recibos",
     "ver_caja": "Ver caja y tesorería",
     "ver_todas_cajas": "Ver todas las cajas",
+    "ver_bancos": "Ver bancos, bolsillos y sus movimientos",
+    "gestionar_bancos": "Gestionar bancos: crear, trasladar dinero y registrar movimientos",
     "gestionar_caja": "Registrar ingresos y salidas manuales",
     "ver_tramites": "Ver trámites y pendientes RUNT",
     "marcar_runt": "Marcar registros RUNT",
@@ -51,6 +53,7 @@ GRUPOS_PERMISOS = {
     "Caja": (
         "ver_caja", "registrar_pagos", "anular_pagos", "confirmar_pagos",
         "ver_recibos", "gestionar_caja", "ver_todas_cajas",
+        "ver_bancos", "gestionar_bancos",
     ),
     "Trámites": ("ver_tramites", "marcar_runt"),
     "Administración": ("ver_dashboard", "gestionar_usuarios", "ver_cuentas"),

@@ -6,9 +6,33 @@
   if (!modal) return;
 
   const fmt = (n) => "$ " + Math.round(n).toLocaleString("es-CO");
-  const soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
+  const     cambioMetodo();
+    recalcular();
+    cargarDistribucion();
+    modal.classList.add("open");soloDigitos = (s) => parseInt(window.soloDigitos(s), 10) || 0;
 
-  let ctx = { matricula: 0, saldo: 0, guardando: false, costos: [], editado: false };
+    $("selectDestino").value = "";
+    cambioMetodo();
+    cargarDestinos();
+    recalcular();
+    cargarDistribucion();
+    modal.classList.add("open");
+  let destinos = null;   // bancos y bolsillos disponibles (se piden una sola vez)
+
+  async function cargarDestinos() {
+    if (destinos === null) {
+      try {
+        const resp = await fetch("/bancos/destinos", { credentials: "same-origin" });
+        const datos = await resp.json();
+        if (resp.ok && datos.ok) destinos = datos.destinos || [];
+      } catch (e) {}
+      if (destinos !== null) {
+        $("selectDestino").innerHTML = '<option value="">Sin asignar a un banco</option>' +
+          destinos.map((x) => '<option value="' + x.valor + '">' + escapar(x.texto) + '</option>').join("");
+      }
+    }
+    cambioMetodo();
+  }
 
   function abrir(btn) {
     ctx = { btn, matricula: btn.dataset.matricula, saldo: Number(btn.dataset.saldo) || 0, guardando: false, costos: [], editado: false };
@@ -65,6 +89,9 @@
     const efectivo = $("selectPaymentMethod").value === "Efectivo";
     $("toggleChangeBtn").style.display = efectivo ? "inline-flex" : "none";
     if (!efectivo) $("cashCalculatorBox").classList.remove("open");
+    // El efectivo entra a la caja; los demás medios pueden ir a un banco
+    $("campoDestino").style.display = !efectivo && destinos && destinos.length ? "" : "none";
+    if (efectivo) $("selectDestino").value = "";
   }
 
   function recalcular() {
@@ -203,6 +230,7 @@
       observaciones: $("pagoNotas").value,
       acompanante: $("pagoAcompanante").value,
       recibido: soloDigitos($("inputReceived").value),
+      destino: $("selectPaymentMethod").value === "Efectivo" ? "" : $("selectDestino").value,
       distribucion: reparto,
     });
 

@@ -376,6 +376,13 @@
           <option value="">Sin categoría</option>
           {% for categoria in categorias_caja %}<option value="{{ categoria.categoria }}">{{ categoria.categoria }}</option>{% endfor %}
         </select></div>
+      {% if destinos_banco %}
+      <div class="field"><label class="lbl" for="movimientoDestino">¿Dónde entra o sale el dinero?</label>
+        <select class="input-clean" id="movimientoDestino" name="destino">
+          <option value="">Caja (efectivo)</option>
+          {% for d in destinos_banco %}<option value="{{ d.valor }}">{{ d.texto }}</option>{% endfor %}
+        </select></div>
+      {% endif %}
       <div class="modal-footer">
         <button class="btn-action" type="button" data-close-modal>Cancelar</button>
         <button class="btn-action green" id="guardarMovimientoCaja" type="submit"><i class="ri-save-line"></i> Guardar entrada</button>
