@@ -2,30 +2,10 @@
 -- Ejecutar una sola vez conectado como propietario CEA_APP, después de la 011.
 -- El pago entra a caja como siempre; queda «pendiente» hasta que alguien con el
 -- permiso confirmar_pagos lo confirme.
-
-SET DEFINE OFF
-WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
-
-DECLARE
-    cantidad NUMBER;
-BEGIN
-    IF SYS_CONTEXT('USERENV', 'SESSION_USER') <> 'CEA_APP' THEN
-        RAISE_APPLICATION_ERROR(-20301, 'Conéctate como CEA_APP para ejecutar esta migración.');
-    END IF;
-
-    SELECT COUNT(*) INTO cantidad FROM user_tab_columns
-    WHERE table_name = 'PAGOS'
-      AND column_name IN ('CONFIRMADO', 'CONFIRMADO_POR', 'FECHA_CONFIRMACION');
-    IF cantidad <> 0 THEN
-        RAISE_APPLICATION_ERROR(-20302, 'Ya existen columnas de confirmación; revisa si la migración ya se aplicó.');
-    END IF;
-
-    SELECT COUNT(*) INTO cantidad FROM perfil_permisos WHERE codigo = 'confirmar_pagos';
-    IF cantidad <> 0 THEN
-        RAISE_APPLICATION_ERROR(-20303, 'El permiso confirmar_pagos ya existe; revisa si la migración ya se aplicó.');
-    END IF;
-END;
-/
+--
+-- Sin bloques DECLARE ni WHENEVER: compatible con SQL Developer Web (Run Script, F5).
+-- No es re-ejecutable: si las columnas ya existen, los ALTER fallarán.
+-- Estado: aplicada en producción el 2026-11-25.
 
 -- Con DEFAULT 1 todos los pagos que ya existen quedan confirmados (el historial no queda pendiente).
 ALTER TABLE pagos ADD (
@@ -33,7 +13,9 @@ ALTER TABLE pagos ADD (
     confirmado_por NUMBER,
     fecha_confirmacion TIMESTAMP
 );
+
 ALTER TABLE pagos ADD CONSTRAINT ck_pagos_confirmado CHECK (confirmado IN (0, 1));
+
 ALTER TABLE pagos ADD CONSTRAINT fk_pagos_confirmado_usr
     FOREIGN KEY (confirmado_por) REFERENCES usuarios (id);
 
@@ -50,4 +32,3 @@ JOIN usuarios u ON u.id = pf.usuario_id
 WHERE u.rol = 'admin';
 
 COMMIT;
-PROMPT Migración de confirmación de pagos aplicada correctamente.
