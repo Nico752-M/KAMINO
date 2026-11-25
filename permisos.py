@@ -9,6 +9,7 @@ PERMISOS = {
     "ver_historial_pagos": "Ver historial de pagos por alumno",
     "registrar_pagos": "Registrar pagos",
     "anular_pagos": "Anular pagos",
+    "confirmar_pagos": "Confirmar pagos (validar los pagos recibidos en caja)",
     "ver_recibos": "Ver e imprimir recibos",
     "ver_caja": "Ver caja y tesorería",
     "ver_todas_cajas": "Ver todas las cajas",
@@ -48,7 +49,7 @@ GRUPOS_PERMISOS = {
         "gestionar_costos", "ver_ganancias",
     ),
     "Caja": (
-        "ver_caja", "registrar_pagos", "anular_pagos",
+        "ver_caja", "registrar_pagos", "anular_pagos", "confirmar_pagos",
         "ver_recibos", "gestionar_caja", "ver_todas_cajas",
     ),
     "Trámites": ("ver_tramites", "marcar_runt"),
