@@ -1,15 +1,42 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sin conexión</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f4f1">
+  <title>Sin conexión — CEA La 30</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    :root{--bg:#f6f4f1;--card:#fff;--tx:#1e1428;--mu:#635c6e;--bd:#e4dfd8;--or:#f29a2e;--rd:#dc2626}
+    @media (prefers-color-scheme:dark){:root{--bg:#0f0d14;--card:#1a1622;--tx:#f2eff5;--mu:#a79fb5;--bd:#2e2739;--or:#f5a33c;--rd:#ef4444}}
+    body{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:1.25rem;background:var(--bg);color:var(--tx)}
+    .card{width:min(400px,100%);text-align:center;background:var(--card);border:1px solid var(--bd);border-top:4px solid var(--rd);border-radius:20px;padding:2.25rem 1.75rem;box-shadow:0 20px 60px rgba(0,0,0,.12)}
+    .marca{font-size:.8rem;font-weight:800;letter-spacing:1px;color:var(--or);margin-bottom:1.25rem}
+    .icono{width:84px;height:84px;margin:0 auto 1.25rem;border-radius:50%;display:grid;place-items:center;background:rgba(220,38,38,.12);color:var(--rd)}
+    .icono svg{width:44px;height:44px}
+    h1{font-size:1.6rem;font-weight:800;margin-bottom:.6rem}
+    p{color:var(--mu);font-size:.95rem;line-height:1.5}
+    .via{height:0;border-top:3px dashed #f2c811;margin:1.5rem 0}
+    button{width:100%;min-height:50px;border:0;border-radius:99px;background:var(--rd);color:#fff;font-size:1rem;font-weight:800;cursor:pointer}
+    button:active{transform:scale(.98)}
+    small{display:block;margin-top:1rem;color:var(--mu);font-size:.8rem}
+  </style>
 </head>
-<body class="login-page">
-  <div class="login-card" style="text-align:center">
+<body>
+  <main class="card">
+    <div class="marca">CEA LA 30</div>
+    <div class="icono" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 8.8a15 15 0 0 1 4-2.6M22 8.8a15 15 0 0 0-8.5-3.7M5 12.9a10 10 0 0 1 3.5-2M19 12.9a10 10 0 0 0-3-2.1M8.5 16.4a5 5 0 0 1 7 0"/>
+        <circle cx="12" cy="20" r="1" fill="currentColor"/><path d="M3 3l18 18"/>
+      </svg>
+    </div>
     <h1>Sin conexión</h1>
-    <p class="sub">El sistema necesita internet para registrar pagos y consultar alumnos.</p>
-    <button class="btn-action red" onclick="location.reload()">Reintentar</button>
-  </div>
+    <p>No tienes internet. El programa está bien: el problema es la red.<br>Se necesita conexión para registrar pagos y consultar alumnos.</p>
+    <div class="via" aria-hidden="true"></div>
+    <button type="button" onclick="location.reload()">Reintentar</button>
+    <small>Se reconectará solo cuando vuelva el internet.</small>
+  </main>
+  <script>addEventListener("online",function(){location.reload()})</script>
 </body>
 </html>

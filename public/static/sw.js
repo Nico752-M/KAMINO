@@ -3,7 +3,7 @@
      así cada versión queda guardada aparte y el dispositivo sigue con la que aceptó.
    - Las páginas y los datos (pagos, alumnos, caja) NUNCA se guardan.
    - Sin internet muestra la pantalla "sin conexión". */
-const CACHE = "cea-static";
+const CACHE = "cea-static"; // offline v2
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.add("/offline")));
