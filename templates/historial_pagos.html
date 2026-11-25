@@ -28,11 +28,19 @@
           <small>{{ pago.metodo_pago }} · {{ pago.cajero or 'Sin cajero' }}</small></td>
         <td><strong>{{ pago.valor|cop }}</strong><br>
           <span class="badge-status {{ 'urgent' if pago.anulado else 'active' }}">{{ 'Anulado' if pago.anulado else 'Vigente' }}</span>
+          {% if not pago.anulado %}<span class="badge-status {{ 'paid' if pago.confirmado else 'urgent' }}">{{ 'Confirmado' if pago.confirmado else 'Pendiente de confirmar' }}</span>
+          {% if pago.confirmado and pago.confirmado_por_nombre %}<br><small>Confirmó {{ pago.confirmado_por_nombre }}{% if pago.fecha_confirmacion %} · {{ pago.fecha_confirmacion.strftime('%d/%m/%Y %H:%M') }}{% endif %}</small>{% endif %}{% endif %}
           {% if pago.anulado and pago.motivo_anulacion %}<br><small>{{ pago.motivo_anulacion }}</small>{% endif %}</td>
         <td>
           {% if 'ver_recibos' in permisos %}
           <a class="btn-action sm" target="_blank" rel="noopener"
              href="{{ url_for('pagos.recibo', numero=pago.numero_recibo, copia=1) }}"><i class="ri-printer-line"></i> Reimprimir</a>
+          {% endif %}
+          {% if 'confirmar_pagos' in permisos and not pago.anulado and not pago.confirmado %}
+          <form method="post" action="{{ url_for('alumnos.confirmar_pago', numero=pago.numero_recibo) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn-action sm" type="submit"><i class="ri-check-double-line"></i> Confirmar</button>
+          </form>
           {% endif %}
           {% if 'anular_pagos' in permisos and not pago.anulado %}
           <form method="post" action="{{ url_for('alumnos.anular_pago', numero=pago.numero_recibo) }}"
