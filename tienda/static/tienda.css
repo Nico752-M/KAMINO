@@ -234,3 +234,23 @@
 .t-req-ob{font-size:.75rem;display:flex;gap:.25rem;align-items:center;white-space:nowrap}
 .t-req button{background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-main);border-radius:8px;padding:.25rem .5rem;cursor:pointer}
 .t-linea .t-det-srv{display:block;font-size:.72rem;color:var(--text-muted);font-weight:400}
+
+/* ── Servicios: tarjetas grandes y sencillas ── */
+.t-srv-grupo{font-size:1.2rem;font-weight:800;margin:1.5rem 0 .6rem;color:var(--accent-text)}
+.t-srv{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:.75rem 1.25rem;align-items:center;background:var(--bg-card);border:1px solid var(--border-color);border-left:5px solid var(--accent-gold);border-radius:14px;padding:1rem 1.25rem;margin-bottom:.6rem}
+.t-srv-info strong{display:block;font-size:1.15rem}
+.t-srv-info small{display:block;color:var(--text-muted);font-size:.85rem;margin-top:.2rem}
+.t-srv-precio-box{text-align:right}
+.t-srv-precio{display:block;font-size:1.3rem;font-weight:800}
+.t-srv-precio.variable{font-size:1rem;color:var(--accent-text)}
+.t-srv-precio-box small{display:block;color:var(--text-muted);font-size:.8rem}
+.t-srv-btns{display:flex;gap:.5rem}
+.t-srv-btns .btn-action{min-height:46px;padding:.5rem 1.1rem;font-size:.95rem}
+.t-btn-nuevo{min-height:54px;font-size:1.05rem;padding:.7rem 1.5rem}
+.t-cat-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.t-modos{grid-template-columns:1fr 1fr}
+@media (max-width:700px){
+  .t-srv{grid-template-columns:1fr auto}
+  .t-srv-btns{grid-column:1/-1}
+  .t-srv-btns .btn-action{flex:1}
+}

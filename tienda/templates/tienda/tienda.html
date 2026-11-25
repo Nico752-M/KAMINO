@@ -91,17 +91,12 @@
 <section class="t-vista" id="vista-servicios" hidden>
   <div class="t-cabecera">
     <div><h1 class="t-titulo">Servicios</h1>
-    <p class="t-sub">Trámites, SOAT, peritajes y asesorías. Aquí cambias precios y lo que se pide para dar cada servicio.</p></div>
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-      <button type="button" class="btn-action green" id="sNuevo"><i class="ri-add-line"></i> Nuevo servicio</button>
-    </div>
+    <p class="t-sub">Estos son los servicios que ofreces. Toca «Cambiar» para modificar uno, «Quitar» para eliminarlo, o «Nuevo servicio» para agregar otro.</p></div>
+    <button type="button" class="btn-action green t-btn-nuevo" id="sNuevo"><i class="ri-add-line"></i> Nuevo servicio</button>
   </div>
-  <div class="card-bento" style="padding:0;overflow:hidden">
-    <div class="t-tabla-wrap"><table class="table-clean" id="tServicios">
-      <thead><tr><th>Servicio</th><th>Categoría</th><th>Precio</th><th>A terceros</th><th>Tu ganancia</th><th>Requisitos</th><th>Acciones</th></tr></thead>
-      <tbody></tbody></table></div>
-  </div>
-  <p class="hint">«A terceros» es lo que se paga a la aseguradora, al tránsito, etc. Esa plata no es ganancia: en Ganancias solo cuenta lo que te queda a ti.</p>
+  <div class="t-buscar" style="margin-bottom:1rem"><i class="ri-search-line"></i><input type="search" id="sBuscar" placeholder="Buscar un servicio…" autocomplete="off"></div>
+  <div id="tServicios"></div>
+  <p class="hint">«Para terceros» es lo que se paga a la aseguradora, al tránsito, etc. Ese dinero no es ganancia: en Ganancias solo cuenta lo que te queda a ti.</p>
 </section>
 
 <!-- ═════════ VENTAS ═════════ -->
@@ -271,24 +266,48 @@
   <div class="t-modal-panel" style="max-width:560px">
     <h3 id="mServicioTitulo">Nuevo servicio</h3>
     <input type="hidden" id="sId">
-    <div class="field"><label class="lbl" for="sNombre">Nombre</label><input class="input-clean" id="sNombre" maxlength="80" autocomplete="off"></div>
-    <div class="field"><label class="lbl" for="sCat">Categoría</label><input class="input-clean" id="sCat" maxlength="40" list="tCatsSrv" autocomplete="off"><datalist id="tCatsSrv"></datalist></div>
-    <label class="t-ajuste" style="border:0"><span><strong>El precio se escribe al cobrar</strong><small class="hint" style="display:block">Para multas, impuestos y asesorías, donde el valor cambia cada vez.</small></span><input type="checkbox" id="sVariable"></label>
-    <div class="t-dos">
-      <div class="field"><label class="lbl" for="sPrecio" id="sPrecioEtq">Precio</label><input class="input-clean" id="sPrecio" inputmode="numeric" autocomplete="off"></div>
-      <div class="field"><label class="lbl" for="sTerceros">Valor a terceros</label><input class="input-clean" id="sTerceros" inputmode="numeric" autocomplete="off" placeholder="0"></div>
-    </div>
-    <p class="hint" id="sGanancia"></p>
-    <div class="field"><span class="lbl">Qué se pide para este servicio</span>
-      <div id="sReqs"></div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
-        <button type="button" class="btn-action sm" data-radd="DOCUMENTO"><i class="ri-file-list-3-line"></i> Agregar documento</button>
-        <button type="button" class="btn-action sm" data-radd="DATO"><i class="ri-edit-box-line"></i> Agregar dato a anotar</button>
+
+    <div class="field"><label class="lbl" for="sNombre">1. ¿Cómo se llama el servicio?</label>
+      <input class="input-clean" id="sNombre" maxlength="80" autocomplete="off" placeholder="Ej: SOAT moto"></div>
+
+    <div class="field"><label class="lbl" for="sCat">2. ¿En qué grupo va?</label>
+      <input class="input-clean" id="sCat" maxlength="40" autocomplete="off" placeholder="Ej: SOAT y seguros">
+      <div class="t-cat-chips" id="sCatChips"></div>
+      <p class="hint">Toca un grupo de la lista o escribe uno nuevo.</p></div>
+
+    <div class="field"><span class="lbl">3. ¿Cómo se cobra?</span>
+      <div class="t-metodos t-modos">
+        <button type="button" data-modo="fijo">Precio fijo</button>
+        <button type="button" data-modo="variable">El precio cambia cada vez</button>
       </div>
-      <p class="hint">Los documentos son una lista para revisar con el cliente. Los datos (placa, nombre, celular…) se escriben al cobrar y salen en el recibo.</p>
-    </div>
+      <input type="checkbox" id="sVariable" hidden>
+      <p class="hint">«El precio cambia cada vez» sirve para multas, impuestos y asesorías: el valor se escribe al cobrar.</p></div>
+
+    <div class="field"><label class="lbl" for="sPrecio" id="sPrecioEtq">4. Precio que se cobra</label>
+      <input class="input-clean" id="sPrecio" inputmode="numeric" autocomplete="off" placeholder="Ej: 50.000"></div>
+
+    <details class="t-det" id="sTercerosDet">
+      <summary><i class="ri-bank-line"></i> ¿Parte de este dinero es para otra entidad? (opcional)</summary>
+      <div class="field" style="margin-top:.6rem"><label class="lbl" for="sTerceros">Valor que se paga a terceros</label>
+        <input class="input-clean" id="sTerceros" inputmode="numeric" autocomplete="off" placeholder="0">
+        <p class="hint">Por ejemplo, lo que se paga a la aseguradora o al tránsito. Ese dinero no cuenta como ganancia.</p></div>
+    </details>
+    <p class="hint" id="sGanancia"></p>
+
+    <details class="t-det" id="sReqsDet">
+      <summary><i class="ri-file-list-3-line"></i> Lo que se le pide al cliente (opcional)</summary>
+      <div style="margin-top:.6rem">
+        <div id="sReqs"></div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+          <button type="button" class="btn-action sm" data-radd="DOCUMENTO"><i class="ri-file-list-3-line"></i> Agregar un documento que debe traer</button>
+          <button type="button" class="btn-action sm" data-radd="DATO"><i class="ri-edit-box-line"></i> Agregar un dato para anotar (placa, celular…)</button>
+        </div>
+        <p class="hint">Los documentos son una lista para revisar con el cliente. Los datos se escriben al cobrar y salen en el recibo.</p>
+      </div>
+    </details>
+
     <p class="alerta error" id="sError" style="display:none"></p>
-    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="sGuardar"><i class="ri-save-line"></i> Guardar</button></div>
+    <div class="t-modal-botones"><button type="button" class="btn-action" data-cerrar>Cancelar</button><button type="button" class="btn-action green" id="sGuardar"><i class="ri-save-line"></i> Guardar servicio</button></div>
   </div>
 </div>
 

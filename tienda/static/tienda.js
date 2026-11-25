@@ -274,17 +274,33 @@ if (typeof document !== "undefined") (function () {
 
   // ── SERVICIOS (administración) ──
   function renderServicios() {
-    const ls = estado.servicios;
-    $("tServicios").querySelector("tbody").innerHTML = ls.length ? ls.map((x) => {
-      const gana = x.variable ? "—" : fmt(x.precio - (x.terceros || 0));
-      const nDoc = reqsDe(x, "DOCUMENTO").length, nDat = reqsDe(x, "DATO").length;
-      const reqs = nDoc || nDat ? `${nDoc} documento${nDoc === 1 ? "" : "s"} · ${nDat} dato${nDat === 1 ? "" : "s"}` : "Ninguno";
-      return `<tr><td><strong>${esc(x.nombre)}</strong></td><td>${esc(x.cat)}</td>
-        <td>${x.variable ? `<span class="badge-status pending">Variable</span>${x.precio ? `<br><small>sugerido ${fmt(x.precio)}</small>` : ""}` : fmt(x.precio)}</td>
-        <td>${x.terceros ? fmt(x.terceros) : "—"}</td><td>${gana}</td><td><small>${reqs}</small></td>
-        <td><div class="t-acciones"><button type="button" data-sedit="${x.id}"><i class="ri-edit-line"></i> Editar</button>
-        <button type="button" data-squitar="${x.id}"><i class="ri-delete-bin-line"></i> Quitar</button></div></td></tr>`;
-    }).join("") : `<tr><td colspan="7"><div class="t-vacio-grande"><i class="ri-customer-service-2-line"></i><strong>Aún no hay servicios</strong><p>Agrega el primero con «Nuevo servicio».</p></div></td></tr>`;
+    const q = ($("sBuscar").value || "").trim().toLowerCase();
+    const ls = estado.servicios.filter((x) => !q || x.nombre.toLowerCase().includes(q) || x.cat.toLowerCase().includes(q));
+    if (!ls.length) {
+      $("tServicios").innerHTML = estado.servicios.length
+        ? `<p class="t-vacio">No hay servicios con esa búsqueda.</p>`
+        : `<div class="t-vacio-grande"><i class="ri-customer-service-2-line"></i><strong>Aún no hay servicios</strong><p>Agrega el primero con «Nuevo servicio».</p></div>`;
+      return;
+    }
+    const grupos = {};
+    ls.forEach((x) => { (grupos[x.cat] = grupos[x.cat] || []).push(x); });
+    $("tServicios").innerHTML = Object.keys(grupos).sort().map((cat) =>
+      `<h2 class="t-srv-grupo">${esc(cat)}</h2>` + grupos[cat].map((x) => {
+        const nDoc = reqsDe(x, "DOCUMENTO").length, nDat = reqsDe(x, "DATO").length;
+        const notas = [];
+        if (x.terceros) notas.push(`Para terceros: ${fmt(x.terceros)}` + (x.variable ? "" : ` · Te quedan: ${fmt(x.precio - x.terceros)}`));
+        if (nDoc || nDat) notas.push(`Se pide: ${nDoc} documento${nDoc === 1 ? "" : "s"} y ${nDat} dato${nDat === 1 ? "" : "s"}`);
+        const precio = x.variable
+          ? `<span class="t-srv-precio variable">Precio variable</span>${x.precio ? `<small>sugerido ${fmt(x.precio)}</small>` : ""}`
+          : `<span class="t-srv-precio">${fmt(x.precio)}</span>`;
+        return `<div class="t-srv">
+          <div class="t-srv-info"><strong>${esc(x.nombre)}</strong>${notas.length ? `<small>${notas.join(" · ")}</small>` : ""}</div>
+          <div class="t-srv-precio-box">${precio}</div>
+          <div class="t-srv-btns">
+            <button type="button" class="btn-action" data-sedit="${x.id}"><i class="ri-edit-line"></i> Cambiar</button>
+            <button type="button" class="btn-action red" data-squitar="${x.id}"><i class="ri-delete-bin-line"></i> Quitar</button>
+          </div></div>`;
+      }).join("")).join("");
   }
   function pintarReqs() {
     $("sReqs").innerHTML = ui.reqs.length ? ui.reqs.map((r, i) => `<div class="t-req">
@@ -298,18 +314,22 @@ if (typeof document !== "undefined") (function () {
   }
   function pintarGananciaServicio() {
     const variable = $("sVariable").checked, precio = digitos($("sPrecio").value), terc = digitos($("sTerceros").value);
-    $("sPrecioEtq").textContent = variable ? "Precio sugerido (opcional)" : "Precio";
+    document.querySelectorAll("[data-modo]").forEach((b) => b.classList.toggle("on", (b.dataset.modo === "variable") === variable));
+    $("sPrecioEtq").textContent = variable ? "4. Precio sugerido (opcional)" : "4. Precio que se cobra";
     $("sGanancia").textContent = variable ? "Al cobrar se escribe el precio y el valor a terceros de ese día."
       : (precio ? (terc > precio ? "El valor a terceros es mayor que el precio." : `Te queda ${fmt(precio - terc)} por cada servicio.`) : "");
   }
   function abrirServicio(id) {
     const x = id ? estado.servicios.find((v) => v.id === Number(id)) : null;
-    $("mServicioTitulo").textContent = x ? "Editar servicio" : "Nuevo servicio";
+    $("mServicioTitulo").textContent = x ? "Cambiar servicio" : "Nuevo servicio";
     $("sId").value = x ? x.id : ""; $("sNombre").value = x ? x.nombre : ""; $("sCat").value = x ? x.cat : "";
     $("sPrecio").value = x && x.precio ? miles(x.precio) : ""; $("sTerceros").value = x && x.terceros ? miles(x.terceros) : "";
     $("sVariable").checked = x ? x.variable : false;
-    $("tCatsSrv").innerHTML = categoriasSrv().filter((c) => c !== "Todos").map((c) => `<option value="${esc(c)}">`).join("");
+    $("sCatChips").innerHTML = categoriasSrv().filter((c) => c !== "Todos").map((c) =>
+      `<button type="button" class="t-chip" data-scat="${esc(c)}">${esc(c)}</button>`).join("");
     ui.reqs = x ? (x.requisitos || []).map((r) => ({ tipo: r.tipo, texto: r.texto, obligatorio: r.obligatorio })) : [];
+    $("sTercerosDet").open = !!(x && x.terceros);
+    $("sReqsDet").open = ui.reqs.length > 0;
     pintarReqs(); pintarGananciaServicio();
     $("sError").style.display = "none"; abrirModal("mServicio"); $("sNombre").focus();
   }
@@ -326,7 +346,8 @@ if (typeof document !== "undefined") (function () {
     ui.carritoSrv = ui.carritoSrv.filter((l) => estado.servicios.some((x) => x.id === l.id));
   }
   async function quitarServicio(id) {
-    if (!confirm("¿Quitar este servicio? Deja de aparecer en la caja; las ventas anteriores se conservan.")) return;
+    const x = estado.servicios.find((v) => v.id === Number(id));
+    if (!confirm(`¿Quitar «${x ? x.nombre : "este servicio"}»? Deja de aparecer en la caja; las ventas anteriores se conservan.`)) return;
     const r = await conCarga(() => api(`/tienda/api/servicios/${id}/quitar`, {}));
     if (!r.ok) return aviso(r.error);
     aviso(""); estado.servicios = r.servicios; renderServicios();
@@ -722,6 +743,8 @@ if (typeof document !== "undefined") (function () {
     else if (t.dataset.sdel) quitarServicioVenta(t.dataset.sdel);
     else if (t.dataset.sedit) abrirServicio(t.dataset.sedit);
     else if (t.dataset.squitar) quitarServicio(t.dataset.squitar);
+    else if (t.dataset.modo) { $("sVariable").checked = t.dataset.modo === "variable"; pintarGananciaServicio(); }
+    else if (t.dataset.scat) { $("sCat").value = t.dataset.scat; }
     else if (t.dataset.radd) { ui.reqs.push({ tipo: t.dataset.radd, texto: "", obligatorio: false }); pintarReqs(); const c = $("sReqs").querySelectorAll("[data-rtxt]"); if (c.length) c[c.length - 1].focus(); }
     else if (t.dataset.rdel !== undefined) { ui.reqs.splice(Number(t.dataset.rdel), 1); pintarReqs(); }
     else if (t.dataset.rup !== undefined) { const i = Number(t.dataset.rup); if (i > 0) { [ui.reqs[i - 1], ui.reqs[i]] = [ui.reqs[i], ui.reqs[i - 1]]; pintarReqs(); } }
@@ -753,6 +776,7 @@ if (typeof document !== "undefined") (function () {
   $("tNuevo").addEventListener("click", () => abrirProducto(null));
   $("pGuardar").addEventListener("click", guardarProducto);
   $("sNuevo").addEventListener("click", () => abrirServicio(null));
+  $("sBuscar").addEventListener("input", renderServicios);
   $("sGuardar").addEventListener("click", guardarServicio);
   $("mSrvAgregar").addEventListener("click", agregarServicio);
   $("sReqs").addEventListener("input", (e) => { if (e.target.dataset.rtxt !== undefined) ui.reqs[Number(e.target.dataset.rtxt)].texto = e.target.value; });

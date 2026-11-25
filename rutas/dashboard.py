@@ -1,9 +1,10 @@
 from datetime import date, timedelta
 
-from flask import Blueprint, current_app, render_template
+from flask import Blueprint, current_app, redirect, render_template
 
 import db
-from auth import login_required, permiso_requerido
+from auth import (_primer_destino_permitido, login_required,
+                  permisos_actuales)
 from utils import cacheado, hoy
 
 bp = Blueprint("dashboard", __name__)
@@ -17,8 +18,10 @@ def _rango_mes(d: date) -> tuple[date, date]:
 
 @bp.route("/")
 @login_required
-@permiso_requerido("ver_dashboard")
 def index():
+    # Quien no puede ver el dashboard (ej. usuarios solo de tienda) va a su primera pantalla permitida
+    if "ver_dashboard" not in permisos_actuales():
+        return redirect(_primer_destino_permitido())
     datos = {
         "activos": 0, "ingresos_mes": 0, "pendiente_total": 0,
         "matriculas_mes": 0, "matriculas_mes_anterior": 0,
