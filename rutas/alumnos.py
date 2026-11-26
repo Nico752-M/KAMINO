@@ -134,7 +134,11 @@ def lista():
                        COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
                        a.numero_documento, a.nombres, a.apellidos,
                        COALESCE((SELECT SUM(p.valor) FROM pagos p
-                                 WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado
+                                 WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado,
+                       (SELECT LISTAGG(m2.categoria, ', ') WITHIN GROUP (ORDER BY m2.categoria)
+                          FROM matriculas m2
+                         WHERE m2.numero_documento = m.numero_documento
+                           AND m2.id <> m.id AND m2.archivado = 0) AS otras_categorias
                 FROM matriculas m
                 JOIN alumnos a ON a.numero_documento = m.numero_documento
                 {filtro}
@@ -442,8 +446,15 @@ def crear_matricula():
             flash(str(e), "error")
             return redirect(url_for("alumnos.lista"))
         except oracledb.IntegrityError as e:
-            if not _duplicado_unico(e):
-                raise
+            if not _duplicado_unico(e) or "UQ_MAT_ORDEN" not in str(e).upper():
+                # No es el consecutivo: es otra restricción de la base de datos (p. ej. una que
+                # impida varias matrículas por alumno). Se muestra su nombre para poder quitarla.
+                restriccion = re.search(r"\(([\w.$]+)\)", str(e))
+                current_app.logger.exception("Restricción de la base al crear matrícula")
+                flash("La base de datos no dejó guardar esta matrícula"
+                      + (f" (restricción {restriccion.group(1)})" if restriccion else "")
+                      + ". Si el alumno ya tiene otra categoría, avisa a soporte con este mensaje.", "error")
+                return redirect(url_for("alumnos.lista"))
             if intento == 4:
                 current_app.logger.exception("No se pudo asignar consecutivo de matrícula tras reintentos")
                 flash("No se pudo asignar un consecutivo. Intenta de nuevo.", "error")
