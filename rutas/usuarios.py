@@ -199,6 +199,21 @@ def actualizar_tarifa(tipo: str, categoria: str):
             flash("Categoría desactivada." if afectadas else "La categoría ya estaba desactivada.", "ok")
         return redirect(url_for("usuarios.lista"))
 
+    if accion == "eliminar":
+        # Las matrículas guardan la categoría como texto, así que borrar la tarifa no toca el historial.
+        try:
+            afectadas = db.execute(
+                "DELETE FROM tarifas_categoria WHERE categoria = %s AND tipo = %s",
+                (categoria_clave, tipo),
+            )
+        except Exception:
+            current_app.logger.exception("Error eliminando tarifa %s", categoria_clave)
+            flash("No se pudo eliminar la tarifa. ¿Ya se aplicó la migración 017?", "error")
+        else:
+            flash(f"Tarifa de {categoria_clave} ({tipo.lower()}) eliminada." if afectadas
+                  else "La tarifa ya no existe.", "ok" if afectadas else "error")
+        return redirect(url_for("usuarios.lista"))
+
     if accion != "actualizar":
         flash("La acción sobre la tarifa no es válida.", "error")
         return redirect(url_for("usuarios.lista"))
