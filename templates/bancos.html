@@ -105,9 +105,11 @@
         <input type="hidden" name="activo" value="{{ 0 if b.activo else 1 }}">
         <button class="btn-action sm {{ 'red' if b.activo }}" type="submit">{{ 'Desactivar' if b.activo else 'Activar' }}</button>
       </form>
-      <form method="post" action="{{ url_for('bancos.borrar_banco', banco_id=b.id) }}"
-            data-confirm="¿Borrar el banco «{{ b.nombre }}» y sus bolsillos? Solo se puede si no tiene movimientos.">
+      <form method="post" action="{{ url_for('bancos.borrar_banco', banco_id=b.id) }}" data-reason-confirm
+            data-reason-prompt="Escribe el motivo obligatorio para borrar el banco «{{ b.nombre }}»."
+            data-confirm-message="¿Borrar el banco «{{ b.nombre }}» con sus bolsillos y TODO su historial de movimientos? No se puede deshacer.">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="motivo" maxlength="500">
         <button class="btn-action red sm" type="submit"><i class="ri-delete-bin-line"></i> Borrar</button>
       </form>
     </div>
@@ -137,9 +139,11 @@
               <input type="hidden" name="activo" value="{{ 0 if p.activo else 1 }}">
               <button class="btn-action sm" type="submit">{{ 'Desactivar' if p.activo else 'Activar' }}</button>
             </form>
-            <form method="post" action="{{ url_for('bancos.borrar_bolsillo', bolsillo_id=p.id) }}"
-                  data-confirm="¿Borrar el bolsillo «{{ p.nombre }}»? Solo se puede si no tiene movimientos.">
+            <form method="post" action="{{ url_for('bancos.borrar_bolsillo', bolsillo_id=p.id) }}" data-reason-confirm
+                  data-reason-prompt="Escribe el motivo obligatorio para borrar el bolsillo «{{ p.nombre }}»."
+                  data-confirm-message="¿Borrar el bolsillo «{{ p.nombre }}» y TODO su historial de movimientos? No se puede deshacer.">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="motivo" maxlength="500">
               <button class="btn-action red sm" type="submit"><i class="ri-delete-bin-line"></i> Borrar</button>
             </form>
           </div>{% endif %}</td>
