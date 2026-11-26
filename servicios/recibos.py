@@ -216,7 +216,7 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
     copia (bool), fecha_reimpresion, descuento_valor, descuento_porcentaje y historial
     (lista de {numero_recibo, fecha, valor, saldo} de los pagos vigentes hasta este recibo).
     """
-    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.pagesizes import letter, landscape
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas
 
@@ -228,8 +228,11 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
     fecha = d.get("fecha") or datetime.now()
 
     buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=letter)
+    c = canvas.Canvas(buf, pagesize=landscape(letter))
     c.setTitle(f"Recibo de caja {d['numero_recibo']}")
+    # Escala el diseño original para ocupar solo la mitad izquierda de la hoja.
+    # La mitad derecha queda libre para una impresión futura.
+    c.scale(396.0 / 612.0, 612.0 / 792.0)
 
     def texto(x, y, t, fuente="Helvetica", tam=9, alinear="L", color=(0, 0, 0), max_ancho=None):
         t = str(t or "")
