@@ -7,11 +7,15 @@
   <div class="table-wrap"><table class="table-clean">
     <thead><tr><th>Código / inscripción</th><th>Nombre Alumno</th><th>Categoría</th><th>Saldo Pendiente</th><th>Estado</th><th>Acciones</th></tr></thead>
     <tbody>
-    {% for f in filas %}
-      <tr>
+    {% for g in filas %}
+    {% for f in g['items'] %}
+      <tr{% if not loop.last %} class="grupo-continua"{% endif %}>
         <td><strong>{{ f.codigo }}</strong><br><small>{{ f.fecha_registro.strftime('%d/%m/%Y') if f.fecha_registro else '—' }}</small></td>
-        <td>{{ f.nombres }} {{ f.apellidos }}<br><small>CC: {{ f.numero_documento }}</small>
-          {% if f.otras_categorias %}<br><small>También cursa: {{ f.otras_categorias }}</small>{% endif %}</td>
+        {% if loop.first %}
+        <td rowspan="{{ g['items']|length }}">{{ g.nombres }} {{ g.apellidos }}<br><small>CC: {{ g.numero_documento }}</small>
+          {% if g['items']|length > 1 %}<br><small>{{ g['items']|length }} cursos</small>
+          {% elif f.otras_categorias %}<br><small>También cursa: {{ f.otras_categorias }}</small>{% endif %}</td>
+        {% endif %}
         <td><span class="badge-status active">{{ f.categoria }}</span></td>
         <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
         <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
@@ -54,6 +58,7 @@
           {% endif %}
         </td>
       </tr>
+    {% endfor %}
     {% endfor %}
     </tbody>
   </table></div>
