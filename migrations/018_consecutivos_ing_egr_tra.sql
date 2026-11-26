@@ -7,7 +7,6 @@
 -- SEQ_RECIBOS se conserva sin uso para no romper nada; la app deja de usarla.
 
 SET DEFINE OFF
-WHENEVER SQLERROR EXIT SQL.SQLCODE ROLLBACK
 
 DECLARE
     cantidad NUMBER;
