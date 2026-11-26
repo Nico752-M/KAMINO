@@ -255,7 +255,7 @@ def _ajustar_saldo(cur, banco_id, bolsillo_id, nuevo, texto):
     if nuevo == actual:
         return None
     tipo = "ENTRADA" if nuevo > actual else "SALIDA"
-    recibo = numero_recibo(cur)
+    recibo = numero_recibo(cur, "ING" if tipo == "ENTRADA" else "EGR")
     registrar(cur, d, tipo, abs(nuevo - actual),
               f"Ajuste de saldo: de {cop(actual)} a {cop(nuevo)}", "MANUAL", recibo, session["uid"])
     _auditar(cur, "BANCO_SALDO", bolsillo_id or banco_id, "AJUSTE", session["uid"],
@@ -492,7 +492,7 @@ def traslado():
                 if _efectivo_caja(cur, caja) < valor:
                     raise BancoError("No hay tanto efectivo en tu caja.")
                 d = validados[destino]
-                recibo = numero_recibo(cur)
+                recibo = numero_recibo(cur, "EGR")
                 cur.execute(
                     "INSERT INTO salidas_caja (numero_recibo, concepto, valor, usuario_id, caja_id, es_traslado) "
                     "VALUES (%s, %s, %s, %s, %s, 1)",
@@ -503,7 +503,7 @@ def traslado():
             elif destino == "caja":
                 d = validados[origen]
                 exigir_saldo(cur, d, valor)
-                recibo = numero_recibo(cur)
+                recibo = numero_recibo(cur, "ING")
                 cur.execute(
                     "INSERT INTO ingresos_caja (numero_recibo, concepto, valor, usuario_id, caja_id, es_traslado) "
                     "VALUES (%s, %s, %s, %s, %s, 1)",
@@ -514,7 +514,7 @@ def traslado():
             else:
                 o, t = validados[origen], validados[destino]
                 exigir_saldo(cur, o, valor)
-                recibo = numero_recibo(cur)
+                recibo = numero_recibo(cur, "TRA")
                 registrar(cur, o, "SALIDA", valor, f"Traslado a {t['texto']}", "TRASLADO_BANCO", recibo, uid)
                 registrar(cur, t, "ENTRADA", valor, f"Traslado desde {o['texto']}", "TRASLADO_BANCO", recibo, uid)
     except BancoError as e:
