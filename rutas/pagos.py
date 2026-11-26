@@ -8,7 +8,7 @@ from auth import login_required, permiso_requerido, permisos_actuales
 from rutas.caja import caja_abierta
 from servicios.bancos import BancoError, parsear_destino, registrar as registrar_banco, validar_destino
 from servicios.matriculas import estado_matricula
-from servicios.recibos import (generar_recibo_movimiento_pdf, generar_recibo_pago_pdf,
+from servicios.recibos import (generar_recibo_caja_cea_pdf, generar_recibo_movimiento_pdf,
                                numero_recibo)
 from utils import ahora, cop, entero
 
@@ -220,7 +220,12 @@ def recibo(numero):
                     SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago,
                            p.observaciones, p.cambio, p.acompanante, p.fecha_pago,
                            a.nombres, a.apellidos, a.tipo_documento, a.numero_documento,
-                           u.nombre AS cajero, p.anulado, p.motivo_anulacion
+                           u.nombre AS cajero, p.anulado, p.motivo_anulacion,
+                           m.categoria, COALESCE(m.precio_total, 0) AS valor_total,
+                           COALESCE(m.precio_total, 0) - (
+                               SELECT COALESCE(SUM(p2.valor), 0) FROM pagos p2
+                               WHERE p2.id_matricula = p.id_matricula
+                                 AND p2.anulado = 0 AND p2.id <= p.id) AS saldo
                     FROM pagos p
                     JOIN matriculas m ON m.id = p.id_matricula
                     JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -282,8 +287,11 @@ def recibo(numero):
             "acompanante": fila["acompanante"] or "",
             "observaciones": fila["observaciones"] or "",
             "cambio": int(fila["cambio"] or 0),
+            "categoria": fila["categoria"] or "",
+            "valor_total": float(fila["valor_total"]),
+            "saldo": max(float(fila["saldo"]), 0),
         })
-        pdf = generar_recibo_pago_pdf(detalles)
+        pdf = generar_recibo_caja_cea_pdf(detalles)
     else:
         detalles["tipo"] = tipo
         pdf = generar_recibo_movimiento_pdf(detalles)
