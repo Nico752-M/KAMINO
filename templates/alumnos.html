@@ -166,6 +166,10 @@
                   <option value="curso">Curso completo</option><option value="renovacion">Renovación</option>
                 </select></div>
             </div>
+            <div id="cursosExtraCat"></div>
+            <button type="button" class="btn-action" id="btnAgregarCurso" style="margin:.5rem 0">
+              <i class="ri-add-circle-line"></i> Agregar otro curso (ej. A1 y B2)
+            </button>
             <p class="hint" id="matriculaLookupMessage" role="status" aria-live="polite"></p>
           </section>
         </div>
@@ -258,6 +262,7 @@
                 </select></div>
               <p class="hint" style="grid-column:1/-1;margin:0">Lo que ya pagó se guarda como abono previo: no entra en la caja de hoy ni genera recibo.</p>
             </div>
+            <p id="tituloCurso1" style="display:none;font-weight:700;margin:0 0 .5rem"></p>
             <div class="form-grid two">
               <div class="field"><label class="lbl" for="precioBase">Precio base (COP) <span class="required-mark">*</span></label>
                 <input class="input-clean" id="precioBase" name="precio_base" inputmode="numeric" data-money-input required></div>
@@ -280,10 +285,13 @@
                 <p class="hint" id="hintTotalCurso">El total se calcula con el precio y el descuento.</p></div>
             </div>
             <div id="cursosExtra" class="cursos-extra"></div>
-            <button type="button" class="btn-action" id="btnAgregarCurso" style="margin:.5rem 0 .75rem">
-              <i class="ri-add-circle-line"></i> Agregar otro curso (ej. A1 y B2)
-            </button>
-            <p class="hint" style="margin-top:0">Cada curso se registra como una matrícula aparte, con su propio consecutivo, precio y abono.</p>
+            <div id="resumenTotal" style="display:none;border:1px solid var(--border,#d9dee7);border-radius:10px;padding:.75rem;margin:.5rem 0 .75rem">
+              <strong>Resumen de todos los cursos</strong>
+              <div style="display:flex;justify-content:space-between;margin-top:.4rem"><span>Total de los cursos</span><strong id="resTotal">$ 0</strong></div>
+              <div style="display:flex;justify-content:space-between"><span>Abonos</span><strong id="resAbonos">$ 0</strong></div>
+              <div style="display:flex;justify-content:space-between"><span>Saldo pendiente</span><strong id="resSaldo">$ 0</strong></div>
+              <p class="hint" style="margin:.4rem 0 0">Cada curso se registra como una matrícula aparte, con su propio consecutivo, precio y abono.</p>
+            </div>
             <details class="optional-details">
               <summary>Más datos del pago (opcional)</summary>
               <div class="form-grid two">
