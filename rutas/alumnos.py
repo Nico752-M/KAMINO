@@ -327,21 +327,94 @@ def crear_matricula():
         flash("Completa documento, nombres, apellidos y relación del responsable; teléfono y correo son opcionales.", "error")
         return redirect(url_for("alumnos.lista"))
 
+    # Cursos adicionales en la misma matrícula (ej. A1 y B2): cada uno crea su propia
+    # matrícula con su consecutivo, precio, descuento y abono.
+    cursos = [{
+        "categoria_base": categoria_base, "categoria": categoria,
+        "precio_base": precio_base, "precio": precio, "abono": abono,
+        "fecha": fecha_matricula, "runt": runt_ya,
+    }]
+    extra_cats = request.form.getlist("extra_categoria")
+    extra_bases = request.form.getlist("extra_precio_base")
+    extra_totales = request.form.getlist("extra_precio_total")
+    extra_abonos = request.form.getlist("extra_abono")
+    extra_fechas = request.form.getlist("extra_fecha")
+    extra_runts = request.form.getlist("extra_runt")
+    if len(extra_cats) > 4:
+        flash("Puedes registrar hasta 5 cursos a la vez.", "error")
+        return redirect(url_for("alumnos.lista"))
+    for i, cat_texto in enumerate(extra_cats):
+        n = i + 2
+        cat_base = " ".join(cat_texto.upper().split())
+        if not cat_base:
+            flash(f"Selecciona la categoría del curso {n} o quítalo.", "error")
+            return redirect(url_for("alumnos.lista"))
+        cat_final = f"Renovación - {cat_base}" if tipo_matricula == "renovacion" else cat_base
+        if len(cat_final) > 60:
+            flash(f"La categoría del curso {n} es demasiado larga.", "error")
+            return redirect(url_for("alumnos.lista"))
+        base_x = parsear_pesos(extra_bases[i] if i < len(extra_bases) else "")
+        total_x = parsear_pesos(extra_totales[i] if i < len(extra_totales) else "")
+        if base_x is None or total_x is None:
+            flash(f"El precio base y el total del curso {n} deben ser valores enteros en pesos.", "error")
+            return redirect(url_for("alumnos.lista"))
+        if base_x <= 0 or base_x > 999_999_999_999 or total_x <= 0 or total_x > base_x:
+            flash(f"El total del curso {n} debe ser mayor a $0 y no puede superar su precio base.", "error")
+            return redirect(url_for("alumnos.lista"))
+        abono_x = parsear_pesos((extra_abonos[i] if i < len(extra_abonos) else "") or "0")
+        if abono_x is None:
+            flash(f"El abono del curso {n} debe ser un valor entero en pesos.", "error")
+            return redirect(url_for("alumnos.lista"))
+        if abono_x > 100_000_000 or abono_x > total_x:
+            flash(f"El abono del curso {n} no puede superar $100.000.000 ni el total de ese curso.", "error")
+            return redirect(url_for("alumnos.lista"))
+        if abono_x and (metodo_pago not in ("Efectivo", "Transferencia", "Nequi", "Daviplata",
+                                            "Sistecredit", "Otro")
+                        or "registrar_pagos" not in permisos_actuales()):
+            flash("No tienes permiso para registrar el abono o el método de pago no es válido.", "error")
+            return redirect(url_for("alumnos.lista"))
+        fecha_x, runt_x = None, False
+        if en_curso:
+            texto_fecha = (extra_fechas[i] if i < len(extra_fechas) else "").strip()
+            if texto_fecha:
+                try:
+                    fecha_x = date.fromisoformat(texto_fecha)
+                except ValueError:
+                    flash(f"La fecha de matrícula del curso {n} no es válida.", "error")
+                    return redirect(url_for("alumnos.lista"))
+                if fecha_x > hoy() or (hoy() - fecha_x).days > 1100:
+                    flash(f"La fecha del curso {n} no puede ser futura ni de hace más de 3 años.", "error")
+                    return redirect(url_for("alumnos.lista"))
+            else:
+                fecha_x = fecha_matricula
+            runt_x = (extra_runts[i] if i < len(extra_runts) else "0") == "1"
+        cursos.append({
+            "categoria_base": cat_base, "categoria": cat_final,
+            "precio_base": base_x, "precio": total_x, "abono": abono_x,
+            "fecha": fecha_x, "runt": runt_x,
+        })
+    if len({c["categoria"] for c in cursos}) != len(cursos):
+        flash("No repitas la misma categoría dentro de la misma matrícula.", "error")
+        return redirect(url_for("alumnos.lista"))
+
     anio = hoy().year
     creada = False
-    recibo_inicial = None
+    recibos = []
+    codigos = []
     for intento in range(5):
         try:
             with db.transaccion() as cur:
-                tarifa = cur.execute(
-                    """SELECT categoria FROM tarifas_categoria
-                       WHERE categoria = %s AND tipo = %s AND activo = 1""",
-                    (categoria_base, tipo_tarifa),
-                ).fetchone()
-                if not tarifa:
-                    raise DatosMatriculaInvalidos(
-                        "Selecciona una categoría activa con tarifa configurada."
-                    )
+                recibos, codigos = [], []
+                for curso in cursos:
+                    tarifa = cur.execute(
+                        """SELECT categoria FROM tarifas_categoria
+                           WHERE categoria = %s AND tipo = %s AND activo = 1""",
+                        (curso["categoria_base"], tipo_tarifa),
+                    ).fetchone()
+                    if not tarifa:
+                        raise DatosMatriculaInvalidos(
+                            f"La categoría {curso['categoria_base']} no tiene una tarifa activa configurada."
+                        )
                 existente = cur.execute(
                     "SELECT nombres, apellidos FROM alumnos WHERE numero_documento = %s FOR UPDATE",
                     (documento,),
@@ -380,66 +453,71 @@ def crear_matricula():
                          grupo_sanguineo, ocupacion, celular, email, documento),
                     )
 
-                orden = _siguiente_orden_matricula(cur, anio)
-                datos_mat = (orden, anio, documento, categoria,
-                             estado_matricula("Activo", precio, abono),
-                             precio, precio_base, precio_base - precio,
-                             round((precio_base - precio) * 100 / precio_base, 2))
-                if en_curso:
+                for curso in cursos:
+                    c_base, c_cat = curso["categoria_base"], curso["categoria"]
+                    c_pbase, c_precio, c_abono = curso["precio_base"], curso["precio"], curso["abono"]
+                    orden = _siguiente_orden_matricula(cur, anio)
+                    datos_mat = (orden, anio, documento, c_cat,
+                                 estado_matricula("Activo", c_precio, c_abono),
+                                 c_precio, c_pbase, c_pbase - c_precio,
+                                 round((c_pbase - c_precio) * 100 / c_pbase, 2))
+                    if en_curso:
+                        cur.execute("""
+                            INSERT INTO matriculas
+                                (numero_orden, anio, numero_documento, categoria, estado, precio_total,
+                                 precio_base, descuento_valor, descuento_porcentaje,
+                                 fecha_registro, runt_registrado)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, datos_mat + (curso["fecha"], 1 if curso["runt"] else 0))
+                    else:
+                        cur.execute("""
+                            INSERT INTO matriculas
+                                (numero_orden, anio, numero_documento, categoria, estado, precio_total,
+                                 precio_base, descuento_valor, descuento_porcentaje)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, datos_mat)
+                    matricula_id = cur.execute("SELECT id FROM matriculas WHERE anio = %s AND numero_orden = %s",
+                                               (anio, orden)).fetchone()["id"]
+                    codigos.append(f"{orden}-{str(anio)[-2:]}")
                     cur.execute("""
-                        INSERT INTO matriculas
-                            (numero_orden, anio, numero_documento, categoria, estado, precio_total,
-                             precio_base, descuento_valor, descuento_porcentaje,
-                             fecha_registro, runt_registrado)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, datos_mat + (fecha_matricula, 1 if runt_ya else 0))
-                else:
-                    cur.execute("""
-                        INSERT INTO matriculas
-                            (numero_orden, anio, numero_documento, categoria, estado, precio_total,
-                             precio_base, descuento_valor, descuento_porcentaje)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, datos_mat)
-                matricula_id = cur.execute("SELECT id FROM matriculas WHERE anio = %s AND numero_orden = %s",
-                                           (anio, orden)).fetchone()["id"]
-                cur.execute("""
-                    INSERT INTO matricula_costos (id_matricula, concepto, valor, usuario_id)
-                    SELECT %s, concepto, valor, %s FROM costos_plantilla
-                    WHERE tipo = %s AND categoria = %s AND activo = 1
-                """, (matricula_id, session["uid"], tipo_tarifa, categoria_base))
-                if responsable_informado:
-                    cur.execute("""
-                        INSERT INTO responsables_matricula
-                            (id_matricula, tipo_documento, numero_documento, nombres, apellidos,
-                             celular, email, relacion)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (matricula_id, responsable["tipo_documento"], responsable["numero_documento"],
-                          responsable["nombres"], responsable["apellidos"], responsable["celular"],
-                          responsable["email"], responsable["relacion"]))
-                if abono and en_curso:
-                    cur.execute("""
-                        INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
-                                           usuario_id, caja_id, observaciones, acompanante, fecha_pago)
-                        VALUES (%s, 'Abono histórico previo', %s, 'Otro', %s, %s, NULL, %s, %s, %s)
-                    """, (matricula_id, abono, f"HIST-{matricula_id}", session["uid"],
-                          observaciones_abono, acompanante, fecha_matricula))
-                elif abono:
-                    caja = cur.execute(
-                        "SELECT id FROM cajas WHERE usuario_id = %s AND estado = 'ABIERTA' FOR UPDATE",
-                        (session["uid"],),
-                    ).fetchone()
-                    if not caja:
-                        raise DatosMatriculaInvalidos("Abre tu caja antes de registrar un abono inicial.")
-                    recibo_inicial = numero_recibo(cur)
-                    cur.execute("""
-                        INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
-                                           usuario_id, caja_id, observaciones, acompanante)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (matricula_id,
-                          f"Renovación de licencia — {categoria_base}" if tipo_matricula == "renovacion"
-                          else "Pago curso de conducción",
-                          abono, metodo_pago, recibo_inicial, session["uid"], caja["id"],
-                          observaciones_abono, acompanante))
+                        INSERT INTO matricula_costos (id_matricula, concepto, valor, usuario_id)
+                        SELECT %s, concepto, valor, %s FROM costos_plantilla
+                        WHERE tipo = %s AND categoria = %s AND activo = 1
+                    """, (matricula_id, session["uid"], tipo_tarifa, c_base))
+                    if responsable_informado:
+                        cur.execute("""
+                            INSERT INTO responsables_matricula
+                                (id_matricula, tipo_documento, numero_documento, nombres, apellidos,
+                                 celular, email, relacion)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (matricula_id, responsable["tipo_documento"], responsable["numero_documento"],
+                              responsable["nombres"], responsable["apellidos"], responsable["celular"],
+                              responsable["email"], responsable["relacion"]))
+                    if c_abono and en_curso:
+                        cur.execute("""
+                            INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
+                                               usuario_id, caja_id, observaciones, acompanante, fecha_pago)
+                            VALUES (%s, 'Abono histórico previo', %s, 'Otro', %s, %s, NULL, %s, %s, %s)
+                        """, (matricula_id, c_abono, f"HIST-{matricula_id}", session["uid"],
+                              observaciones_abono, acompanante, curso["fecha"]))
+                    elif c_abono:
+                        caja = cur.execute(
+                            "SELECT id FROM cajas WHERE usuario_id = %s AND estado = 'ABIERTA' FOR UPDATE",
+                            (session["uid"],),
+                        ).fetchone()
+                        if not caja:
+                            raise DatosMatriculaInvalidos("Abre tu caja antes de registrar un abono inicial.")
+                        recibo = numero_recibo(cur)
+                        recibos.append(recibo)
+                        cur.execute("""
+                            INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
+                                               usuario_id, caja_id, observaciones, acompanante)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (matricula_id,
+                              f"Renovación de licencia — {c_base}" if tipo_matricula == "renovacion"
+                              else "Pago curso de conducción",
+                              c_abono, metodo_pago, recibo, session["uid"], caja["id"],
+                              observaciones_abono, acompanante))
             creada = True
             break
         except DatosMatriculaInvalidos as e:
@@ -466,10 +544,15 @@ def crear_matricula():
             return redirect(url_for("alumnos.lista"))
 
     if creada:
-        flash(f"{'Alumno en curso registrado' if en_curso else 'Renovación' if tipo_matricula == 'renovacion' else 'Matrícula'} "
-              f"{orden}-{str(anio)[-2:]} creada correctamente."
-              + (f" Recibo del abono: {recibo_inicial}." if recibo_inicial else ""), "ok")
-    return redirect(url_for("alumnos.lista", recibo_nuevo=recibo_inicial) if recibo_inicial
+        if len(codigos) > 1:
+            detalle = ", ".join(f"{cod} ({c['categoria']})" for cod, c in zip(codigos, cursos))
+            flash(f"Se registraron {len(codigos)} cursos para el alumno: {detalle}."
+                  + (f" Recibos de abono: {', '.join(recibos)}." if recibos else ""), "ok")
+        else:
+            flash(f"{'Alumno en curso registrado' if en_curso else 'Renovación' if tipo_matricula == 'renovacion' else 'Matrícula'} "
+                  f"{codigos[0]} creada correctamente."
+                  + (f" Recibo del abono: {recibos[0]}." if recibos else ""), "ok")
+    return redirect(url_for("alumnos.lista", recibo_nuevo=recibos[0]) if recibos
                     else url_for("alumnos.lista"))
 
 
