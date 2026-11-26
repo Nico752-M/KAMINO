@@ -91,11 +91,26 @@
     <div><h3>{{ b.nombre }} {% if not b.activo %}<span class="badge-status muted">Inactivo</span>{% endif %}</h3>
       <p>Total: <strong style="color:{{ 'var(--accent-red)' if b.total < 0 else 'var(--accent-green)' }}">{{ b.total|cop }}</strong></p></div>
     {% if gestiona %}
-    <form method="post" action="{{ url_for('bancos.estado_banco', banco_id=b.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="activo" value="{{ 0 if b.activo else 1 }}">
-      <button class="btn-action sm {{ 'red' if b.activo }}" type="submit">{{ 'Desactivar' if b.activo else 'Activar' }}</button>
-    </form>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start">
+      <details>
+        <summary class="btn-action sm"><i class="ri-edit-line"></i> Editar</summary>
+        <form method="post" action="{{ url_for('bancos.editar_banco', banco_id=b.id) }}" style="display:flex;gap:.5rem;margin-top:.5rem">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input class="input-clean" name="nombre" value="{{ b.nombre }}" maxlength="60" required aria-label="Nombre del banco">
+          <button class="btn-action green sm" type="submit"><i class="ri-save-line"></i> Guardar</button>
+        </form>
+      </details>
+      <form method="post" action="{{ url_for('bancos.estado_banco', banco_id=b.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="activo" value="{{ 0 if b.activo else 1 }}">
+        <button class="btn-action sm {{ 'red' if b.activo }}" type="submit">{{ 'Desactivar' if b.activo else 'Activar' }}</button>
+      </form>
+      <form method="post" action="{{ url_for('bancos.borrar_banco', banco_id=b.id) }}"
+            data-confirm="¿Borrar el banco «{{ b.nombre }}» y sus bolsillos? Solo se puede si no tiene movimientos.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn-action red sm" type="submit"><i class="ri-delete-bin-line"></i> Borrar</button>
+      </form>
+    </div>
     {% endif %}
   </div>
   <div class="table-wrap"><table class="table-clean">
@@ -108,11 +123,26 @@
         <td>{{ p.nombre }}{% if not p.activo %} <span class="badge-status muted">Inactivo</span>{% endif %}</td>
         <td><strong style="color:{{ 'var(--accent-red)' if p.saldo < 0 }}">{{ p.saldo|cop }}</strong></td>
         <td>{% if gestiona %}
-          <form method="post" action="{{ url_for('bancos.estado_bolsillo', bolsillo_id=p.id) }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="activo" value="{{ 0 if p.activo else 1 }}">
-            <button class="btn-action sm" type="submit">{{ 'Desactivar' if p.activo else 'Activar' }}</button>
-          </form>{% endif %}</td>
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:flex-start">
+            <details>
+              <summary class="btn-action sm"><i class="ri-edit-line"></i> Editar</summary>
+              <form method="post" action="{{ url_for('bancos.editar_bolsillo', bolsillo_id=p.id) }}" style="display:flex;gap:.5rem;margin-top:.5rem">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input class="input-clean" name="nombre" value="{{ p.nombre }}" maxlength="60" required aria-label="Nombre del bolsillo">
+                <button class="btn-action green sm" type="submit"><i class="ri-save-line"></i> Guardar</button>
+              </form>
+            </details>
+            <form method="post" action="{{ url_for('bancos.estado_bolsillo', bolsillo_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="activo" value="{{ 0 if p.activo else 1 }}">
+              <button class="btn-action sm" type="submit">{{ 'Desactivar' if p.activo else 'Activar' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('bancos.borrar_bolsillo', bolsillo_id=p.id) }}"
+                  data-confirm="¿Borrar el bolsillo «{{ p.nombre }}»? Solo se puede si no tiene movimientos.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn-action red sm" type="submit"><i class="ri-delete-bin-line"></i> Borrar</button>
+            </form>
+          </div>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
