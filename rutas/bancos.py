@@ -227,6 +227,127 @@ def estado_bolsillo(bolsillo_id):
     return _volver()
 
 
+# ───────── Editar y borrar bancos y bolsillos ─────────
+def _nombre_form(etiqueta):
+    nombre = " ".join(request.form.get("nombre", "").split())
+    if not nombre or len(nombre) > 60:
+        raise BancoError(f"El nombre del {etiqueta} es obligatorio (máximo 60 caracteres).")
+    return nombre
+
+
+@bp.route("/<int:banco_id>/editar", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_bancos")
+def editar_banco(banco_id):
+    try:
+        nombre = _nombre_form("banco")
+        with db.transaccion() as cur:
+            antes = cur.execute("SELECT id, nombre FROM bancos WHERE id = %s FOR UPDATE", (banco_id,)).fetchone()
+            if not antes:
+                raise BancoError("El banco ya no existe.")
+            cur.execute("UPDATE bancos SET nombre = %s WHERE id = %s", (nombre, banco_id))
+            _auditar(cur, "BANCO", banco_id, "EDICION", session["uid"],
+                     {"nombre": antes["nombre"]}, {"nombre": nombre})
+    except BancoError as e:
+        flash(str(e), "error")
+        return _volver()
+    except oracledb.IntegrityError as e:
+        flash("Ya existe un banco con ese nombre." if _duplicado(e) else "No se pudo editar el banco.", "error")
+        return _volver()
+    except Exception:
+        current_app.logger.exception("Error editando banco %s", banco_id)
+        flash("No se pudo editar el banco.", "error")
+        return _volver()
+    flash("Banco actualizado.", "ok")
+    return _volver()
+
+
+@bp.route("/bolsillos/<int:bolsillo_id>/editar", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_bancos")
+def editar_bolsillo(bolsillo_id):
+    try:
+        nombre = _nombre_form("bolsillo")
+        with db.transaccion() as cur:
+            antes = cur.execute("SELECT id, nombre FROM bolsillos WHERE id = %s FOR UPDATE",
+                                (bolsillo_id,)).fetchone()
+            if not antes:
+                raise BancoError("El bolsillo ya no existe.")
+            cur.execute("UPDATE bolsillos SET nombre = %s WHERE id = %s", (nombre, bolsillo_id))
+            _auditar(cur, "BANCO_BOLSILLO", bolsillo_id, "EDICION", session["uid"],
+                     {"nombre": antes["nombre"]}, {"nombre": nombre})
+    except BancoError as e:
+        flash(str(e), "error")
+        return _volver()
+    except oracledb.IntegrityError as e:
+        flash("Ese banco ya tiene un bolsillo con ese nombre." if _duplicado(e)
+              else "No se pudo editar el bolsillo.", "error")
+        return _volver()
+    except Exception:
+        current_app.logger.exception("Error editando bolsillo %s", bolsillo_id)
+        flash("No se pudo editar el bolsillo.", "error")
+        return _volver()
+    flash("Bolsillo actualizado.", "ok")
+    return _volver()
+
+
+@bp.route("/<int:banco_id>/borrar", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_bancos")
+def borrar_banco(banco_id):
+    try:
+        with db.transaccion() as cur:
+            banco = cur.execute("SELECT id, nombre FROM bancos WHERE id = %s FOR UPDATE", (banco_id,)).fetchone()
+            if not banco:
+                raise BancoError("El banco ya no existe.")
+            usados = cur.execute("SELECT COUNT(*) AS n FROM movimientos_banco WHERE banco_id = %s",
+                                 (banco_id,)).fetchone()["n"]
+            if int(usados):
+                raise BancoError("Este banco ya tiene movimientos y no se puede borrar sin perder el historial. "
+                                 "Usa «Desactivar» para esconderlo (primero deja su saldo en $0).")
+            cur.execute("DELETE FROM bolsillos WHERE banco_id = %s", (banco_id,))
+            cur.execute("DELETE FROM bancos WHERE id = %s", (banco_id,))
+            _auditar(cur, "BANCO", banco_id, "BORRADO", session["uid"], {"nombre": banco["nombre"]}, None)
+    except BancoError as e:
+        flash(str(e), "error")
+        return _volver()
+    except Exception:
+        current_app.logger.exception("Error borrando banco %s", banco_id)
+        flash("No se pudo borrar el banco. ¿Ya se aplicó la migración 014?", "error")
+        return _volver()
+    flash(f"Banco «{banco['nombre']}» borrado.", "ok")
+    return _volver()
+
+
+@bp.route("/bolsillos/<int:bolsillo_id>/borrar", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_bancos")
+def borrar_bolsillo(bolsillo_id):
+    try:
+        with db.transaccion() as cur:
+            b = cur.execute("SELECT id, banco_id, nombre FROM bolsillos WHERE id = %s FOR UPDATE",
+                            (bolsillo_id,)).fetchone()
+            if not b:
+                raise BancoError("El bolsillo ya no existe.")
+            usados = cur.execute("SELECT COUNT(*) AS n FROM movimientos_banco WHERE bolsillo_id = %s",
+                                 (bolsillo_id,)).fetchone()["n"]
+            if int(usados):
+                raise BancoError("Este bolsillo ya tiene movimientos y no se puede borrar sin perder el historial. "
+                                 "Usa «Desactivar» para esconderlo (primero deja su saldo en $0).")
+            cur.execute("DELETE FROM bolsillos WHERE id = %s", (bolsillo_id,))
+            _auditar(cur, "BANCO_BOLSILLO", bolsillo_id, "BORRADO", session["uid"],
+                     {"nombre": b["nombre"], "banco_id": b["banco_id"]}, None)
+    except BancoError as e:
+        flash(str(e), "error")
+        return _volver()
+    except Exception:
+        current_app.logger.exception("Error borrando bolsillo %s", bolsillo_id)
+        flash("No se pudo borrar el bolsillo. ¿Ya se aplicó la migración 014?", "error")
+        return _volver()
+    flash(f"Bolsillo «{b['nombre']}» borrado.", "ok")
+    return _volver()
+
+
 # ───────── Ingresos y egresos directos en un banco ─────────
 @bp.route("/movimiento", methods=["POST"])
 @login_required
