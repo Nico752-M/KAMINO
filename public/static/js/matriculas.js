@@ -215,6 +215,17 @@
     modal.classList.add("open");
     document.getElementById("matriculaDocumento").focus();
   });
+  // «Agregar otra categoría»: abre la matrícula con el documento del alumno ya puesto
+  document.addEventListener("click", (evento) => {
+    const enlace = evento.target.closest(".js-otra-categoria");
+    if (!enlace) return;
+    evento.preventDefault();
+    enlace.closest("details")?.removeAttribute("open");
+    abrir.click();
+    documento.value = enlace.dataset.documento;
+    documento.dispatchEvent(new Event("blur"));
+    categoria.focus();
+  });
   btnSiguiente.addEventListener("click", () => {
     if (validarPaso()) mostrarPaso(Math.min(pasoActual + 1, pasos.length - 1));
   });
