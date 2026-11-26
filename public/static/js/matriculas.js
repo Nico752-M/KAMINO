@@ -40,14 +40,24 @@
   }
 
   function validarPaso() {
-    if (pasoActual === pasos.length - 1) {
-      for (const fila of document.querySelectorAll("#cursosExtra > div")) {
-        const cat = fila.querySelector("[data-x-cat]");
+    if (pasoActual === 0 && categoria.value) {
+      const vistas = [categoria.value];
+      for (const cat of document.querySelectorAll("#cursosExtraCat [data-x-cat]")) {
         if (!cat.value) {
           cat.focus();
           alert("Selecciona la categoría de cada curso adicional o quítalo.");
           return false;
         }
+        if (vistas.includes(cat.value)) {
+          cat.focus();
+          alert("No puedes repetir la misma categoría (" + cat.value + ").");
+          return false;
+        }
+        vistas.push(cat.value);
+      }
+    }
+    if (pasoActual === pasos.length - 1) {
+      for (const fila of document.querySelectorAll("#cursosExtra > div")) {
         if (!fila.querySelector("[name='extra_precio_base']").value) {
           fila.querySelector("[data-x-base]").focus();
           alert("Escribe el precio base de cada curso adicional.");
@@ -71,6 +81,7 @@
   const hintTotalCurso = document.getElementById("hintTotalCurso");
 
   function mostrarSaldo() {
+    actualizarResumen();
     const total = soloDigitos(precioTotal.value);
     const abono = soloDigitos(abonoInicial.value);
     if (!total) {
@@ -216,6 +227,9 @@
   enCurso.addEventListener("change", actualizarEnCurso);
 
   // ── Cursos adicionales (ej. A1 y B2 para el mismo alumno) ──────────────────────────
+  // La categoría de cada curso extra se elige en el paso 1 (#cursosExtraCat);
+  // su precio, descuento y abono se llenan en el paso 4 (#cursosExtra). Van en el mismo orden.
+  const cursosExtraCat = document.getElementById("cursosExtraCat");
   const cursosExtra = document.getElementById("cursosExtra");
   const btnAgregarCurso = document.getElementById("btnAgregarCurso");
   const MAX_CURSOS_EXTRA = 4;
@@ -223,6 +237,27 @@
   function opcionesCategoria() {
     const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
     return opcionesTarifas.filter((o) => o.type === tipo);
+  }
+
+  function actualizarResumen() {
+    const caja = document.getElementById("resumenTotal");
+    if (!caja) return;
+    const filas = [...document.querySelectorAll("#cursosExtra > div")];
+    caja.style.display = filas.length ? "" : "none";
+    const titulo = document.getElementById("tituloCurso1");
+    titulo.style.display = filas.length ? "" : "none";
+    titulo.textContent = "Curso 1 · " + (categoria.value || "sin categoría");
+    let total = soloDigitos(precioTotal.value);
+    let abonos = Math.min(soloDigitos(abonoInicial.value), total);
+    filas.forEach((fila) => {
+      const t = soloDigitos(fila.querySelector("[name='extra_precio_total']").value);
+      const a = soloDigitos(fila.querySelector("[name='extra_abono']").value);
+      total += t;
+      abonos += Math.min(a, t);
+    });
+    document.getElementById("resTotal").textContent = "$ " + window.formatearMiles(total);
+    document.getElementById("resAbonos").textContent = "$ " + window.formatearMiles(abonos);
+    document.getElementById("resSaldo").textContent = "$ " + window.formatearMiles(Math.max(total - abonos, 0));
   }
 
   function recalcularFila(fila) {
@@ -233,14 +268,27 @@
     fila.querySelector("[name='extra_precio_total']").value = base ? String(total) : "";
     const abono = soloDigitos(fila.querySelector("[name='extra_abono']").value);
     fila.querySelector("[data-x-saldo]").textContent =
-      base ? "Saldo: $ " + window.formatearMiles(Math.max(total - abono, 0)) : "";
+      base ? "Total del curso: $ " + window.formatearMiles(total) + " · Saldo: $ " + window.formatearMiles(Math.max(total - abono, 0)) : "";
+    actualizarResumen();
   }
 
   function numerarFilas() {
-    [...cursosExtra.children].forEach((fila, i) => {
-      fila.querySelector("[data-x-titulo]").textContent = "Curso " + (i + 2);
+    [...cursosExtraCat.children].forEach((filaCat, i) => {
+      filaCat.querySelector("[data-x-titulo]").textContent = "Curso " + (i + 2);
+      const filaPrecio = cursosExtra.children[i];
+      if (filaPrecio) {
+        const cat = filaCat.querySelector("[data-x-cat]").value;
+        filaPrecio.querySelector("[data-x-titulo]").textContent = "Curso " + (i + 2) + (cat ? " · " + cat : "");
+      }
     });
-    btnAgregarCurso.hidden = cursosExtra.children.length >= MAX_CURSOS_EXTRA;
+    btnAgregarCurso.hidden = cursosExtraCat.children.length >= MAX_CURSOS_EXTRA;
+    actualizarResumen();
+  }
+
+  function limpiarExtras() {
+    cursosExtraCat.innerHTML = "";
+    cursosExtra.innerHTML = "";
+    numerarFilas();
   }
 
   function aplicarEnCursoAFilas() {
@@ -251,18 +299,30 @@
   }
 
   function agregarCurso() {
-    if (cursosExtra.children.length >= MAX_CURSOS_EXTRA) return;
+    if (cursosExtraCat.children.length >= MAX_CURSOS_EXTRA) return;
+
+    // Paso 1: solo la categoría
+    const filaCat = document.createElement("div");
+    filaCat.style.cssText = "display:flex;gap:.5rem;align-items:flex-end;margin-top:.5rem";
+    filaCat.innerHTML =
+      '<div class="field" style="flex:1;margin:0"><label class="lbl"><span data-x-titulo></span> <span class="required-mark">*</span></label>' +
+        '<select class="input-clean" name="extra_categoria" data-x-cat></select></div>' +
+      '<button type="button" class="btn-action" data-x-quitar aria-label="Quitar curso"><i class="ri-delete-bin-line"></i> Quitar</button>';
+    const select = filaCat.querySelector("[data-x-cat]");
+    select.innerHTML = '<option value="">Selecciona</option>';
+    opcionesCategoria().forEach((o) => {
+      const op = document.createElement("option");
+      op.value = o.value; op.textContent = o.text; op.dataset.price = o.price;
+      select.appendChild(op);
+    });
+
+    // Paso 4: precio, descuento y abono de ese curso
     const fila = document.createElement("div");
     fila.className = "form-section";
     fila.style.cssText = "border:1px solid var(--border,#d9dee7);border-radius:10px;padding:.75rem;margin-bottom:.75rem";
     fila.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">' +
-        '<strong data-x-titulo></strong>' +
-        '<button type="button" class="btn-action" data-x-quitar aria-label="Quitar curso"><i class="ri-delete-bin-line"></i> Quitar</button>' +
-      '</div>' +
+      '<strong data-x-titulo style="display:block;margin-bottom:.5rem"></strong>' +
       '<div class="form-grid two">' +
-        '<div class="field"><label class="lbl">Categoría <span class="required-mark">*</span></label>' +
-          '<select class="input-clean" name="extra_categoria" data-x-cat></select></div>' +
         '<div class="field"><label class="lbl">Precio base (COP)</label>' +
           '<input class="input-clean" inputmode="numeric" data-money-input data-x-base>' +
           '<input type="hidden" name="extra_precio_base">' +
@@ -277,26 +337,22 @@
         '<div class="field" data-x-encurso><label class="lbl">¿Ya está en el RUNT?</label>' +
           '<select class="input-clean" name="extra_runt"><option value="0">No</option><option value="1">Sí</option></select></div>' +
       '</div>';
-    const select = fila.querySelector("[data-x-cat]");
-    select.innerHTML = '<option value="">Selecciona</option>';
-    opcionesCategoria().forEach((o) => {
-      const op = document.createElement("option");
-      op.value = o.value; op.textContent = o.text; op.dataset.price = o.price;
-      select.appendChild(op);
-    });
+
     select.addEventListener("change", () => {
       const precio = select.selectedOptions[0]?.dataset.price;
       fila.querySelector("[data-x-base]").value = precio ? window.formatearMiles(precio) : "";
       recalcularFila(fila);
+      numerarFilas();
     });
     fila.addEventListener("input", () => recalcularFila(fila));
-    fila.querySelector("[data-x-quitar]").addEventListener("click", () => {
+    filaCat.querySelector("[data-x-quitar]").addEventListener("click", () => {
+      filaCat.remove();
       fila.remove();
       numerarFilas();
     });
-    // Si ya se eligió una fecha para el primer curso, se propone la misma
     fila.querySelector("[name='extra_fecha']").value = fechaOriginal.value || "";
     fila.querySelector("[name='extra_fecha']").max = fechaOriginal.max || "";
+    cursosExtraCat.appendChild(filaCat);
     cursosExtra.appendChild(fila);
     numerarFilas();
     aplicarEnCursoAFilas();
@@ -306,16 +362,12 @@
   btnAgregarCurso.addEventListener("click", agregarCurso);
   enCurso.addEventListener("change", aplicarEnCursoAFilas);
   // Al cambiar entre Curso completo / Renovación las categorías disponibles cambian: se limpian las filas
-  tipoMatricula.addEventListener("change", () => {
-    cursosExtra.innerHTML = "";
-    numerarFilas();
-  });
+  tipoMatricula.addEventListener("change", limpiarExtras);
 
   const cerrar = () => modal.classList.remove("open");
   abrir.addEventListener("click", () => {
     form.reset();
-    cursosExtra.innerHTML = "";
-    numerarFilas();
+    limpiarExtras();
     actualizarEnCurso();
     autocompletados = {};
     lookupMessage.textContent = "";
