@@ -40,6 +40,21 @@
   }
 
   function validarPaso() {
+    if (pasoActual === pasos.length - 1) {
+      for (const fila of document.querySelectorAll("#cursosExtra > div")) {
+        const cat = fila.querySelector("[data-x-cat]");
+        if (!cat.value) {
+          cat.focus();
+          alert("Selecciona la categoría de cada curso adicional o quítalo.");
+          return false;
+        }
+        if (!fila.querySelector("[name='extra_precio_base']").value) {
+          fila.querySelector("[data-x-base]").focus();
+          alert("Escribe el precio base de cada curso adicional.");
+          return false;
+        }
+      }
+    }
     const campos = [...pasos[pasoActual].querySelectorAll("input, select, textarea")]
       .filter((campo) => campo.willValidate);
     for (const campo of campos) {
@@ -200,9 +215,107 @@
   }
   enCurso.addEventListener("change", actualizarEnCurso);
 
+  // ── Cursos adicionales (ej. A1 y B2 para el mismo alumno) ──────────────────────────
+  const cursosExtra = document.getElementById("cursosExtra");
+  const btnAgregarCurso = document.getElementById("btnAgregarCurso");
+  const MAX_CURSOS_EXTRA = 4;
+
+  function opcionesCategoria() {
+    const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
+    return opcionesTarifas.filter((o) => o.type === tipo);
+  }
+
+  function recalcularFila(fila) {
+    const base = soloDigitos(fila.querySelector("[data-x-base]").value);
+    const pesos = soloDigitos(fila.querySelector("[data-x-desc]").value);
+    const total = Math.max(base - pesos, 0);
+    fila.querySelector("[name='extra_precio_base']").value = base ? String(base) : "";
+    fila.querySelector("[name='extra_precio_total']").value = base ? String(total) : "";
+    const abono = soloDigitos(fila.querySelector("[name='extra_abono']").value);
+    fila.querySelector("[data-x-saldo]").textContent =
+      base ? "Saldo: $ " + window.formatearMiles(Math.max(total - abono, 0)) : "";
+  }
+
+  function numerarFilas() {
+    [...cursosExtra.children].forEach((fila, i) => {
+      fila.querySelector("[data-x-titulo]").textContent = "Curso " + (i + 2);
+    });
+    btnAgregarCurso.hidden = cursosExtra.children.length >= MAX_CURSOS_EXTRA;
+  }
+
+  function aplicarEnCursoAFilas() {
+    const activo = enCurso.checked;
+    cursosExtra.querySelectorAll("[data-x-encurso]").forEach((el) => {
+      el.style.display = activo ? "" : "none";
+    });
+  }
+
+  function agregarCurso() {
+    if (cursosExtra.children.length >= MAX_CURSOS_EXTRA) return;
+    const fila = document.createElement("div");
+    fila.className = "form-section";
+    fila.style.cssText = "border:1px solid var(--border,#d9dee7);border-radius:10px;padding:.75rem;margin-bottom:.75rem";
+    fila.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">' +
+        '<strong data-x-titulo></strong>' +
+        '<button type="button" class="btn-action" data-x-quitar aria-label="Quitar curso"><i class="ri-delete-bin-line"></i> Quitar</button>' +
+      '</div>' +
+      '<div class="form-grid two">' +
+        '<div class="field"><label class="lbl">Categoría <span class="required-mark">*</span></label>' +
+          '<select class="input-clean" name="extra_categoria" data-x-cat></select></div>' +
+        '<div class="field"><label class="lbl">Precio base (COP)</label>' +
+          '<input class="input-clean" inputmode="numeric" data-money-input data-x-base>' +
+          '<input type="hidden" name="extra_precio_base">' +
+          '<input type="hidden" name="extra_precio_total"></div>' +
+        '<div class="field"><label class="lbl">Descuento ($)</label>' +
+          '<input class="input-clean" inputmode="numeric" data-money-input data-x-desc placeholder="Ej: 50.000"></div>' +
+        '<div class="field"><label class="lbl">Abono / ya pagado (COP)</label>' +
+          '<input class="input-clean" inputmode="numeric" data-money-input name="extra_abono" value="0">' +
+          '<p class="hint" data-x-saldo></p></div>' +
+        '<div class="field" data-x-encurso><label class="lbl">Fecha en que se matriculó</label>' +
+          '<input class="input-clean" type="date" name="extra_fecha"></div>' +
+        '<div class="field" data-x-encurso><label class="lbl">¿Ya está en el RUNT?</label>' +
+          '<select class="input-clean" name="extra_runt"><option value="0">No</option><option value="1">Sí</option></select></div>' +
+      '</div>';
+    const select = fila.querySelector("[data-x-cat]");
+    select.innerHTML = '<option value="">Selecciona</option>';
+    opcionesCategoria().forEach((o) => {
+      const op = document.createElement("option");
+      op.value = o.value; op.textContent = o.text; op.dataset.price = o.price;
+      select.appendChild(op);
+    });
+    select.addEventListener("change", () => {
+      const precio = select.selectedOptions[0]?.dataset.price;
+      fila.querySelector("[data-x-base]").value = precio ? window.formatearMiles(precio) : "";
+      recalcularFila(fila);
+    });
+    fila.addEventListener("input", () => recalcularFila(fila));
+    fila.querySelector("[data-x-quitar]").addEventListener("click", () => {
+      fila.remove();
+      numerarFilas();
+    });
+    // Si ya se eligió una fecha para el primer curso, se propone la misma
+    fila.querySelector("[name='extra_fecha']").value = fechaOriginal.value || "";
+    fila.querySelector("[name='extra_fecha']").max = fechaOriginal.max || "";
+    cursosExtra.appendChild(fila);
+    numerarFilas();
+    aplicarEnCursoAFilas();
+    select.focus();
+  }
+
+  btnAgregarCurso.addEventListener("click", agregarCurso);
+  enCurso.addEventListener("change", aplicarEnCursoAFilas);
+  // Al cambiar entre Curso completo / Renovación las categorías disponibles cambian: se limpian las filas
+  tipoMatricula.addEventListener("change", () => {
+    cursosExtra.innerHTML = "";
+    numerarFilas();
+  });
+
   const cerrar = () => modal.classList.remove("open");
   abrir.addEventListener("click", () => {
     form.reset();
+    cursosExtra.innerHTML = "";
+    numerarFilas();
     actualizarEnCurso();
     autocompletados = {};
     lookupMessage.textContent = "";
