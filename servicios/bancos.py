@@ -96,6 +96,6 @@ def movimiento_manual(cur, tipo, destino, valor, concepto, categoria, usuario_id
     d = validar_destino(cur, destino, bloquear=(tipo == "SALIDA"))
     if tipo == "SALIDA":
         exigir_saldo(cur, d, valor)
-    recibo = numero_recibo(cur)
+    recibo = numero_recibo(cur, "ING" if tipo == "ENTRADA" else "EGR")
     registrar(cur, d, tipo, valor, concepto, "MANUAL", recibo, usuario_id, categoria)
     return recibo
