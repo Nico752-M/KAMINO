@@ -22,12 +22,15 @@ def _cop(v) -> str:
     return cop(v)
 
 
-def numero_recibo(cur) -> str:
-    """Reserva el consecutivo compartido por todos los recibos de caja."""
-    fila = cur.execute(
-        "SELECT 'CEA-' || LPAD(SEQ_RECIBOS.NEXTVAL, 6, '0') AS numero FROM dual"
-    ).fetchone()
-    return fila["numero"]
+_SECUENCIAS = {"ING": "SEQ_INGRESOS", "EGR": "SEQ_EGRESOS", "TRA": "SEQ_TRASLADOS"}
+
+
+def numero_recibo(cur, prefijo: str = "ING") -> str:
+    """Reserva el siguiente consecutivo: ING-001 (todo lo que entra: pagos de alumnos, abonos
+    e ingresos), EGR-001 (todo lo que sale) o TRA-001 (traslados entre bancos)."""
+    secuencia = _SECUENCIAS[prefijo]
+    fila = cur.execute(f"SELECT {secuencia}.NEXTVAL AS n FROM dual").fetchone()
+    return f"{prefijo}-{int(fila['n']):03d}"
 
 
 def _ajustar(texto: str, fuente: str, tam: float, ancho: float) -> str:
@@ -326,9 +329,8 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
                 actual = h["numero_recibo"] == d["numero_recibo"]
                 fuente = "Helvetica-Bold" if actual else "Helvetica"
                 fecha_h = h["fecha"].strftime("%d/%m/%y") if h.get("fecha") else "—"
-                recibo_h = "Histórico" if str(h["numero_recibo"]).startswith("HIST-") else h["numero_recibo"]
                 texto(x0, yy, fecha_h, fuente, 7)
-                texto(x0 + ancho_col * 0.16, yy, recibo_h, fuente, 7)
+                texto(x0 + ancho_col * 0.16, yy, h["numero_recibo"], fuente, 7)
                 texto(x0 + ancho_col * 0.74, yy, cop(h["valor"]), fuente, 7, "R")
                 texto(x0 + ancho_col, yy, f"saldo {cop(h['saldo'])}", fuente, 7, "R")
         texto(ancho / 2, y_f + 8 * MM, "Recibí de la persona indicada el valor registrado en este comprobante.",
