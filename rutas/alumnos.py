@@ -514,7 +514,7 @@ def crear_matricula():
                             INSERT INTO pagos (id_matricula, concepto, valor, metodo_pago, numero_recibo,
                                                usuario_id, caja_id, observaciones, acompanante, fecha_pago)
                             VALUES (%s, 'Abono histórico previo', %s, 'Otro', %s, %s, NULL, %s, %s, %s)
-                        """, (matricula_id, c_abono, f"HIST-{matricula_id}", session["uid"],
+                        """, (matricula_id, c_abono, numero_recibo(cur), session["uid"],
                               observaciones_abono, acompanante, curso["fecha"]))
                     elif c_abono:
                         caja = cur.execute(
