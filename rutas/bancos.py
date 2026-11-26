@@ -291,31 +291,50 @@ def editar_bolsillo(bolsillo_id):
     return _volver()
 
 
+def _motivo_borrado():
+    motivo = " ".join(request.form.get("motivo", "").split())
+    if not motivo or len(motivo) > 500:
+        raise BancoError("El motivo es obligatorio y admite hasta 500 caracteres.")
+    return motivo
+
+
+def _copia_movimientos(cur, filtro, valor):
+    """Guarda en la auditoría lo que se va a borrar y devuelve cuántos movimientos eran."""
+    filas = cur.execute(
+        f"SELECT id, fecha, banco_id, bolsillo_id, tipo, valor, concepto, origen, referencia, "
+        f"categoria, anulado FROM movimientos_banco WHERE {filtro} = %s ORDER BY id", (valor,)).fetchall()
+    return [dict(f) for f in filas]
+
+
 @bp.route("/<int:banco_id>/borrar", methods=["POST"])
 @login_required
 @permiso_requerido("gestionar_bancos")
 def borrar_banco(banco_id):
+    """Borra el banco, sus bolsillos y su historial de movimientos (queda copia en la auditoría)."""
     try:
+        motivo = _motivo_borrado()
         with db.transaccion() as cur:
             banco = cur.execute("SELECT id, nombre FROM bancos WHERE id = %s FOR UPDATE", (banco_id,)).fetchone()
             if not banco:
                 raise BancoError("El banco ya no existe.")
-            usados = cur.execute("SELECT COUNT(*) AS n FROM movimientos_banco WHERE banco_id = %s",
-                                 (banco_id,)).fetchone()["n"]
-            if int(usados):
-                raise BancoError("Este banco ya tiene movimientos y no se puede borrar sin perder el historial. "
-                                 "Usa «Desactivar» para esconderlo (primero deja su saldo en $0).")
+            bolsillos = [dict(x) for x in cur.execute(
+                "SELECT id, nombre FROM bolsillos WHERE banco_id = %s", (banco_id,)).fetchall()]
+            movimientos = _copia_movimientos(cur, "banco_id", banco_id)
+            _auditar(cur, "BANCO", banco_id, "BORRADO", session["uid"],
+                     {"nombre": banco["nombre"], "bolsillos": bolsillos, "movimientos": movimientos},
+                     None, motivo)
+            cur.execute("DELETE FROM movimientos_banco WHERE banco_id = %s", (banco_id,))
             cur.execute("DELETE FROM bolsillos WHERE banco_id = %s", (banco_id,))
             cur.execute("DELETE FROM bancos WHERE id = %s", (banco_id,))
-            _auditar(cur, "BANCO", banco_id, "BORRADO", session["uid"], {"nombre": banco["nombre"]}, None)
     except BancoError as e:
         flash(str(e), "error")
         return _volver()
     except Exception:
         current_app.logger.exception("Error borrando banco %s", banco_id)
-        flash("No se pudo borrar el banco. ¿Ya se aplicó la migración 014?", "error")
+        flash("No se pudo borrar el banco. ¿Ya se aplicó la migración 015?", "error")
         return _volver()
-    flash(f"Banco «{banco['nombre']}» borrado.", "ok")
+    flash(f"Banco «{banco['nombre']}» borrado"
+          + (f" junto con {len(movimientos)} movimiento(s)." if movimientos else "."), "ok")
     return _volver()
 
 
@@ -323,28 +342,29 @@ def borrar_banco(banco_id):
 @login_required
 @permiso_requerido("gestionar_bancos")
 def borrar_bolsillo(bolsillo_id):
+    """Borra el bolsillo y su historial de movimientos (queda copia en la auditoría)."""
     try:
+        motivo = _motivo_borrado()
         with db.transaccion() as cur:
             b = cur.execute("SELECT id, banco_id, nombre FROM bolsillos WHERE id = %s FOR UPDATE",
                             (bolsillo_id,)).fetchone()
             if not b:
                 raise BancoError("El bolsillo ya no existe.")
-            usados = cur.execute("SELECT COUNT(*) AS n FROM movimientos_banco WHERE bolsillo_id = %s",
-                                 (bolsillo_id,)).fetchone()["n"]
-            if int(usados):
-                raise BancoError("Este bolsillo ya tiene movimientos y no se puede borrar sin perder el historial. "
-                                 "Usa «Desactivar» para esconderlo (primero deja su saldo en $0).")
-            cur.execute("DELETE FROM bolsillos WHERE id = %s", (bolsillo_id,))
+            movimientos = _copia_movimientos(cur, "bolsillo_id", bolsillo_id)
             _auditar(cur, "BANCO_BOLSILLO", bolsillo_id, "BORRADO", session["uid"],
-                     {"nombre": b["nombre"], "banco_id": b["banco_id"]}, None)
+                     {"nombre": b["nombre"], "banco_id": b["banco_id"], "movimientos": movimientos},
+                     None, motivo)
+            cur.execute("DELETE FROM movimientos_banco WHERE bolsillo_id = %s", (bolsillo_id,))
+            cur.execute("DELETE FROM bolsillos WHERE id = %s", (bolsillo_id,))
     except BancoError as e:
         flash(str(e), "error")
         return _volver()
     except Exception:
         current_app.logger.exception("Error borrando bolsillo %s", bolsillo_id)
-        flash("No se pudo borrar el bolsillo. ¿Ya se aplicó la migración 014?", "error")
+        flash("No se pudo borrar el bolsillo. ¿Ya se aplicó la migración 015?", "error")
         return _volver()
-    flash(f"Bolsillo «{b['nombre']}» borrado.", "ok")
+    flash(f"Bolsillo «{b['nombre']}» borrado"
+          + (f" junto con {len(movimientos)} movimiento(s)." if movimientos else "."), "ok")
     return _volver()
 
 
