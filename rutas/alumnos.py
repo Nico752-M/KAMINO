@@ -132,6 +132,8 @@ def lista():
                        CASE WHEN m.archivado = 1 THEN 'Archivado'
                             WHEN m.estado = 'Cancelado' THEN 'Pagado' ELSE m.estado END AS estado,
                        COALESCE(m.precio_total, 0) AS precio_total, m.fecha_registro,
+                       COALESCE(m.descuento_valor, 0) AS descuento_valor,
+                       COALESCE(m.descuento_porcentaje, 0) AS descuento_porcentaje,
                        a.numero_documento, a.nombres, a.apellidos,
                        COALESCE((SELECT SUM(p.valor) FROM pagos p
                                  WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado,
@@ -888,12 +890,34 @@ def borrar_matricula(matricula_id):
 def historial(matricula_id):
     alumno = db.fetchone("""
         SELECT m.id, m.numero_orden, m.anio, m.categoria, m.estado, m.precio_total,
+               COALESCE(m.precio_base, m.precio_total) AS precio_base,
+               COALESCE(m.descuento_valor, 0) AS descuento_valor,
+               COALESCE(m.descuento_porcentaje, 0) AS descuento_porcentaje,
                a.numero_documento, a.tipo_documento, a.nombres, a.apellidos
         FROM matriculas m JOIN alumnos a ON a.numero_documento = m.numero_documento
         WHERE m.id = %s
     """, (matricula_id,))
     if not alumno:
         return "Matrícula no encontrada.", 404
+    # Cambios posteriores de precio/descuento (ediciones de la matrícula), del más reciente al más antiguo.
+    cambios_descuento = []
+    try:
+        ediciones = db.fetchall("""
+            SELECT ac.fecha, ac.antes, ac.despues, u.nombre AS usuario
+            FROM auditoria_cambios ac LEFT JOIN usuarios u ON u.id = ac.usuario_id
+            WHERE ac.entidad = 'MATRICULA' AND ac.entidad_id = %s AND ac.accion = 'EDICION'
+            ORDER BY ac.fecha DESC
+        """, (matricula_id,))
+        for e in ediciones:
+            antes = json.loads(e["antes"].read() if hasattr(e["antes"], "read") else e["antes"] or "{}")
+            despues = json.loads(e["despues"].read() if hasattr(e["despues"], "read") else e["despues"] or "{}")
+            d_antes = float(antes.get("descuento_valor") or 0)
+            d_despues = float(despues.get("descuento_valor") or 0)
+            if d_antes != d_despues:
+                cambios_descuento.append({"fecha": e["fecha"], "usuario": e["usuario"],
+                                          "antes": d_antes, "despues": d_despues})
+    except Exception:
+        current_app.logger.exception("No se pudo leer el historial de descuentos de %s", matricula_id)
     pagos = db.fetchall("""
         SELECT p.numero_recibo, p.fecha_pago, p.concepto, p.metodo_pago, p.valor,
                p.anulado, p.motivo_anulacion, u.nombre AS cajero,
@@ -905,7 +929,8 @@ def historial(matricula_id):
     """, (matricula_id,))
     pagado = sum(float(p["valor"]) for p in pagos if not p["anulado"])
     return render_template("historial_pagos.html", alumno=alumno, pagos=pagos,
-                           pagado=pagado, saldo=max(float(alumno["precio_total"]) - pagado, 0))
+                           pagado=pagado, saldo=max(float(alumno["precio_total"]) - pagado, 0),
+                           cambios_descuento=cambios_descuento)
 
 
 @bp.route("/pagos/<numero>/anular", methods=["POST"])
