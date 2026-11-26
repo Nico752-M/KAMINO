@@ -13,6 +13,9 @@ from utils import invalidar_cache, parsear_pesos
 
 bp = Blueprint("usuarios", __name__, url_prefix="/admin/usuarios")
 
+# Cuentas principales: nunca se pueden eliminar (se comparan por usuario, sin importar mayúsculas).
+USUARIOS_PROTEGIDOS = {"admin", "admin 2"}
+
 
 class DatosInvalidos(Exception):
     pass
@@ -126,6 +129,7 @@ def lista():
         ORDER BY categoria
     """)
     return render_template("admin_usuarios.html", usuarios=usuarios,
+                           usuarios_protegidos=USUARIOS_PROTEGIDOS,
                            catalogo=PERMISOS, roles=ROLES, tarifas=tarifas,
                            categorias_caja=categorias_caja,
                            grupos_permisos=GRUPOS_PERMISOS,
@@ -418,6 +422,8 @@ def eliminar(user_id: int):
             if not usuario:
                 raise DatosInvalidos("La cuenta ya no existe.")
             nombre = f"«{usuario['nombre']}»"
+            if str(usuario["usuario"]).strip().lower() in USUARIOS_PROTEGIDOS:
+                raise DatosInvalidos(f"La cuenta {nombre} es una cuenta principal y no se puede eliminar.")
             cur.execute("DELETE FROM perfil_permisos WHERE perfil_id IN "
                         "(SELECT id FROM perfiles WHERE usuario_id = %s)", (user_id,))
             cur.execute("DELETE FROM perfiles WHERE usuario_id = %s", (user_id,))
