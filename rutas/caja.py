@@ -787,7 +787,7 @@ def registrar_movimiento(tipo):
                 if not caja:
                     flash("Abre tu caja antes de registrar un movimiento.", "error")
                     return redirect(url_for("caja.resumen"))
-                recibo = numero_recibo(cur)
+                recibo = numero_recibo(cur, "ING" if tipo == "ingreso" else "EGR")
                 cur.execute(
                     f"INSERT INTO {tabla} (numero_recibo, concepto, valor, usuario_id, caja_id, categoria) "
                     "VALUES (%s, %s, %s, %s, %s, %s)",
