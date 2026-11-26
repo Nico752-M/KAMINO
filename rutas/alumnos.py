@@ -167,6 +167,20 @@ def lista():
         }
         (renovaciones if str(f["categoria"]).startswith("Renovación") else cursos).append(item)
 
+    # Un alumno con varios cursos tiene una matrícula por curso (cada una con su consecutivo,
+    # saldo y pagos), pero en la lista se muestra una sola vez con sus cursos agrupados.
+    def agrupar(items):
+        grupos = {}
+        for it in items:
+            g = grupos.setdefault(it["numero_documento"], {
+                "numero_documento": it["numero_documento"],
+                "nombres": it["nombres"], "apellidos": it["apellidos"], "items": [],
+            })
+            g["items"].append(it)
+        return list(grupos.values())
+
+    cursos, renovaciones = agrupar(cursos), agrupar(renovaciones)
+
     return render_template("alumnos.html", cursos=cursos, renovaciones=renovaciones,
                            tarifas=tarifas, error_tarifas=error_tarifas,
                            q=q, desde=desde_texto, hasta=hasta_texto, pagina=pagina,
