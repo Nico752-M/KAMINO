@@ -12,10 +12,34 @@
   <a class="btn-action" href="{{ url_for('alumnos.lista') }}"><i class="ri-arrow-left-line"></i> Volver a alumnos</a>
 </div>
 <div class="payment-summary">
+  {% if alumno.descuento_valor > 0 %}
+  <div><span>Precio base</span><strong>{{ alumno.precio_base|cop }}</strong></div>
+  <div><span>Descuento{% if alumno.descuento_porcentaje %} ({{ '%g'|format(alumno.descuento_porcentaje) }}%){% endif %}</span>
+    <strong style="color:var(--accent-green)">− {{ alumno.descuento_valor|cop }}</strong></div>
+  {% endif %}
   <div><span>Precio total</span><strong>{{ alumno.precio_total|cop }}</strong></div>
   <div><span>Pagado</span><strong>{{ pagado|cop }}</strong></div>
   <div><span>Saldo</span><strong>{{ saldo|cop }}</strong></div>
 </div>
+{% if alumno.descuento_valor <= 0 and not cambios_descuento %}
+<p class="section-desc" style="margin:-.5rem 0 1rem"><i class="ri-price-tag-3-line"></i> A esta matrícula no se le ha aplicado descuento.</p>
+{% endif %}
+{% if cambios_descuento %}
+<section class="card-bento">
+  <div class="grupo-titulo"><i class="ri-price-tag-3-line"></i> Cambios en el descuento</div>
+  <div class="table-wrap"><table class="table-clean">
+    <thead><tr><th>Fecha</th><th>Antes</th><th>Después</th><th>Lo hizo</th></tr></thead>
+    <tbody>{% for c in cambios_descuento %}
+      <tr>
+        <td>{{ c.fecha.strftime('%d/%m/%Y %H:%M') if c.fecha else '—' }}</td>
+        <td>{{ c.antes|cop if c.antes else 'Sin descuento' }}</td>
+        <td>{{ c.despues|cop if c.despues else 'Sin descuento' }}</td>
+        <td>{{ c.usuario or '—' }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
 <section class="card-bento">
   <div class="grupo-titulo"><i class="ri-history-line"></i> Pagos <span class="payment-count">{{ pagos|length }}</span></div>
   {% if pagos %}
