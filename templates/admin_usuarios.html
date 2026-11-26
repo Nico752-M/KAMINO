@@ -97,7 +97,7 @@
           </div>
           <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar cambios</button>
         </form>
-        {% if u.id != session.get('uid') %}
+        {% if u.id != session.get('uid') and (u.usuario|lower|trim) not in usuarios_protegidos %}
         <form method="post" action="{{ url_for('usuarios.eliminar', user_id=u.id) }}"
               data-confirm="¿Eliminar la cuenta de {{ u.nombre }}? Esta acción no se puede deshacer. Si ya tiene movimientos, no se eliminará.">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
