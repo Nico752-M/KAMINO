@@ -10,7 +10,8 @@
     {% for f in filas %}
       <tr>
         <td><strong>{{ f.codigo }}</strong><br><small>{{ f.fecha_registro.strftime('%d/%m/%Y') if f.fecha_registro else '—' }}</small></td>
-        <td>{{ f.nombres }} {{ f.apellidos }}<br><small>CC: {{ f.numero_documento }}</small></td>
+        <td>{{ f.nombres }} {{ f.apellidos }}<br><small>CC: {{ f.numero_documento }}</small>
+          {% if f.otras_categorias %}<br><small>También cursa: {{ f.otras_categorias }}</small>{% endif %}</td>
         <td><span class="badge-status active">{{ f.categoria }}</span></td>
         <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
         <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
@@ -28,6 +29,9 @@
             <div class="student-actions-list">
               {% if 'ver_historial_pagos' in permisos %}
               <a href="{{ url_for('alumnos.historial', matricula_id=f.matricula_id) }}"><i class="ri-history-line"></i> Historial</a>
+              {% endif %}
+              {% if 'crear_matricula' in permisos and f.estado != 'Archivado' %}
+              <a href="#" class="js-otra-categoria" data-documento="{{ f.numero_documento }}"><i class="ri-add-circle-line"></i> Agregar otra categoría</a>
               {% endif %}
               {% if 'ver_ganancias' in permisos %}
               <a href="{{ url_for('costos.cuenta', matricula_id=f.matricula_id) }}"><i class="ri-money-dollar-circle-line"></i> Cuenta y ganancia</a>
