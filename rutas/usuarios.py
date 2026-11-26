@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from werkzeug.security import generate_password_hash
 
 import db
+from rutas.alumnos import _auditar
 from auth import login_required, permiso_requerido
 from permisos import GRUPOS_PERMISOS, PERMISOS, PERMISOS_POR_ROL, ROLES
 from utils import invalidar_cache, parsear_pesos
@@ -397,4 +398,43 @@ def actualizar(user_id: int):
             session["nombre"] = nombre
             session["rol"] = rol
         flash("Cuenta y perfil personal actualizados correctamente.", "ok")
+    return redirect(url_for("usuarios.lista"))
+
+
+
+@bp.route("/<int:user_id>/eliminar", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_usuarios")
+def eliminar(user_id: int):
+    nombre = "La cuenta"
+    try:
+        if user_id == session.get("uid"):
+            raise DatosInvalidos("No puedes eliminar tu propia cuenta.")
+        with db.transaccion() as cur:
+            _bloquear_administracion(cur)
+            usuario = cur.execute(
+                "SELECT id, nombre, usuario, rol FROM usuarios WHERE id = %s FOR UPDATE", (user_id,)
+            ).fetchone()
+            if not usuario:
+                raise DatosInvalidos("La cuenta ya no existe.")
+            nombre = f"«{usuario['nombre']}»"
+            cur.execute("DELETE FROM perfil_permisos WHERE perfil_id IN "
+                        "(SELECT id FROM perfiles WHERE usuario_id = %s)", (user_id,))
+            cur.execute("DELETE FROM perfiles WHERE usuario_id = %s", (user_id,))
+            # Si la cuenta ya tiene historial (pagos, cajas, auditoría...), Oracle lo impide y se revierte todo.
+            cur.execute("DELETE FROM usuarios WHERE id = %s", (user_id,))
+            if not _hay_administrador_activo(cur):
+                raise DatosInvalidos("No puedes eliminar la última cuenta que gestiona usuarios.")
+            _auditar(cur, "USUARIO", user_id, "BORRADO", session["uid"],
+                     {"nombre": usuario["nombre"], "usuario": usuario["usuario"], "rol": usuario["rol"]}, None)
+    except DatosInvalidos as e:
+        flash(str(e), "error")
+    except oracledb.IntegrityError:
+        flash(f"{nombre} ya tiene movimientos o historial y no se puede eliminar sin perderlo. "
+              "Desmarca «Cuenta activa» y guarda para desactivarla.", "error")
+    except Exception:
+        current_app.logger.exception("Error eliminando usuario %s", user_id)
+        flash("No se pudo eliminar la cuenta. ¿Ya se aplicó la migración 016?", "error")
+    else:
+        flash(f"{nombre} fue eliminada.", "ok")
     return redirect(url_for("usuarios.lista"))
