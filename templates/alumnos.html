@@ -16,7 +16,9 @@
           {% if g['items']|length > 1 %}<br><small>{{ g['items']|length }} cursos</small>
           {% elif f.otras_categorias %}<br><small>También cursa: {{ f.otras_categorias }}</small>{% endif %}</td>
         {% endif %}
-        <td><span class="badge-status active">{{ f.categoria }}</span></td>
+        <td><span class="badge-status active">{{ f.categoria }}</span>
+          {% if f.descuento_valor > 0 %}<br><span class="badge-status pending" style="margin-top:4px"
+            title="Descuento de {{ f.descuento_valor|cop }}{% if f.descuento_porcentaje %} ({{ '%g'|format(f.descuento_porcentaje) }}%){% endif %}"><i class="ri-price-tag-3-line"></i> Con descuento</span>{% endif %}</td>
         <td><strong style="color:{{ 'var(--accent-red)' if f.saldo > 0 else 'var(--accent-green)' }}">{{ f.saldo|cop }}</strong></td>
         <td><span class="badge-status {{ f.clase_estado }}">{{ f.estado }}</span></td>
         <td class="student-row-actions">
