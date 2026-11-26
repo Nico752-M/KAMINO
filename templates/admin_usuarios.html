@@ -145,6 +145,8 @@
               <button class="btn-action red sm" type="submit" name="accion" value="desactivar"
                       onclick="return confirm('¿Desactivar la tarifa {{ tarifa.categoria }}?');">Desactivar</button>
               {% endif %}
+              <button class="btn-action red sm" type="submit" name="accion" value="eliminar" formnovalidate
+                      onclick="return confirm('¿Eliminar la tarifa {{ tarifa.categoria }} ({{ tarifa.tipo|lower }})? No se puede deshacer. Las matrículas ya creadas no cambian.');"><i class="ri-delete-bin-line"></i> Eliminar</button>
             </form>
           </td>
         </tr>
