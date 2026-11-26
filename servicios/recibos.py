@@ -210,7 +210,8 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
 
     d: numero_recibo, fecha, categoria, alumno_nombre, alumno_tipo_documento, alumno_doc,
     concepto, valor_total, valor, saldo, metodo_pago, observaciones, anulado, motivo_anulacion,
-    copia (bool), fecha_reimpresion.
+    copia (bool), fecha_reimpresion, descuento_valor, descuento_porcentaje y historial
+    (lista de {numero_recibo, fecha, valor, saldo} de los pagos vigentes hasta este recibo).
     """
     from reportlab.lib.pagesizes import letter
     from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -287,6 +288,12 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
         campo(x + col, y, "Medio de pago:", d["metodo_pago"], w - col)
         y -= 6 * MM
         campo(x, y, "Valor recibido:", cop(d["valor"]), col - 6 * MM, negrita=True, alinear="R")
+        # Descuento de la matrícula (solo si el alumno tuvo uno), en el hueco de la derecha.
+        descuento = float(d.get("descuento_valor") or 0)
+        if descuento > 0:
+            pct = float(d.get("descuento_porcentaje") or 0)
+            pct_txt = f" ({pct:g}%)" if pct else ""
+            campo(x + col, y, "Descuento:", f"{cop(descuento)}{pct_txt}", w - col, alinear="R")
         y -= 6 * MM
         campo(x, y, "Saldo pendiente:", cop(d["saldo"]), col - 6 * MM, alinear="R")
         y -= 8 * MM
@@ -296,6 +303,34 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
 
         # Firmas
         y_f = base - 8 * MM - marco_alto + 11 * MM
+
+        # Historial de pagos de la matrícula (hasta este recibo), entre las observaciones y la firma.
+        historial = d.get("historial") or []
+        if historial:
+            y_top = y - 2.5 - 3.2 * MM
+            y_min = y_f + 8 * MM + 3.5 * MM
+            alto_fila = 3.2 * MM
+            texto(x, y_top, "HISTORIAL DE PAGOS", "Helvetica-Bold", 7, color=(0.42, 0.44, 0.5))
+            y_fila0 = y_top - 3.4 * MM
+            por_col = max(int((y_fila0 - y_min) // alto_fila), 1)
+            columnas = 1 if len(historial) <= por_col else 2
+            visibles = historial[-(por_col * columnas):]
+            omitidos = len(historial) - len(visibles)
+            if omitidos:
+                texto(x + w, y_top, f"+{omitidos} pago(s) anterior(es) no caben aquí",
+                      "Helvetica", 6.5, "R", (0.42, 0.44, 0.5))
+            ancho_col = w if columnas == 1 else (w - 6 * MM) / 2
+            for i, h in enumerate(visibles):
+                x0 = x + (i // por_col) * (ancho_col + 6 * MM)
+                yy = y_fila0 - (i % por_col) * alto_fila
+                actual = h["numero_recibo"] == d["numero_recibo"]
+                fuente = "Helvetica-Bold" if actual else "Helvetica"
+                fecha_h = h["fecha"].strftime("%d/%m/%y") if h.get("fecha") else "—"
+                recibo_h = "Histórico" if str(h["numero_recibo"]).startswith("HIST-") else h["numero_recibo"]
+                texto(x0, yy, fecha_h, fuente, 7)
+                texto(x0 + ancho_col * 0.16, yy, recibo_h, fuente, 7)
+                texto(x0 + ancho_col * 0.74, yy, cop(h["valor"]), fuente, 7, "R")
+                texto(x0 + ancho_col, yy, f"saldo {cop(h['saldo'])}", fuente, 7, "R")
         texto(ancho / 2, y_f + 8 * MM, "Recibí de la persona indicada el valor registrado en este comprobante.",
               "Helvetica", 8, "C")
         c.setStrokeColorRGB(0.3, 0.3, 0.3)
