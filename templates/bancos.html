@@ -119,7 +119,16 @@
     <thead><tr><th>Bolsillo</th><th>Saldo</th><th></th></tr></thead>
     <tbody>
       <tr><td><em>Sin bolsillo (general)</em></td>
-        <td><strong style="color:{{ 'var(--accent-red)' if b.general < 0 }}">{{ b.general|cop }}</strong></td><td></td></tr>
+        <td><strong style="color:{{ 'var(--accent-red)' if b.general < 0 }}">{{ b.general|cop }}</strong></td>
+        <td>{% if gestiona %}
+          <details>
+            <summary class="btn-action sm"><i class="ri-edit-line"></i> Editar saldo</summary>
+            <form method="post" action="{{ url_for('bancos.editar_saldo_banco', banco_id=b.id) }}" style="display:flex;gap:.5rem;margin-top:.5rem">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input class="input-clean" name="saldo" value="{{ b.general if b.general > 0 else 0 }}" type="text" inputmode="numeric" data-money-input required aria-label="Saldo general" style="max-width:150px">
+              <button class="btn-action green sm" type="submit"><i class="ri-save-line"></i> Guardar</button>
+            </form>
+          </details>{% endif %}</td></tr>
       {% for p in b.bolsillos %}
       <tr {% if not p.activo %}style="opacity:.55"{% endif %}>
         <td>{{ p.nombre }}{% if not p.activo %} <span class="badge-status muted">Inactivo</span>{% endif %}</td>
@@ -131,6 +140,7 @@
               <form method="post" action="{{ url_for('bancos.editar_bolsillo', bolsillo_id=p.id) }}" style="display:flex;gap:.5rem;margin-top:.5rem">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input class="input-clean" name="nombre" value="{{ p.nombre }}" maxlength="60" required aria-label="Nombre del bolsillo">
+                <input class="input-clean" name="saldo" value="{{ p.saldo if p.saldo > 0 else 0 }}" type="text" inputmode="numeric" data-money-input aria-label="Saldo del bolsillo" placeholder="Saldo" style="max-width:150px">
                 <button class="btn-action green sm" type="submit"><i class="ri-save-line"></i> Guardar</button>
               </form>
             </details>
