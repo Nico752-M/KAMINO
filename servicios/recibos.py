@@ -216,19 +216,19 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
     copia (bool), fecha_reimpresion, descuento_valor, descuento_porcentaje y historial
     (lista de {numero_recibo, fecha, valor, saldo} de los pagos vigentes hasta este recibo).
     """
-    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.pagesizes import letter
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas
 
-    ancho, alto = landscape(letter)
-    margen = 10 * MM
+    ancho, alto = letter
+    margen = 14 * MM
     util = ancho - 2 * margen
     mitad = alto / 2
     nit = Config.CEA_NIT or "901837104"
     fecha = d.get("fecha") or datetime.now()
 
     buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=landscape(letter))
+    c = canvas.Canvas(buf, pagesize=letter)
     c.setTitle(f"Recibo de caja {d['numero_recibo']}")
 
     def texto(x, y, t, fuente="Helvetica", tam=9, alinear="L", color=(0, 0, 0), max_ancho=None):
@@ -267,7 +267,7 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
         x = margen + 4 * MM
         w = util - 8 * MM
         col = w * 0.58
-        y = top - 14 * MM
+        y = top - 17 * MM
         texto(margen + util - 4 * MM, top - 13.5 * MM, quien, "Helvetica-Bold", 8, "R", (0.42, 0.44, 0.5))
 
         # Consecutivo resaltado
@@ -276,20 +276,20 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
         texto(x, y, "Consecutivo:", "Helvetica-Bold", 9)
         texto(x + 49 * MM, y, d["numero_recibo"], "Helvetica-Bold", 11, "C")
 
-        y -= 6 * MM
+        y -= 8 * MM
         campo(x, y, "Fecha:", fecha.strftime("%d/%m/%Y"), col - 6 * MM)
         campo(x + col, y, "Categoría:", d.get("categoria") or "—", w - col)
-        y -= 5 * MM
+        y -= 7 * MM
         campo(x, y, "Nombre del cliente:", d["alumno_nombre"], w)
-        y -= 5 * MM
+        y -= 7 * MM
         campo(x, y, "Tipo de documento:", d.get("alumno_tipo_documento") or "CC", col - 6 * MM)
         campo(x + col, y, "N.º de documento:", d["alumno_doc"], w - col, alinear="R")
-        y -= 5 * MM
+        y -= 7 * MM
         campo(x, y, "Concepto:", d["concepto"], w)
-        y -= 6 * MM
+        y -= 8 * MM
         campo(x, y, "Valor total:", cop(d["valor_total"]), col - 6 * MM, alinear="R")
         campo(x + col, y, "Medio de pago:", d["metodo_pago"], w - col)
-        y -= 4.5 * MM
+        y -= 6 * MM
         campo(x, y, "Valor recibido:", cop(d["valor"]), col - 6 * MM, negrita=True, alinear="R")
         # Descuento de la matrícula (solo si el alumno tuvo uno), en el hueco de la derecha.
         descuento = float(d.get("descuento_valor") or 0)
@@ -297,24 +297,24 @@ def generar_recibo_caja_cea_pdf(d: dict) -> bytes:
             pct = float(d.get("descuento_porcentaje") or 0)
             pct_txt = f" ({pct:g}%)" if pct else ""
             campo(x + col, y, "Descuento:", f"{cop(descuento)}{pct_txt}", w - col, alinear="R")
-        y -= 4.5 * MM
-        campo(x, y, "Saldo pendiente:", cop(d["saldo"]), col - 6 * MM, alinear="R")
         y -= 6 * MM
+        campo(x, y, "Saldo pendiente:", cop(d["saldo"]), col - 6 * MM, alinear="R")
+        y -= 8 * MM
         campo(x, y, "Observaciones:", d.get("observaciones") or "", w)
-        y -= 4 * MM
+        y -= 6 * MM
         c.line(x, y - 2.5, x + w, y - 2.5)
 
         # Firmas
-        y_f = base - 8 * MM - marco_alto + 8 * MM
+        y_f = base - 8 * MM - marco_alto + 11 * MM
 
         # Historial de pagos de la matrícula (hasta este recibo), entre las observaciones y la firma.
         historial = d.get("historial") or []
         if historial:
             y_top = y - 2.5 - 3.2 * MM
             y_min = y_f + 8 * MM + 3.5 * MM
-            alto_fila = 2.7 * MM
+            alto_fila = 3.2 * MM
             texto(x, y_top, "HISTORIAL DE PAGOS", "Helvetica-Bold", 7, color=(0.42, 0.44, 0.5))
-            y_fila0 = y_top - 3 * MM
+            y_fila0 = y_top - 3.4 * MM
             por_col = max(int((y_fila0 - y_min) // alto_fila), 1)
             columnas = 1 if len(historial) <= por_col else 2
             visibles = historial[-(por_col * columnas):]
