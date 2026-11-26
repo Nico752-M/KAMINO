@@ -22,12 +22,21 @@ def _cop(v) -> str:
     return cop(v)
 
 
-_SECUENCIAS = {"ING": "SEQ_INGRESOS", "EGR": "SEQ_EGRESOS", "TRA": "SEQ_TRASLADOS"}
+_SECUENCIAS = {
+    "ING": "SEQ_INGRESOS",
+    "HIS": "SEQ_HISTORICOS",
+    "EGR": "SEQ_EGRESOS",
+    "TRA": "SEQ_TRASLADOS",
+}
 
 
 def numero_recibo(cur, prefijo: str = "ING") -> str:
-    """Reserva el siguiente consecutivo: ING-001 (todo lo que entra: pagos de alumnos, abonos
-    e ingresos), EGR-001 (todo lo que sale) o TRA-001 (traslados entre bancos)."""
+    """Reserva el siguiente consecutivo independiente según el tipo de movimiento.
+
+    ING: pagos nuevos de alumnos e ingresos.
+    HIS: abonos históricos previos de alumnos que ya estudiaban antes de KAMINO.
+    EGR: egresos. TRA: traslados entre bancos.
+    """
     secuencia = _SECUENCIAS[prefijo]
     fila = cur.execute(f"SELECT {secuencia}.NEXTVAL AS n FROM dual").fetchone()
     return f"{prefijo}-{int(fila['n']):03d}"
