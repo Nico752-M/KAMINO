@@ -7,9 +7,9 @@ from auth import login_required, permiso_requerido, permisos_actuales
 from rutas.alumnos import _auditar
 from rutas.caja import caja_abierta
 from servicios.bancos import (BancoError, catalogo_destinos, exigir_saldo, movimiento_manual,
-                              parsear_destino, registrar, validar_destino)
+                              parsear_destino, registrar, saldo as saldo_actual, validar_destino)
 from servicios.recibos import numero_recibo
-from utils import parsear_pesos
+from utils import cop, parsear_pesos
 
 bp = Blueprint("bancos", __name__, url_prefix="/bancos")
 MAX_BANCO = 999_999_999_999
@@ -235,6 +235,59 @@ def _nombre_form(etiqueta):
     return nombre
 
 
+def _saldo_form():
+    """Saldo nuevo escrito en el formulario (>= $0). None si el campo viene vacío."""
+    texto = request.form.get("saldo", "").strip()
+    if not texto:
+        return None
+    nuevo = parsear_pesos(texto)
+    if nuevo is None or nuevo < 0 or nuevo > MAX_BANCO:
+        raise BancoError("El saldo debe ser un entero en pesos de $0 o más.")
+    return nuevo
+
+
+def _ajustar_saldo(cur, banco_id, bolsillo_id, nuevo, texto):
+    """El saldo sale del libro de movimientos: para llevarlo a otro valor se registra un
+    movimiento manual de ajuste por la diferencia. Devuelve el movimiento creado o None."""
+    cur.execute("SELECT id FROM bancos WHERE id = %s FOR UPDATE", (banco_id,))
+    d = {"banco_id": banco_id, "bolsillo_id": bolsillo_id, "texto": texto}
+    actual = saldo_actual(cur, d)
+    if nuevo == actual:
+        return None
+    tipo = "ENTRADA" if nuevo > actual else "SALIDA"
+    recibo = numero_recibo(cur)
+    registrar(cur, d, tipo, abs(nuevo - actual),
+              f"Ajuste de saldo: de {cop(actual)} a {cop(nuevo)}", "MANUAL", recibo, session["uid"])
+    _auditar(cur, "BANCO_SALDO", bolsillo_id or banco_id, "AJUSTE", session["uid"],
+             {"saldo": actual, "banco_id": banco_id, "bolsillo_id": bolsillo_id}, {"saldo": nuevo})
+    return recibo
+
+
+@bp.route("/<int:banco_id>/saldo", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_bancos")
+def editar_saldo_banco(banco_id):
+    """Cambia el saldo «sin bolsillo (general)» de un banco."""
+    try:
+        nuevo = _saldo_form()
+        if nuevo is None:
+            raise BancoError("Escribe el saldo.")
+        with db.transaccion() as cur:
+            banco = cur.execute("SELECT id, nombre FROM bancos WHERE id = %s", (banco_id,)).fetchone()
+            if not banco:
+                raise BancoError("El banco ya no existe.")
+            hecho = _ajustar_saldo(cur, banco_id, None, nuevo, banco["nombre"])
+    except BancoError as e:
+        flash(str(e), "error")
+        return _volver()
+    except Exception:
+        current_app.logger.exception("Error ajustando saldo del banco %s", banco_id)
+        flash("No se pudo cambiar el saldo.", "error")
+        return _volver()
+    flash("Saldo actualizado." if hecho else "El saldo ya era ese valor.", "ok")
+    return _volver()
+
+
 @bp.route("/<int:banco_id>/editar", methods=["POST"])
 @login_required
 @permiso_requerido("gestionar_bancos")
@@ -268,14 +321,17 @@ def editar_banco(banco_id):
 def editar_bolsillo(bolsillo_id):
     try:
         nombre = _nombre_form("bolsillo")
+        nuevo_saldo = _saldo_form()
         with db.transaccion() as cur:
-            antes = cur.execute("SELECT id, nombre FROM bolsillos WHERE id = %s FOR UPDATE",
+            antes = cur.execute("SELECT id, banco_id, nombre FROM bolsillos WHERE id = %s FOR UPDATE",
                                 (bolsillo_id,)).fetchone()
             if not antes:
                 raise BancoError("El bolsillo ya no existe.")
             cur.execute("UPDATE bolsillos SET nombre = %s WHERE id = %s", (nombre, bolsillo_id))
             _auditar(cur, "BANCO_BOLSILLO", bolsillo_id, "EDICION", session["uid"],
                      {"nombre": antes["nombre"]}, {"nombre": nombre})
+            if nuevo_saldo is not None:
+                _ajustar_saldo(cur, int(antes["banco_id"]), bolsillo_id, nuevo_saldo, nombre)
     except BancoError as e:
         flash(str(e), "error")
         return _volver()
