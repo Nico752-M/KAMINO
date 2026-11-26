@@ -199,6 +199,7 @@ def recibo(numero):
     fila = None
     tipo = None
     tabla_movimiento = None
+    historial_pagos = []
     with db.transaccion() as cur:
         for tabla, clase in (
             ("pagos", "PAGO"),
@@ -217,11 +218,14 @@ def recibo(numero):
             tipo, tabla_movimiento = clase, tabla
             if clase == "PAGO":
                 fila = cur.execute("""
-                    SELECT p.numero_recibo, p.concepto, p.valor, p.metodo_pago,
+                    SELECT p.id AS pago_id, p.id_matricula,
+                           p.numero_recibo, p.concepto, p.valor, p.metodo_pago,
                            p.observaciones, p.cambio, p.acompanante, p.fecha_pago,
                            a.nombres, a.apellidos, a.tipo_documento, a.numero_documento,
                            u.nombre AS cajero, p.anulado, p.motivo_anulacion,
                            m.categoria, COALESCE(m.precio_total, 0) AS valor_total,
+                           COALESCE(m.descuento_valor, 0) AS descuento_valor,
+                           COALESCE(m.descuento_porcentaje, 0) AS descuento_porcentaje,
                            COALESCE(m.precio_total, 0) - (
                                SELECT COALESCE(SUM(p2.valor), 0) FROM pagos p2
                                WHERE p2.id_matricula = p.id_matricula
@@ -232,6 +236,14 @@ def recibo(numero):
                     LEFT JOIN usuarios u ON u.id = p.usuario_id
                     WHERE p.numero_recibo = %s
                 """, (numero,)).fetchone()
+                if fila:
+                    # Historial de la matrícula hasta este recibo (los anulados no cuentan).
+                    historial_pagos = cur.execute("""
+                        SELECT numero_recibo, fecha_pago, valor
+                        FROM pagos
+                        WHERE id_matricula = %s AND anulado = 0 AND id <= %s
+                        ORDER BY fecha_pago, id
+                    """, (fila["id_matricula"], fila["pago_id"])).fetchall()
             else:
                 fecha_col = "fecha_ingreso" if clase == "INGRESO" else "fecha_salida"
                 fila = cur.execute(
@@ -279,7 +291,20 @@ def recibo(numero):
         "usuario_reimpresion": session.get("nombre", ""),
     }
     if tipo == "PAGO":
+        # Saldo que quedó después de cada pago de la lista.
+        acumulado, historial = 0.0, []
+        for h in historial_pagos:
+            acumulado += float(h["valor"])
+            historial.append({
+                "numero_recibo": h["numero_recibo"],
+                "fecha": h["fecha_pago"],
+                "valor": float(h["valor"]),
+                "saldo": max(float(fila["valor_total"]) - acumulado, 0),
+            })
         detalles.update({
+            "descuento_valor": float(fila["descuento_valor"]),
+            "descuento_porcentaje": float(fila["descuento_porcentaje"]),
+            "historial": historial,
             "alumno_nombre": f"{fila['nombres']} {fila['apellidos']}",
             "alumno_doc": fila["numero_documento"],
             "alumno_tipo_documento": fila["tipo_documento"],
