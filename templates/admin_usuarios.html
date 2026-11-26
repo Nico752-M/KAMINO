@@ -97,6 +97,13 @@
           </div>
           <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar cambios</button>
         </form>
+        {% if u.id != session.get('uid') %}
+        <form method="post" action="{{ url_for('usuarios.eliminar', user_id=u.id) }}"
+              data-confirm="¿Eliminar la cuenta de {{ u.nombre }}? Esta acción no se puede deshacer. Si ya tiene movimientos, no se eliminará.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn-action red" type="submit"><i class="ri-delete-bin-line"></i> Eliminar cuenta</button>
+        </form>
+        {% endif %}
       </details>
     </section>
     {% else %}
