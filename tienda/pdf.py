@@ -94,68 +94,196 @@ def ganancias(d, a, periodo):
                   ["Fecha", "Ventas (n)", "Vendido", "Costo", "Ganancia bruta"], filas, resumen)
 
 
+# Datos del encabezado de la factura de venta (edítalos aquí cuando cambien)
+FACTURA = {
+    "nombre": "TODO EN TRÁNSITO",
+    "lema": "FOTOASESORÍAS Y SERVICIOS DE TRÁNSITO Y TRANSPORTE",
+    "servicios": "LICENCIAS · MATRÍCULAS · TRASPASOS · LIQUIDACIÓN DE IMPUESTOS",
+    "titular": "James González",
+    "cargo": "TÉCNICO EN TRÁNSITO Y TRANSPORTE",
+    "nit": "NIT. 16.354.101-3 No Responsable de IVA",
+    "direccion": "Carrera 30 No. 15 - 14  Tels.: 602 232 5067",
+    "celulares": "Cel.: 317 286 0766  ·  WhatsApp 314 623 0452  ·  Tuluá - Valle",
+}
+
+
 def ticket_venta(v, items):
-    from reportlab.lib.pagesizes import A4
+    """Factura de venta con el estilo del talonario azul: se imprime en media hoja (A5)."""
+    from textwrap import wrap
+
+    from reportlab.lib.pagesizes import A5
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.pdfgen import canvas
 
     mm = 72 / 25.4
-    from textwrap import wrap
-    detalles = {n: wrap(i["detalle"], 34)[:4] for n, i in enumerate(items) if i.get("detalle")}
-    lineas_extra = sum(len(v) for v in detalles.values())
-    ancho, alto = 80 * mm, (70 + 5 * len(items) + 4 * lineas_extra) * mm   # medidas del ticket
-    pagina_ancho, pagina_alto = A4
+    azul = (0.13, 0.20, 0.62)
+    rojo = (0.78, 0.12, 0.14)
+    ancho = A5[0]
+    mi = 9 * mm                      # margen izquierdo y derecho
+    util = ancho - 2 * mi
+
+    # Cada ítem ocupa una fila: nombre (hasta 2 líneas) + detalle en letra pequeña
+    filas = []
+    for i in items:
+        lineas = wrap(str(i["nombre"]), 34)[:2] or [""]
+        extra = wrap(str(i["detalle"]), 44)[:3] if i.get("detalle") else []
+        filas.append((i, lineas, extra))
+    def alto_fila(f):
+        base = 5.5 * mm + (len(f[1]) - 1) * 9 + 5
+        if f[2]:
+            base = 5.5 * mm + len(f[1]) * 9 + (len(f[2]) - 1) * 7.5 + 4
+        return max(7.5 * mm, base)
+    altos = [alto_fila(f) for f in filas]
+    min_alto_tabla = 8 * 7.5 * mm
+    alto_tabla = max(min_alto_tabla, sum(altos))
+    descuento = int(v["descuento"] or 0)
+    extra_pie = (2 if descuento else 0) * 5 * mm
+    alto = A5[1] + (alto_tabla - min_alto_tabla) + extra_pie   # crece si hay muchos ítems
+
     buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    c.setTitle(f"Venta {v['id']}")
-    # El ticket se dibuja pegado a la esquina superior izquierda de la hoja
-    c.translate(8 * mm, pagina_alto - alto - 8 * mm)
-    # Marco punteado para saber por dónde recortar
-    c.setDash(2, 2)
-    c.setLineWidth(0.4)
-    c.rect(0, 0, ancho, alto)
-    c.setDash()
-    y = alto - 8 * mm
+    c = canvas.Canvas(buf, pagesize=(ancho, alto))
+    c.setTitle(f"Factura de venta {v['id']}")
+    c.setLineWidth(0.8)
 
-    def fila(izq, der="", f="Helvetica", s=8, centro=False):
-        nonlocal y
+    def txt(x, y, t, f="Helvetica", s=8, col=azul, al="L"):
         c.setFont(f, s)
-        if centro:
-            c.drawCentredString(ancho / 2, y, izq)
-        else:
-            c.drawString(4 * mm, y, izq[:32])
-            if der:
-                c.drawRightString(ancho - 4 * mm, y, der)
-        y -= s * 1.6
+        c.setFillColorRGB(*col)
+        {"L": c.drawString, "R": c.drawRightString, "C": c.drawCentredString}[al](x, y, str(t))
 
-    fila("TODO EN TRANSITO", f="Helvetica-Bold", s=13, centro=True)
-    fila(f"Venta #{v['id']}", s=9, centro=True)
-    fila(v["fecha"].strftime("%d/%m/%Y %H:%M"), s=7, centro=True)
-    fila(f"Atendió: {v['usuario_nombre']}", s=7)
-    fila("-" * 48, s=7)
-    for n, i in enumerate(items):
-        fila(f"{i['cantidad']} x {i['nombre']}", cop(int(i["cantidad"]) * int(i["precio"])))
-        for linea in detalles.get(n, []):
-            fila(linea, s=6.5)
-    fila("-" * 48, s=7)
-    if v["descuento"]:
-        fila("Subtotal", cop(int(v["total"]) + int(v["descuento"])))
-        fila("Descuento", "- " + cop(v["descuento"]))
-    fila("TOTAL", cop(v["total"]), "Helvetica-Bold", 10)
-    if v["metodo"] == "Efectivo":
-        if v["metodo2"]:
-            fila("Efectivo", cop(v["recibido"]))
-            fila(v["metodo2"], cop(v["monto_metodo2"]))
-        else:
-            fila("Pago: Efectivo")
-            fila("Recibido", cop(v["recibido"]))
-            fila("Devuelta", cop(v["cambio"]))
+    c.setStrokeColorRGB(*azul)
+    c.roundRect(mi - 3 * mm, 6 * mm, util + 6 * mm, alto - 12 * mm, 3 * mm, stroke=1, fill=0)
+
+    y = alto - 14 * mm
+    # Logo ovalado
+    c.setFillColorRGB(*azul)
+    c.ellipse(mi, y - 17 * mm, mi + 36 * mm, y + 3 * mm, stroke=0, fill=1)
+    txt(mi + 18 * mm, y - 3 * mm, "TODO EN", "Helvetica-Bold", 10, (1, 1, 1), "C")
+    txt(mi + 18 * mm, y - 9.5 * mm, "TRÁNSITO", "Helvetica-Bold", 10, (1, 1, 1), "C")
+    txt(mi + 18 * mm, y - 14 * mm, "Fotoasesorías y servicios", "Helvetica", 4.6, (1, 1, 1), "C")
+
+    xd = mi + 40 * mm
+    xr = ancho - mi
+    xc = (xd + xr) / 2
+    txt(xc, y + 1 * mm, FACTURA["servicios"], "Helvetica-Bold", 4.8, al="C")
+    txt(xc, y - 4.5 * mm, FACTURA["titular"], "Helvetica-BoldOblique", 12, al="C")
+    txt(xc, y - 8.5 * mm, FACTURA["cargo"], "Helvetica", 5.5, al="C")
+    txt(xc, y - 12 * mm, FACTURA["nit"], "Helvetica", 5.5, al="C")
+    txt(xc, y - 16 * mm, FACTURA["direccion"], "Helvetica-Bold", 6.3, al="C")
+    txt(xc, y - 19.5 * mm, FACTURA["celulares"], "Helvetica-Bold", 5.6, al="C")
+
+    # Fecha y número
+    y -= 30 * mm
+    f = v["fecha"]
+    bx = mi
+    for rotulo, valor, w in (("DÍA", f"{f.day:02d}", 13 * mm), ("MES", f"{f.month:02d}", 13 * mm),
+                             ("AÑO", f"{f.year}", 18 * mm)):
+        c.setFillColorRGB(0.85, 0.88, 0.97)
+        c.rect(bx, y + 4 * mm, w, 4.5 * mm, stroke=1, fill=1)
+        txt(bx + w / 2, y + 5.4 * mm, rotulo, "Helvetica-Bold", 6, al="C")
+        c.rect(bx, y - 4 * mm, w, 8 * mm, stroke=1, fill=0)
+        txt(bx + w / 2, y - 1.2 * mm, valor, "Helvetica", 9, al="C")
+        bx += w
+    txt(ancho - mi - 36 * mm, y + 1 * mm, "FACTURA", "Helvetica-Bold", 9, al="R")
+    txt(ancho - mi - 36 * mm, y - 4 * mm, "DE VENTA", "Helvetica-Bold", 9, al="R")
+    c.roundRect(ancho - mi - 33 * mm, y - 6 * mm, 33 * mm, 12 * mm, 1.5 * mm, stroke=1, fill=0)
+    txt(ancho - mi - 16.5 * mm, y - 2.5 * mm, v["id"], "Helvetica-Bold", 15, rojo, "C")
+
+    # Datos del cliente (en blanco, para llenar a mano)
+    y -= 12 * mm
+    top = y
+    c.roundRect(mi, y - 27 * mm, util, 27 * mm, 1.5 * mm, stroke=1, fill=0)
+    for k in (1, 2, 3):
+        c.line(mi, y - 9 * mm * k, mi + util, y - 9 * mm * k) if k < 3 else None
+    c.line(mi + util * 0.62, y - 9 * mm, mi + util * 0.62, y - 27 * mm)
+    txt(mi + 2 * mm, y - 6 * mm, "Señor (es)", "Helvetica", 7)
+    txt(mi + 2 * mm, y - 15 * mm, "C.C. o NIT.", "Helvetica", 7)
+    txt(mi + util * 0.62 + 2 * mm, y - 15 * mm, "Tel.", "Helvetica", 7)
+    txt(mi + 2 * mm, y - 24 * mm, "Dirección", "Helvetica", 7)
+    txt(mi + util * 0.62 + 2 * mm, y - 24 * mm, "Ciudad", "Helvetica", 7)
+
+    # Tabla de detalle
+    y -= 31 * mm
+    cx = (mi, mi + 14 * mm, mi + util * 0.64, mi + util * 0.82, mi + util)
+    c.setFillColorRGB(*azul)
+    c.rect(mi, y - 6.5 * mm, util, 6.5 * mm, stroke=0, fill=1)
+    for xx, t, al in ((cx[0] + 7 * mm, "Cant.", "C"), ((cx[1] + cx[2]) / 2, "D E T A L L E", "C"),
+                      ((cx[2] + cx[3]) / 2, "Vr. Unit.", "C"), ((cx[3] + cx[4]) / 2, "TOTAL", "C")):
+        txt(xx, y - 4.6 * mm, t, "Helvetica-Bold", 7, (1, 1, 1), al)
+    y -= 6.5 * mm
+    y_tabla = y
+    c.setStrokeColorRGB(*azul)
+    c.setLineWidth(0.6)
+    yy = y
+    for (i, lineas, extra), h in zip(filas, altos):
+        cant = int(i["cantidad"])
+        precio = int(i["precio"])
+        base = yy - 5.5 * mm
+        txt(cx[0] + 7 * mm, base, cant, "Helvetica", 8.5, (0.1, 0.1, 0.1), "C")
+        for n, linea in enumerate(lineas):
+            txt(cx[1] + 2 * mm, base - n * 9, linea, "Helvetica", 8, (0.1, 0.1, 0.1))
+        for n, linea in enumerate(extra):
+            txt(cx[1] + 2 * mm, base - len(lineas) * 9 - n * 7.5 + 1, linea, "Helvetica-Oblique", 6.3, (0.35, 0.35, 0.4))
+        txt(cx[3] - 2 * mm, base, cop(precio), "Helvetica", 8, (0.1, 0.1, 0.1), "R")
+        txt(cx[4] - 2 * mm, base, cop(cant * precio), "Helvetica", 8, (0.1, 0.1, 0.1), "R")
+        yy -= h
+        c.line(mi, yy, mi + util, yy)
+    # Filas vacías hasta completar el alto mínimo de la tabla
+    y_fin = y_tabla - alto_tabla
+    while yy - 7.5 * mm >= y_fin - 0.5:
+        yy -= 7.5 * mm
+        c.line(mi, yy, mi + util, yy)
+    c.setLineWidth(0.8)
+    for xx in cx[1:4]:
+        c.line(xx, y_tabla, xx, y_fin)
+    c.line(mi, y_tabla, mi, y_fin)
+    c.line(mi + util, y_tabla, mi + util, y_fin)
+    c.line(mi, y_fin, mi + util, y_fin)
+
+    # Total
+    y = y_fin - 3 * mm
+    if descuento:
+        txt(cx[3] - 2 * mm, y - 3 * mm, "Subtotal", "Helvetica", 7.5, al="R")
+        txt(cx[4] - 2 * mm, y - 3 * mm, cop(int(v["total"]) + descuento), "Helvetica", 8, (0.1, 0.1, 0.1), "R")
+        txt(cx[3] - 2 * mm, y - 8 * mm, "Descuento", "Helvetica", 7.5, al="R")
+        txt(cx[4] - 2 * mm, y - 8 * mm, "- " + cop(descuento), "Helvetica", 8, (0.1, 0.1, 0.1), "R")
+        y -= 10 * mm
+    txt(cx[3] - 2 * mm, y - 6 * mm, "TOTAL $", "Helvetica-Bold", 11, al="R")
+    c.rect(cx[3], y - 9 * mm, cx[4] - cx[3], 9 * mm, stroke=1, fill=0)
+    txt(cx[4] - 2 * mm, y - 6 * mm, cop(v["total"]), "Helvetica-Bold", 10, (0.1, 0.1, 0.1), "R")
+
+    # Forma de pago
+    if v["metodo"] == "Efectivo" and not v["metodo2"]:
+        pago = f"Pago: Efectivo · Recibido {cop(v['recibido'])} · Devuelta {cop(v['cambio'])}"
+    elif v["metodo2"]:
+        pago = f"Pago: Efectivo {cop(v['recibido'])} + {v['metodo2']} {cop(v['monto_metodo2'])}"
     else:
-        fila(f"Pago: {v['metodo']}")
+        pago = f"Pago: {v['metodo']}"
+    txt(mi, y - 4.5 * mm, pago, "Helvetica-Bold", 7, (0.1, 0.1, 0.1))
+    txt(mi, y - 9 * mm, f"Atendió: {v['usuario_nombre']}", "Helvetica", 6.5, (0.35, 0.35, 0.4))
+
+    # Pie
+    y -= 16 * mm
+    leyenda = ("APRECIADO CLIENTE: en algunas ocasiones los tiempos de entrega de su trámite pueden "
+               "variar por causas ajenas a nuestra voluntad debido a que nuestro cumplimiento está "
+               "sujeto a la agilidad con que trabajen los organismos de tránsito.")
+    for n, linea in enumerate(wrap(leyenda, 62)):
+        txt(mi, y - n * 7, linea, "Helvetica", 5.2)
+    txt(mi, y - 30, "Recibí a Satisfacción", "Helvetica", 7)
+    c.line(mi, y - 52, mi + 70 * mm, y - 52)
+    txt(mi, y - 60, "C.C.", "Helvetica", 7)
+    for n, linea in enumerate(wrap("Esta es una Factura de Venta se asimila en todos sus efectos a una letra "
+                                   "de cambio. Art. 733 del Código de Comercio.", 36)):
+        txt(ancho - mi, y - 38 - n * 7, linea, "Helvetica", 5.2, al="R")
+
     if int(v["anulada"]) == 1:
-        fila("VENTA ANULADA", f="Helvetica-Bold", s=11, centro=True)
-    fila("¡Gracias por su compra!", s=7, centro=True)
+        c.saveState()
+        c.translate(ancho / 2, alto / 2)
+        c.rotate(30)
+        txt(0, 0, "ANULADA", "Helvetica-Bold", 48, (0.85, 0.25, 0.25), "C")
+        c.restoreState()
     c.save()
     return buf.getvalue()
+
 
 def reposicion(productos):
     bajos = [p for p in productos if p["stock"] <= p["minimo"]]
