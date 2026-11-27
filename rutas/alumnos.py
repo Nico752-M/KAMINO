@@ -13,6 +13,7 @@ from servicios.matriculas import (
     ETIQUETA_TIPO, TIPO_CURSO, TIPO_RECATEGORIZACION, TIPO_RENOVACION, armar_categoria,
     concepto_pago, estado_matricula, tipo_de_categoria, tipo_desde_formulario,
 )
+from servicios.cierres import recalcular_cierre
 from servicios.recibos import numero_recibo
 from servicios.validaciones import validar_datos_alumno, validar_responsable
 from utils import cacheado, hoy, parsear_pesos
@@ -949,6 +950,7 @@ def anular_pago(numero):
     if not motivo or len(motivo) > 500:
         flash("El motivo de anulación es obligatorio y admite hasta 500 caracteres.", "error")
         return redirect(bandeja if desde_bandeja else url_for("alumnos.lista"))
+    caja_cerrada_pago = False
     try:
         with db.transaccion() as cur:
             pago = cur.execute("""
@@ -968,8 +970,11 @@ def anular_pago(numero):
                     (pago["caja_id"],),
                 ).fetchone()
                 if caja_pago and caja_pago["estado"] == "CERRADA":
-                    flash("No se puede anular un pago de una caja cerrada.", "error")
-                    return redirect(bandeja if desde_bandeja else url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+                    if "editar_cierres" not in permisos_actuales():
+                        flash("Este pago es de una caja ya cerrada. Para anularlo necesitas el permiso "
+                              "«Anulación y edición de cierres anteriores».", "error")
+                        return redirect(bandeja if desde_bandeja else url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
+                    caja_cerrada_pago = True
             cur.execute("""
                 UPDATE pagos SET anulado = 1, motivo_anulacion = %s,
                     anulado_por = %s, fecha_anulacion = CURRENT_TIMESTAMP
@@ -981,6 +986,9 @@ def anular_pago(numero):
             """, (f"Pago anulado: {motivo}"[:500], numero))
             _auditar(cur, "PAGO", pago["id"], "ANULACION", session["uid"],
                      dict(pago), {**pago, "anulado": 1, "motivo_anulacion": motivo}, motivo)
+            if caja_cerrada_pago:
+                recalcular_cierre(cur, pago["caja_id"], session["uid"],
+                                  f"Anulación del pago {numero}: {motivo}"[:500])
             matricula = cur.execute(
                 "SELECT estado, precio_total, archivado FROM matriculas WHERE id = %s FOR UPDATE",
                 (pago["id_matricula"],),
@@ -1003,7 +1011,8 @@ def anular_pago(numero):
         current_app.logger.exception("Error anulando recibo %s", numero)
         flash("No se pudo anular el pago. Intenta de nuevo.", "error")
         return redirect(bandeja if desde_bandeja else url_for("alumnos.lista"))
-    flash(f"El pago {numero} fue anulado. El recibo y el registro se conservaron.", "ok")
+    flash(f"El pago {numero} fue anulado. El recibo y el registro se conservaron."
+          + (" El cierre de esa caja se recalculó." if caja_cerrada_pago else ""), "ok")
     return redirect(bandeja if desde_bandeja else url_for("alumnos.historial", matricula_id=pago["id_matricula"]))
 
 
