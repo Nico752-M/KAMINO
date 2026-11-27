@@ -30,6 +30,7 @@ PERMISOS = {
     "tienda_cuentas": "Tienda: Mis cuentas (luz, agua, arriendo, nómina…)",
     "tienda_usuarios": "Tienda: crear y administrar usuarios de la tienda",
     "ver_cuentas": "Ver y administrar Mis cuentas (ingresos y gastos del CEA)",
+    "editar_cierres": "Anulación y edición de cierres anteriores",
 }
 
 ROLES = ("admin", "cajera", "secretaria", "contadora", "tienda", "tienda_admin", "tienda_cajero")
@@ -56,7 +57,7 @@ GRUPOS_PERMISOS = {
         "ver_bancos", "gestionar_bancos",
     ),
     "Trámites": ("ver_tramites", "marcar_runt"),
-    "Administración": ("ver_dashboard", "gestionar_usuarios", "ver_cuentas"),
+    "Administración": ("ver_dashboard", "gestionar_usuarios", "ver_cuentas", "editar_cierres"),
     "Tienda": PERMISOS_TIENDA,
 }
 
