@@ -141,9 +141,11 @@ def _cargar(filtros: dict) -> dict:
                m.fecha_registro, m.runt_registrado,
                COALESCE(m.precio_base, 0) AS precio_base,
                COALESCE(m.descuento_valor, 0) AS descuento_valor,
+               COALESCE(m.descuento_porcentaje, 0) AS descuento_porcentaje,
                COALESCE(m.precio_total, 0) AS precio_total,
                a.tipo_documento, a.numero_documento, a.nombres, a.apellidos,
-               a.celular, a.email, a.fecha_nacimiento,
+               a.celular, a.email, a.fecha_nacimiento, a.lugar_nacimiento, a.sexo,
+               a.estado_civil, a.grupo_sanguineo, a.ocupacion,
                COALESCE((SELECT SUM(p.valor) FROM pagos p
                           WHERE p.id_matricula = m.id AND p.anulado = 0), 0) AS pagado,
                COALESCE((SELECT SUM(p.valor) FROM pagos p
@@ -167,8 +169,9 @@ def _cargar(filtros: dict) -> dict:
     # numerar los abonos y calcular lo acumulado y el saldo correctamente.
     pagos = db.fetchall(f"""
         SELECT p.id_matricula, p.fecha_pago, p.numero_recibo, p.concepto, p.metodo_pago,
-               p.valor, p.anulado, p.confirmado, p.motivo_anulacion
-        FROM pagos p
+               p.valor, p.anulado, p.confirmado, p.motivo_anulacion, p.observaciones,
+               p.acompanante, u.nombre AS cajero
+        FROM pagos p LEFT JOIN usuarios u ON u.id = p.usuario_id
         WHERE p.id_matricula IN ({subconsulta})
         ORDER BY p.fecha_pago, p.numero_recibo
     """, tuple(params))
@@ -182,6 +185,16 @@ def _cargar(filtros: dict) -> dict:
             ORDER BY c.id_matricula, c.fecha_registro, c.id
         """, tuple(params))
 
+    responsables = {}
+    for r_ in db.fetchall(f"""
+        SELECT r.id_matricula, r.tipo_documento, r.numero_documento, r.nombres, r.apellidos,
+               r.celular, r.email, r.relacion
+        FROM responsables_matricula r
+        WHERE r.id_matricula IN ({subconsulta})
+        ORDER BY r.id
+    """, tuple(params)):
+        responsables.setdefault(r_["id_matricula"], r_)
+
     # ── Datos derivados por matrícula ──
     por_id = {}
     for m in matriculas:
@@ -194,6 +207,11 @@ def _cargar(filtros: dict) -> dict:
         m["saldo"] = max(int(m["precio_total"]) - int(m["pagado"]), 0)
         m["ganancia"] = int(m["precio_total"]) - int(m["costos"])
         m["n_pagos"], m["primer_pago"], m["ultimo_pago"] = 0, None, None
+        resp = responsables.get(m["id"])
+        m["resp_nombre"] = f"{resp['nombres']} {resp['apellidos']}".strip() if resp else ""
+        m["resp_documento"] = f"{resp['tipo_documento']} {resp['numero_documento']}" if resp else ""
+        m["resp_celular"] = (resp["celular"] or "") if resp else ""
+        m["resp_relacion"] = resp["relacion"] if resp else ""
         por_id[m["id"]] = m
 
     # ── Pagos: número de abono, acumulado y saldo después de cada uno ──
@@ -222,6 +240,38 @@ def _cargar(filtros: dict) -> dict:
         c["codigo"] = m["codigo"] if m else ""
         c["alumno"] = m["alumno"] if m else ""
         c["categoria"] = m["categoria"] if m else ""
+
+    # ── Estado de cuenta: cada matrícula (cargo) seguida de sus abonos, con saldo corrido ──
+    pagos_de = {}
+    for p in pagos:
+        pagos_de.setdefault(p["id_matricula"], []).append(p)
+    movimientos = []
+    for m in matriculas:
+        total = int(m["precio_total"])
+        descripcion = f"{m['tipo_texto']} {m['categoria_base']}"
+        if int(m["descuento_valor"]) > 0:
+            descripcion += f" · Precio base {cop(m['precio_base'])}, descuento {cop(m['descuento_valor'])}"
+        base = {"alumno": m["alumno"], "documento": m["numero_documento"], "codigo": m["codigo"],
+                "categoria": f"{m['categoria_base']} ({m['tipo_texto']})"}
+        movimientos.append({**base, "fecha": m["fecha_registro"], "movimiento": "Matrícula",
+                            "descripcion": descripcion, "recibo": "", "medio": "",
+                            "cargo": total, "abono": None, "saldo": total,
+                            "observaciones": f"Estado: {m['estado_texto']}"})
+        for p in pagos_de.get(m["id"], []):
+            if p["anulado"]:
+                movimientos.append({**base, "fecha": p["fecha_pago"], "movimiento": "Pago anulado",
+                                    "descripcion": f"{p['concepto']} (ANULADO: {p['motivo_anulacion'] or 'sin motivo'})",
+                                    "recibo": p["numero_recibo"], "medio": p["metodo_pago"],
+                                    "cargo": None, "abono": None, "saldo": None,
+                                    "observaciones": p["observaciones"] or ""})
+            else:
+                extra = " · ".join(x for x in (p["observaciones"] or "",
+                                               f"Acompañante: {p['acompanante']}" if p["acompanante"] else "",
+                                               "Pendiente de confirmar" if not p["confirmado"] else "") if x)
+                movimientos.append({**base, "fecha": p["fecha_pago"], "movimiento": f"Abono Nº {p['abono_n']}",
+                                    "descripcion": p["concepto"], "recibo": p["numero_recibo"],
+                                    "medio": p["metodo_pago"], "cargo": None, "abono": int(p["valor"]),
+                                    "saldo": p["saldo_despues"], "observaciones": extra})
 
     # Si se filtra por fecha de pago, el detalle muestra solo los pagos de ese rango
     if por_pago:
@@ -302,6 +352,7 @@ def _cargar(filtros: dict) -> dict:
     if con_costos:
         resumen["ganancia"] = resumen["total"] - resumen["costos"]
     return {"matriculas": matriculas, "pagos": pagos, "costos": costos, "alumnos": alumnos,
+            "movimientos": movimientos,
             "deudores": deudores, "por_categoria": por_categoria, "por_estado": por_estado,
             "por_medio": por_medio, "resumen": resumen, "con_costos": con_costos,
             "por_pago": por_pago}
@@ -339,7 +390,7 @@ _DINERO = '"$"#,##0'
 _ENCABEZADOS_DINERO = {
     "Precio base", "Descuento", "Total a pagar", "Pagado", "Saldo", "Pagado en el rango",
     "Costos", "Costos pagados", "Ganancia estimada", "Valor", "Acumulado pagado",
-    "Saldo después del pago", "Ganancia",
+    "Saldo después del pago", "Ganancia", "Valor a pagar", "Abono",
 }
 
 
@@ -435,6 +486,17 @@ def _excel(filtros: dict, datos: dict) -> Response:
         filas_a.append(fila)
     hoja_datos("Resumen por alumno", enc_a, filas_a)
 
+    # ── Estado de cuenta por alumno (matrícula + abonos con saldo corrido) ──
+    hoja_datos(
+        "Estado de cuenta",
+        ["Alumno", "Documento", "Código matrícula", "Categoría", "Fecha", "Movimiento",
+         "Descripción", "Recibo", "Medio de pago", "Valor a pagar", "Abono", "Saldo",
+         "Observaciones"],
+        [[x["alumno"], x["documento"], x["codigo"], x["categoria"], x["fecha"], x["movimiento"],
+          x["descripcion"], x["recibo"], x["medio"], x["cargo"], x["abono"], x["saldo"],
+          x["observaciones"]] for x in datos["movimientos"]],
+    )
+
     # ── Saldos pendientes ──
     hoja_datos(
         "Saldos pendientes",
@@ -447,9 +509,11 @@ def _excel(filtros: dict, datos: dict) -> Response:
 
     # ── Alumnos y matrículas (detalle completo) ──
     enc_m = ["Código", "Fecha matrícula", "Tipo documento", "Documento", "Nombres", "Apellidos",
-             "Celular", "Correo", "Fecha de nacimiento", "Proceso", "Categoría", "Estado", "RUNT",
-             "Precio base", "Descuento", "Total a pagar", "Pagado", "Saldo", "Nº de pagos",
-             "Primer pago", "Último pago"]
+             "Celular", "Correo", "Fecha de nacimiento", "Lugar de nacimiento", "Sexo",
+             "Estado civil", "Grupo sanguíneo", "Ocupación", "Proceso", "Categoría", "Estado",
+             "RUNT", "Precio base", "Descuento", "Descuento %", "Total a pagar", "Pagado", "Saldo",
+             "Nº de pagos", "Primer pago", "Último pago", "Responsable", "Documento responsable",
+             "Celular responsable", "Relación con el alumno"]
     if por_pago:
         enc_m.append("Pagado en el rango")
     if con_costos:
@@ -458,10 +522,14 @@ def _excel(filtros: dict, datos: dict) -> Response:
     for m in datos["matriculas"]:
         fila = [m["codigo"], m["fecha_registro"], m["tipo_documento"], m["numero_documento"],
                 m["nombres"], m["apellidos"], m["celular"] or "", m["email"] or "",
-                m["fecha_nacimiento"], m["tipo_texto"], m["categoria_base"], m["estado_texto"],
+                m["fecha_nacimiento"], m["lugar_nacimiento"] or "", m["sexo"] or "",
+                m["estado_civil"] or "", m["grupo_sanguineo"] or "", m["ocupacion"] or "",
+                m["tipo_texto"], m["categoria_base"], m["estado_texto"],
                 "Sí" if m["runt_registrado"] else "No",
-                int(m["precio_base"]), int(m["descuento_valor"]), int(m["precio_total"]),
-                int(m["pagado"]), m["saldo"], m["n_pagos"], m["primer_pago"], m["ultimo_pago"]]
+                int(m["precio_base"]), int(m["descuento_valor"]), f"{m['descuento_porcentaje']}%",
+                int(m["precio_total"]), int(m["pagado"]), m["saldo"], m["n_pagos"],
+                m["primer_pago"], m["ultimo_pago"], m["resp_nombre"], m["resp_documento"],
+                m["resp_celular"], m["resp_relacion"]]
         if por_pago:
             fila.append(int(m["pagado_periodo"]))
         if con_costos:
@@ -474,10 +542,11 @@ def _excel(filtros: dict, datos: dict) -> Response:
         "Pagos y abonos",
         ["Fecha", "Recibo", "Código matrícula", "Documento", "Alumno", "Categoría", "Concepto",
          "Medio de pago", "Abono Nº", "Valor", "Acumulado pagado", "Saldo después del pago",
-         "Estado", "Motivo de anulación"],
+         "Estado", "Motivo de anulación", "Observaciones", "Acompañante", "Registrado por"],
         [[p["fecha_pago"], p["numero_recibo"], p["codigo"], p["documento"], p["alumno"],
           p["categoria"], p["concepto"], p["metodo_pago"], p["abono_n"], int(p["valor"]),
-          p["acumulado"], p["saldo_despues"], p["estado_texto"], p["motivo_anulacion"] or ""]
+          p["acumulado"], p["saldo_despues"], p["estado_texto"], p["motivo_anulacion"] or "",
+          p["observaciones"] or "", p["acompanante"] or "", p["cajero"] or ""]
          for p in datos["pagos"]],
     )
 
@@ -542,7 +611,7 @@ def _pdf(filtros: dict, datos: dict) -> Response:
     celda = lambda v: Paragraph(escape(str(v if v not in (None, "") else "—")), estilos["Celda"])
     fmt_fecha = lambda f: f"{f:%d/%m/%Y}" if f else "—"
 
-    def tabla(encabezados, filas, alinear_derecha=()):
+    def tabla(encabezados, filas, alinear_derecha=(), resaltar=()):
         contenido = [encabezados] + [[celda(v) for v in fila] for fila in filas]
         if not filas:
             contenido.append([celda("Sin registros")] + [""] * (len(encabezados) - 1))
@@ -558,6 +627,8 @@ def _pdf(filtros: dict, datos: dict) -> Response:
         ]
         for i in alinear_derecha:
             estilo.append(("ALIGN", (i, 1), (i, -1), "RIGHT"))
+        for i in resaltar:
+            estilo.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#dfe8f5")))
         t.setStyle(TableStyle(estilo))
         return t
 
@@ -640,18 +711,42 @@ def _pdf(filtros: dict, datos: dict) -> Response:
         filas.append(fila)
     story.append(tabla(enc, filas, alinear_derecha=(9, 10, 11) + ((13, 14) if con_costos else ())))
 
-    # Pagos y abonos
-    seccion("Detalle de pagos y abonos")
-    story.append(tabla(
-        ["Fecha", "Recibo", "Matrícula", "Alumno", "Categoría", "Concepto", "Medio", "Abono Nº",
-         "Valor", "Acumulado", "Saldo después", "Estado"],
-        [[f"{p['fecha_pago']:%d/%m/%Y %H:%M}" if p["fecha_pago"] else "—", p["numero_recibo"],
-          p["codigo"], p["alumno"], p["categoria"], p["concepto"], p["metodo_pago"], p["abono_n"],
-          cop(p["valor"]), cop(p["acumulado"]) if p["acumulado"] is not None else "—",
-          cop(p["saldo_despues"]) if p["saldo_despues"] is not None else "—", p["estado_texto"]]
-         for p in datos["pagos"]],
-        alinear_derecha=(8, 9, 10),
-    ))
+    # Estado de cuenta por alumno: matrícula + abonos con descripción y saldo corrido
+    seccion("Estado de cuenta por alumno")
+    por_doc = {}
+    for x in datos["movimientos"]:
+        por_doc.setdefault(x["documento"], []).append(x)
+    info_alumno = {g["documento"]: g for g in datos["alumnos"]}
+    for documento, movs in por_doc.items():
+        g = info_alumno[documento]
+        story.append(Paragraph(
+            f"<b>{escape(g['alumno'])}</b> — {escape(g['tipo_documento'])} {escape(documento)}"
+            f" · Cel: {escape(g['celular'] or '—')} · {escape(g['email'] or '—')}"
+            f" · Debe: <b>{escape(cop(g['saldo']))}</b>", estilos["BodyText"]))
+        filas, resaltar = [], []
+        for i, x in enumerate(movs, 1):
+            if x["movimiento"] == "Matrícula":
+                resaltar.append(i)
+            filas.append([x["codigo"], fmt_fecha(x["fecha"]), x["categoria"], x["movimiento"],
+                          x["descripcion"], x["recibo"], x["medio"],
+                          cop(x["cargo"]) if x["cargo"] is not None else "",
+                          cop(x["abono"]) if x["abono"] is not None else "",
+                          cop(x["saldo"]) if x["saldo"] is not None else "",
+                          x["observaciones"]])
+        story.append(tabla(["Matrícula", "Fecha", "Categoría", "Movimiento", "Descripción",
+                            "Recibo", "Medio", "Valor a pagar", "Abono", "Saldo", "Observaciones"],
+                           filas, alinear_derecha=(7, 8, 9), resaltar=resaltar))
+        story.append(Spacer(1, 8))
+
+    if por_pago:
+        seccion("Pagos dentro del rango de fechas")
+        story.append(tabla(
+            ["Fecha", "Recibo", "Matrícula", "Alumno", "Concepto", "Medio", "Abono Nº", "Valor", "Estado"],
+            [[f"{p['fecha_pago']:%d/%m/%Y %H:%M}" if p["fecha_pago"] else "—", p["numero_recibo"],
+              p["codigo"], p["alumno"], p["concepto"], p["metodo_pago"], p["abono_n"],
+              cop(p["valor"]), p["estado_texto"]] for p in datos["pagos"]],
+            alinear_derecha=(7,),
+        ))
 
     if con_costos:
         seccion("Costos de las matrículas")
