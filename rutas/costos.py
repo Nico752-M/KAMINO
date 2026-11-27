@@ -5,13 +5,13 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 import db
 from auth import login_required, permiso_requerido
 from rutas.alumnos import _auditar
+from servicios.matriculas import TIPOS_TARIFA, tipo_de_categoria
 from utils import parsear_pesos
 
 bp = Blueprint("costos", __name__)
 
-TIPOS = ("CURSO", "RENOVACION")
+TIPOS = TIPOS_TARIFA
 VALOR_MAX = 999_999_999_999
-PREFIJO_RENOVACION = "Renovación - "
 
 
 # ───────────── Utilidades ─────────────
@@ -31,10 +31,9 @@ def _leer_costo():
 
 
 def _tipo_y_categoria(categoria: str):
-    """'Renovación - A2' -> ('RENOVACION', 'A2');  'A2' -> ('CURSO', 'A2')."""
-    if categoria.startswith(PREFIJO_RENOVACION):
-        return "RENOVACION", categoria[len(PREFIJO_RENOVACION):]
-    return "CURSO", categoria
+    """'Renovación - A2' -> ('RENOVACION', 'A2');  'Recategorización - A2' -> ('RECAT', 'A2');
+    'A2' -> ('CURSO', 'A2')."""
+    return tipo_de_categoria(categoria)
 
 
 def _ir_cuenta(matricula_id):
