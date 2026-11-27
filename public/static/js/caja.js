@@ -51,6 +51,28 @@
     denominaciones.forEach((campo) => campo.addEventListener("input", calcularEfectivo));
   }
 
+
+  const modalEditar = document.getElementById("editarMovModal");
+  if (modalEditar) {
+    const formEditar = document.getElementById("editarMovForm");
+    document.querySelectorAll("[data-editar-mov]").forEach((boton) => {
+      boton.addEventListener("click", () => {
+        const d = boton.dataset;
+        formEditar.action = "/caja/movimientos/" + d.tipo + "/" + encodeURIComponent(d.numero) + "/editar";
+        document.getElementById("editarMovConcepto").value = d.concepto;
+        const valor = document.getElementById("editarMovValor");
+        valor.value = window.formatearMiles(Number(d.valor));
+        valor.dispatchEvent(new Event("input", { bubbles: true }));
+        document.getElementById("editarMovCategoria").value = d.categoria;
+        document.getElementById("editarMovMotivo").value = "";
+        document.getElementById("editarMovAviso").textContent = d.cerrada === "1"
+          ? "Es de una caja ya cerrada: el cierre se recalculará y quedará marcado como modificado."
+          : "Recibo " + d.numero + ". El cambio queda registrado con tu usuario.";
+        abrir(modalEditar);
+      });
+    });
+  }
+
   const form = document.getElementById("movimientoCajaForm");
   if (!form) return;
   const valor = document.getElementById("movimientoValor");
