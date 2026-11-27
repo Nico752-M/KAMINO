@@ -104,6 +104,9 @@
     mostrarSaldo();
   }
 
+  // Valor del selector "Proceso" -> código de tipo de las tarifas.
+  const TIPO_TARIFA = { curso: "CURSO", renovacion: "RENOVACION", recategorizacion: "RECAT" };
+
   const opcionesTarifas = [...categoria.options].map((opcion) => ({
     value: opcion.value,
     text: opcion.textContent,
@@ -112,7 +115,7 @@
   })).filter((opcion) => opcion.value);
 
   function filtrarTarifas() {
-    const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
+    const tipo = TIPO_TARIFA[tipoMatricula.value] || "CURSO";
     const seleccion = categoria.value;
     categoria.innerHTML = "";
 
@@ -235,7 +238,7 @@
   const MAX_CURSOS_EXTRA = 4;
 
   function opcionesCategoria() {
-    const tipo = tipoMatricula.value === "renovacion" ? "RENOVACION" : "CURSO";
+    const tipo = TIPO_TARIFA[tipoMatricula.value] || "CURSO";
     return opcionesTarifas.filter((o) => o.type === tipo);
   }
 
@@ -361,7 +364,7 @@
 
   btnAgregarCurso.addEventListener("click", agregarCurso);
   enCurso.addEventListener("change", aplicarEnCursoAFilas);
-  // Al cambiar entre Curso completo / Renovación las categorías disponibles cambian: se limpian las filas
+  // Al cambiar entre Curso completo / Renovación / Recategorización las categorías disponibles cambian: se limpian las filas
   tipoMatricula.addEventListener("change", limpiarExtras);
 
   const cerrar = () => modal.classList.remove("open");
