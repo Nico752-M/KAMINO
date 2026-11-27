@@ -9,7 +9,10 @@ from flask import Blueprint, current_app, flash, jsonify, redirect, render_templ
 
 import db
 from auth import login_required, permiso_requerido, permisos_actuales
-from servicios.matriculas import estado_matricula
+from servicios.matriculas import (
+    ETIQUETA_TIPO, TIPO_CURSO, TIPO_RECATEGORIZACION, TIPO_RENOVACION, armar_categoria,
+    concepto_pago, estado_matricula, tipo_de_categoria, tipo_desde_formulario,
+)
 from servicios.recibos import numero_recibo
 from servicios.validaciones import validar_datos_alumno, validar_responsable
 from utils import cacheado, hoy, parsear_pesos
@@ -155,19 +158,20 @@ def lista():
     if hay_siguiente:
         filas = filas[:10]
 
-    cursos, renovaciones = [], []
+    cursos, renovaciones, recategorizaciones = [], [], []
+    por_tipo = {TIPO_CURSO: cursos, TIPO_RENOVACION: renovaciones,
+                TIPO_RECATEGORIZACION: recategorizaciones}
     for f in filas:
         saldo = max(float(f["precio_total"]) - float(f["pagado"]), 0)
+        tipo_m, base_m = tipo_de_categoria(f["categoria"])
         item = {
             **f,
             "codigo": f"{f['numero_orden']}-{str(f['anio'])[-2:]}",
             "saldo": saldo,
             "clase_estado": ESTADO_CLASE.get(f["estado"], "muted"),
-            "concepto": (f"Renovación de licencia — {f['categoria']}"
-                         if str(f["categoria"]).startswith("Renovación")
-                         else "Pago curso de conducción"),
+            "concepto": concepto_pago(tipo_m, base_m),
         }
-        (renovaciones if str(f["categoria"]).startswith("Renovación") else cursos).append(item)
+        por_tipo[tipo_m].append(item)
 
     # Un alumno con varios cursos tiene una matrícula por curso (cada una con su consecutivo,
     # saldo y pagos), pero en la lista se muestra una sola vez con sus cursos agrupados.
@@ -182,8 +186,10 @@ def lista():
         return list(grupos.values())
 
     cursos, renovaciones = agrupar(cursos), agrupar(renovaciones)
+    recategorizaciones = agrupar(recategorizaciones)
 
     return render_template("alumnos.html", cursos=cursos, renovaciones=renovaciones,
+                           recategorizaciones=recategorizaciones,
                            tarifas=tarifas, error_tarifas=error_tarifas,
                            q=q, desde=desde_texto, hasta=hasta_texto, pagina=pagina,
                            hay_filtros=hay_filtros,
@@ -243,8 +249,8 @@ def crear_matricula():
     apellidos = " ".join(request.form.get("apellidos", "").split())
     categoria_base = " ".join(request.form.get("categoria", "").upper().split())
     tipo_matricula = request.form.get("tipo_matricula", "curso")
-    tipo_tarifa = "RENOVACION" if tipo_matricula == "renovacion" else "CURSO"
-    categoria = f"Renovación - {categoria_base}" if tipo_matricula == "renovacion" else categoria_base
+    tipo_tarifa = tipo_desde_formulario(tipo_matricula)  # None si el tipo no es válido
+    categoria = armar_categoria(tipo_tarifa, categoria_base) if tipo_tarifa else categoria_base
     fecha_texto = request.form.get("fecha_nacimiento", "").strip()
     fecha_nacimiento = None
     if fecha_texto:
@@ -297,7 +303,7 @@ def crear_matricula():
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("alumnos.lista"))
-    if tipo_matricula not in ("curso", "renovacion") or not categoria_base or len(categoria) > 60:
+    if tipo_tarifa is None or not categoria_base or len(categoria) > 60:
         flash("Selecciona el tipo de matrícula y una categoría de hasta 60 caracteres.", "error")
         return redirect(url_for("alumnos.lista"))
     if any(value and len(value) > limit for value, limit in (
@@ -365,7 +371,7 @@ def crear_matricula():
         if not cat_base:
             flash(f"Selecciona la categoría del curso {n} o quítalo.", "error")
             return redirect(url_for("alumnos.lista"))
-        cat_final = f"Renovación - {cat_base}" if tipo_matricula == "renovacion" else cat_base
+        cat_final = armar_categoria(tipo_tarifa, cat_base)
         if len(cat_final) > 60:
             flash(f"La categoría del curso {n} es demasiado larga.", "error")
             return redirect(url_for("alumnos.lista"))
@@ -530,8 +536,7 @@ def crear_matricula():
                                                usuario_id, caja_id, observaciones, acompanante)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (matricula_id,
-                              f"Renovación de licencia — {c_base}" if tipo_matricula == "renovacion"
-                              else "Pago curso de conducción",
+                              concepto_pago(tipo_tarifa, c_base),
                               c_abono, metodo_pago, recibo, session["uid"], caja["id"],
                               observaciones_abono, acompanante))
             creada = True
@@ -565,7 +570,7 @@ def crear_matricula():
             flash(f"Se registraron {len(codigos)} cursos para el alumno: {detalle}."
                   + (f" Recibos de abono: {', '.join(recibos)}." if recibos else ""), "ok")
         else:
-            flash(f"{'Alumno en curso registrado' if en_curso else 'Renovación' if tipo_matricula == 'renovacion' else 'Matrícula'} "
+            flash(f"{'Alumno en curso registrado' if en_curso else ETIQUETA_TIPO[tipo_tarifa] if tipo_tarifa != TIPO_CURSO else 'Matrícula'} "
                   f"{codigos[0]} creada correctamente."
                   + (f" Recibo del abono: {recibos[0]}." if recibos else ""), "ok")
     return redirect(url_for("alumnos.lista", recibo_nuevo=recibos[0]) if recibos
@@ -597,8 +602,7 @@ def editar_matricula(matricula_id):
             if not fila:
                 return "Matrícula no encontrada.", 404
             categoria_actual = (fila["categoria"] or "").strip()
-            tipo_matricula = "RENOVACION" if str(categoria_actual).startswith("Renovación") else "CURSO"
-            categoria_base = categoria_actual.replace("Renovación - ", "", 1) if tipo_matricula == "RENOVACION" else categoria_actual
+            tipo_matricula, categoria_base = tipo_de_categoria(categoria_actual)
             tarifas = db.fetchall(
                 "SELECT categoria FROM tarifas_categoria WHERE activo = 1 AND tipo = %s ORDER BY categoria",
                 (tipo_matricula,),
@@ -698,9 +702,9 @@ def editar_matricula(matricula_id):
                 raise DatosMatriculaInvalidos("La matrícula no existe o ya fue archivada.")
             if documento_original != actual["numero_documento"]:
                 raise DatosMatriculaInvalidos("Los datos cambiaron. Recarga la página e intenta de nuevo.")
-            tipo_matricula = "RENOVACION" if str(actual["categoria"]).startswith("Renovación") else "CURSO"
+            tipo_matricula, _base_actual = tipo_de_categoria(actual["categoria"])
             categoria_base = " ".join(request.form.get("categoria", "").upper().split())
-            categoria_final = f"Renovación - {categoria_base}" if tipo_matricula == "RENOVACION" else categoria_base
+            categoria_final = armar_categoria(tipo_matricula, categoria_base)
             if not categoria_base or len(categoria_final) > 60:
                 raise DatosMatriculaInvalidos("La categoría es obligatoria y admite hasta 60 caracteres.")
             tarifa_activa = cur.execute(
