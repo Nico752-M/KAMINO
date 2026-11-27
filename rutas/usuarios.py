@@ -9,6 +9,7 @@ import db
 from rutas.alumnos import _auditar
 from auth import login_required, permiso_requerido
 from permisos import GRUPOS_PERMISOS, PERMISOS, PERMISOS_POR_ROL, ROLES
+from servicios.matriculas import TIPOS_TARIFA
 from utils import invalidar_cache, parsear_pesos
 
 bp = Blueprint("usuarios", __name__, url_prefix="/admin/usuarios")
@@ -148,8 +149,8 @@ def crear_tarifa():
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
         flash("La categoría es obligatoria y solo admite letras, números, espacios, puntos y guiones.", "error")
         return redirect(url_for("usuarios.lista"))
-    if tipo not in ("CURSO", "RENOVACION"):
-        flash("Selecciona si la tarifa corresponde a un curso o una renovación.", "error")
+    if tipo not in TIPOS_TARIFA:
+        flash("Selecciona si la tarifa corresponde a un curso, una renovación o una recategorización.", "error")
         return redirect(url_for("usuarios.lista"))
     if precio is None or precio <= 0 or precio > 999_999_999_999:
         flash("El precio debe estar entre $1 y $999.999.999.999.", "error")
@@ -179,7 +180,7 @@ def crear_tarifa():
 @permiso_requerido("gestionar_usuarios")
 def actualizar_tarifa(tipo: str, categoria: str):
     invalidar_cache("tarifas_activas")
-    if tipo not in ("CURSO", "RENOVACION"):
+    if tipo not in TIPOS_TARIFA:
         flash("El tipo de tarifa no es válido.", "error")
         return redirect(url_for("usuarios.lista"))
     categoria_clave = " ".join(categoria.upper().split())
