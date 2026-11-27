@@ -42,6 +42,10 @@
               {% if 'ver_ganancias' in permisos %}
               <a href="{{ url_for('costos.cuenta', matricula_id=f.matricula_id) }}"><i class="ri-money-dollar-circle-line"></i> Cuenta y ganancia</a>
               {% endif %}
+              {% if 'ver_historial_pagos' in permisos %}
+              <a href="{{ url_for('reportes_alumnos.descargar', alcance='alumno', documento=f.numero_documento, formato='pdf') }}"><i class="ri-file-pdf-line"></i> Reporte PDF del alumno</a>
+              <a href="{{ url_for('reportes_alumnos.descargar', alcance='alumno', documento=f.numero_documento, formato='excel') }}"><i class="ri-file-excel-2-line"></i> Reporte Excel del alumno</a>
+              {% endif %}
               {% if 'editar_alumnos' in permisos and f.estado != 'Archivado' %}
               <a href="{{ url_for('alumnos.editar_matricula', matricula_id=f.matricula_id) }}"><i class="ri-edit-line"></i> Editar</a>
               {% endif %}
@@ -71,9 +75,12 @@
 <div class="section-header">
   <div>
     <h2 class="section-title">Alumnos y Matriculas</h2>
-    <p class="section-desc">Gestión de inscritos a cursos completos y renovaciones rápidas.</p>
+    <p class="section-desc">Gestión de inscritos a cursos completos, renovaciones y recategorizaciones.</p>
   </div>
-  {% if 'crear_matricula' in permisos %}<button class="btn-action red" id="btnNuevaMatricula" type="button"><i class="ri-user-add-line"></i> Nueva Matrícula</button>{% endif %}
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    {% if 'ver_historial_pagos' in permisos %}<button class="btn-action" id="btnReportes" type="button"><i class="ri-file-chart-line"></i> Reportes PDF / Excel</button>{% endif %}
+    {% if 'crear_matricula' in permisos %}<button class="btn-action red" id="btnNuevaMatricula" type="button"><i class="ri-user-add-line"></i> Nueva Matrícula</button>{% endif %}
+  </div>
 </div>
 
 {% if error %}<div class="alerta error">{{ error }}</div>{% endif %}
@@ -111,9 +118,11 @@
   <div class="internal-tabs">
     <button type="button" class="active" data-tab="sub-cursos"><i class="ri-user-star-line"></i> Cursos Completos</button>
     <button type="button" data-tab="sub-renovaciones"><i class="ri-refresh-line"></i> Renovaciones</button>
+    <button type="button" data-tab="sub-recategorizaciones"><i class="ri-arrow-up-circle-line"></i> Recategorizaciones</button>
   </div>
   <div id="sub-cursos" class="subtab-content active"><div class="card-bento">{{ tabla(cursos, 'No hay alumnos para mostrar.') }}</div></div>
   <div id="sub-renovaciones" class="subtab-content"><div class="card-bento">{{ tabla(renovaciones, 'No hay renovaciones para mostrar.') }}</div></div>
+  <div id="sub-recategorizaciones" class="subtab-content"><div class="card-bento">{{ tabla(recategorizaciones, 'No hay recategorizaciones para mostrar.') }}</div></div>
 </div>
 <nav class="student-pagination" aria-label="Páginas de alumnos">
   <span>{% if primer_resultado %}Mostrando {{ primer_resultado }}–{{ ultimo_resultado }}{% else %}Sin resultados{% endif %}</span>
@@ -125,6 +134,47 @@
 </div>
 
 {% include "parciales/modal_pago.html" %}
+
+{% if 'ver_historial_pagos' in permisos %}
+<div class="modal-overlay" id="reportesModal">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <div><span class="eyebrow">REPORTES</span><h3 class="modal-title">Descargar reporte de alumnos</h3>
+        <p class="hint">Información general, costos y pagos. Elige qué alumnos incluir y el formato.</p></div>
+      <button class="modal-close-btn" id="btnCerrarReportes" type="button" aria-label="Cerrar">&times;</button>
+    </div>
+    <form method="get" action="{{ url_for('reportes_alumnos.descargar') }}" id="formReportes">
+      <div class="field"><label class="lbl" for="repAlcance">¿De quién?</label>
+        <select class="input-clean" id="repAlcance" name="alcance">
+          <option value="todos">Todos los alumnos (hasta hoy)</option>
+          <option value="fechas">De una fecha a otra</option>
+          <option value="alumno">Un alumno en específico</option>
+        </select></div>
+      <div class="field" data-rep-modo="alumno" hidden><label class="lbl" for="repDocumento">Documento o nombre del alumno</label>
+        <input class="input-clean" id="repDocumento" name="documento" maxlength="60" placeholder="Ej. 1234567890 o Juan Pérez"></div>
+      <div data-rep-modo="fechas" hidden>
+        <div class="field"><label class="lbl" for="repCampo">¿Qué fecha usar?</label>
+          <select class="input-clean" id="repCampo" name="campo_fecha">
+            <option value="matricula">Fecha de matrícula (cuando se inscribió)</option>
+            <option value="pago">Fecha de pago (alumnos que pagaron en esas fechas)</option>
+          </select></div>
+        <div class="field"><label class="lbl" for="repDesde">Desde</label>
+          <input class="input-clean" id="repDesde" type="date" name="desde" value="{{ desde }}"></div>
+        <div class="field"><label class="lbl" for="repHasta">Hasta</label>
+          <input class="input-clean" id="repHasta" type="date" name="hasta" value="{{ hasta }}"></div>
+      </div>
+      <div class="field"><label class="lbl" for="repFormato">Formato</label>
+        <select class="input-clean" id="repFormato" name="formato">
+          <option value="pdf">PDF</option><option value="excel">Excel</option>
+        </select></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+        <button class="btn-action" type="button" id="btnCancelarReportes">Cancelar</button>
+        <button class="btn-action red" type="submit"><i class="ri-download-2-line"></i> Descargar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {% if 'crear_matricula' in permisos %}
 <div class="modal-overlay" id="matriculaModal">
@@ -170,7 +220,7 @@
               </div>
               <div class="field"><label class="lbl" for="tipoMatricula">Proceso <span class="required-mark">*</span></label>
                 <select class="input-clean" id="tipoMatricula" name="tipo_matricula" required>
-                  <option value="curso">Curso completo</option><option value="renovacion">Renovación</option>
+                  <option value="curso">Curso completo</option><option value="renovacion">Renovación</option><option value="recategorizacion">Recategorización</option>
                 </select></div>
             </div>
             <div id="cursosExtraCat"></div>
@@ -357,4 +407,25 @@
   revisar();
 })();
 </script>
+{% if 'ver_historial_pagos' in permisos %}
+<script>
+(function () {
+  "use strict";
+  const modal = document.getElementById("reportesModal");
+  const abrir = document.getElementById("btnReportes");
+  if (!modal || !abrir) return;
+  const alcance = document.getElementById("repAlcance");
+  const bloques = [...modal.querySelectorAll("[data-rep-modo]")];
+  function mostrarCampos() {
+    bloques.forEach((b) => { b.hidden = b.dataset.repModo !== alcance.value; });
+  }
+  const cerrar = () => modal.classList.remove("open");
+  abrir.addEventListener("click", () => { mostrarCampos(); modal.classList.add("open"); });
+  document.getElementById("btnCerrarReportes").addEventListener("click", cerrar);
+  document.getElementById("btnCancelarReportes").addEventListener("click", cerrar);
+  modal.addEventListener("click", (e) => { if (e.target === modal) cerrar(); });
+  alcance.addEventListener("change", mostrarCampos);
+})();
+</script>
+{% endif %}
 {% endblock %}
