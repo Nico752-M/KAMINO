@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set nav = 'costos' %}
-{% set ajax = true %}f
+{% set ajax = true %}
 {% block titulo %}Plantillas de costos — CEA La 30{% endblock %}
 {% block contenido %}
 <div class="section-header">
@@ -15,7 +15,7 @@
 {% for grupo in grupos %}
 <section class="card-bento">
   <div class="grupo-titulo"><i class="ri-price-tag-3-line"></i>
-    {{ grupo.categoria }} · {{ 'Renovación' if grupo.tipo == 'RENOVACION' else 'Curso' }}</div>
+    {{ grupo.categoria }} · {{ 'Renovación' if grupo.tipo == 'RENOVACION' else 'Recategorización' if grupo.tipo == 'RECAT' else 'Curso' }}</div>
   {% if grupo.precio is not none %}
   <div class="payment-summary">
     <div><span>Precio base</span><strong>{{ grupo.precio|cop }}</strong></div>
