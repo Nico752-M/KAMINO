@@ -30,6 +30,7 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
     - `014_bancos_borrar.sql`, `015_bancos_borrar_movimientos.sql`, `016_usuarios_borrar.sql` y `017_tarifas_borrar.sql`: permisos para borrar bancos, movimientos, usuarios y tarifas.
     - `018_consecutivos_ing_egr_tra.sql`: crea los consecutivos `ING`, `EGR` y `TRA`.
     - `019_renumerar_recibos_existentes.sql`: renumera los recibos que ya existían y crea `RECIBOS_RENUMERADOS`.
+    - `021_cierres_editables.sql`: permiso «Anulación y edición de cierres anteriores» y marca de cierres modificados (columnas nuevas en `CAJAS`). Ejecútala antes de desplegar esta versión.
     - `correccion_consecutivos_ING_HIS.sql`: separa los abonos históricos (`HIS`) de los pagos nuevos (`ING`) y crea `SEQ_HISTORICOS`. Es una corrección puntual de los pagos 221 a 225 de la base de producción: en una base nueva no se ejecuta y la app debe tener `SEQ_HISTORICOS` creada de otra forma.
 13. Si la base todavía no tiene un administrador, crea el primero:
    `python crear_usuario.py admin --nombre \"Administrador\" --rol admin`
