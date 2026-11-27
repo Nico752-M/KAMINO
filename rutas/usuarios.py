@@ -57,6 +57,7 @@ def _validar_usuario(nombre: str, rol: str, perfil: str, permisos: set[str]):
         "gestionar_caja": "ver_caja",
         "marcar_runt": "ver_tramites",
         "ver_todas_cajas": "ver_caja",
+        "editar_cierres": "ver_caja",
         "gestionar_bancos": "ver_bancos",
         "tienda_anular": "ver_tienda",
         "tienda_inventario": "ver_tienda",
