@@ -10,6 +10,7 @@ from flask import Blueprint, Response, abort, current_app, flash, redirect, rend
 import db
 from auth import login_required, permiso_requerido, permisos_actuales, usuario_actual
 from servicios.bancos import BancoError, catalogo_destinos, movimiento_manual, parsear_destino
+from servicios.cierres import caja_cerrada, recalcular_cierre, registrar_auditoria
 from servicios.recibos import numero_recibo
 from utils import cacheado, cop, hoy, parsear_pesos
 
@@ -45,7 +46,8 @@ def _datos_cierre(caja_id: int) -> dict | None:
     caja = db.fetchone(f"""
         SELECT c.id, c.usuario_id, u.nombre AS cajero, c.fecha_apertura, c.fecha_cierre,
                c.monto_apertura, c.monto_cierre, c.efectivo_esperado, c.diferencia,
-               c.observaciones_cierre,
+               c.observaciones_cierre, c.modificada_despues, c.efectivo_esperado_original,
+               c.fecha_ultima_modificacion,
                DBMS_LOB.SUBSTR(c.conteo_denominaciones, 4000, 1) AS conteo_denominaciones
         FROM cajas c
         JOIN usuarios u ON u.id = c.usuario_id
@@ -139,6 +141,10 @@ def exportar_cierre_pdf(caja_id: int):
         ["Efectivo contado", cop(caja["monto_cierre"])],
         ["Diferencia", cop(caja["diferencia"])],
     ]
+    if caja["modificada_despues"]:
+        resumen.append(["Modificado después del cierre",
+                        f"Esperado original {cop(caja['efectivo_esperado_original'])} · "
+                        f"{caja['fecha_ultima_modificacion'].strftime('%d/%m/%Y %H:%M')}"])
     story.extend([Table(resumen, hAlign="LEFT", colWidths=[90 * mm, 42 * mm]),
                   Spacer(1, 10)])
     conteo = json.loads(caja["conteo_denominaciones"] or "{}")
@@ -228,6 +234,10 @@ def exportar_cierre_excel(caja_id: int):
     resumen.append(["Efectivo esperado", caja["efectivo_esperado"]])
     resumen.append(["Efectivo contado", caja["monto_cierre"]])
     resumen.append(["Diferencia", caja["diferencia"]])
+    if caja["modificada_despues"]:
+        resumen.append(["Modificado después del cierre",
+                        f"Esperado original {caja['efectivo_esperado_original']} · "
+                        f"{caja['fecha_ultima_modificacion'].strftime('%d/%m/%Y %H:%M')}"])
     resumen.append(["Observaciones", caja["observaciones_cierre"] or ""])
     conteo = json.loads(caja["conteo_denominaciones"] or "{}")
     if conteo:
@@ -338,7 +348,8 @@ def resumen():
                    COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
                        || ' — ' || p.concepto AS detalle,
                    p.metodo_pago AS metodo, m.categoria, p.valor, u.nombre AS cajero,
-                   p.anulado, p.motivo_anulacion, p.confirmado
+                   p.anulado, p.motivo_anulacion, p.confirmado,
+                   (SELECT c.estado FROM cajas c WHERE c.id = p.caja_id) AS caja_estado, 0 AS es_traslado
             FROM pagos p
             LEFT JOIN matriculas m ON m.id = p.id_matricula
             LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -347,13 +358,15 @@ def resumen():
               AND p.concepto <> 'Abono histórico previo'{filtro_pago}
             UNION ALL
             SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
-                   'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion, 1
+                   'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion, 1,
+                   (SELECT c.estado FROM cajas c WHERE c.id = i.caja_id), i.es_traslado
             FROM ingresos_caja i
             LEFT JOIN usuarios u ON u.id = i.usuario_id
             WHERE i.fecha_ingreso >= %s AND i.fecha_ingreso < %s{filtro_ingreso}
             UNION ALL
             SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
-                   'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion, 1
+                   'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion, 1,
+                   (SELECT c.estado FROM cajas c WHERE c.id = s.caja_id), s.es_traslado
             FROM salidas_caja s
             LEFT JOIN usuarios u ON u.id = s.usuario_id
             WHERE s.fecha_salida >= %s AND s.fecha_salida < %s{filtro_salida}
@@ -376,6 +389,9 @@ def resumen():
                 "cajero": movimiento["cajero"] or "—", "anulado": anulado,
                 "confirmado": bool(movimiento["confirmado"]),
                 "motivo_anulacion": movimiento["motivo_anulacion"],
+                "caja_cerrada": (movimiento["caja_estado"] == "CERRADA" if tipo == "pago"
+                                 else movimiento["caja_estado"] != "ABIERTA"),
+                "es_traslado": bool(movimiento["es_traslado"]),
             })
         movs.sort(key=lambda mov: mov["momento"])
 
@@ -394,6 +410,7 @@ def resumen():
             SELECT c.id, c.usuario_id, u.nombre AS cajero, c.estado, c.fecha_apertura,
                    c.fecha_cierre, c.monto_apertura, c.monto_cierre,
                    c.efectivo_esperado, c.diferencia, c.observaciones_cierre,
+                   c.modificada_despues, c.efectivo_esperado_original, c.fecha_ultima_modificacion,
                    NVL((SELECT SUM(p.valor) FROM pagos p
                         WHERE p.caja_id = c.id AND p.metodo_pago = 'Efectivo'
                           AND p.concepto <> 'Abono histórico previo' AND p.anulado = 0), 0) AS pagos_efectivo,
@@ -445,7 +462,8 @@ def resumen():
                            COALESCE(TRIM(a.nombres || ' ' || a.apellidos), 'Sin alumno')
                                || ' — ' || p.concepto AS detalle,
                            p.metodo_pago AS metodo, m.categoria, p.valor, u.nombre AS cajero,
-                           p.anulado, p.motivo_anulacion, p.confirmado
+                           p.anulado, p.motivo_anulacion, p.confirmado,
+                           (SELECT c.estado FROM cajas c WHERE c.id = p.caja_id) AS caja_estado, 0 AS es_traslado
                     FROM pagos p
                     LEFT JOIN matriculas m ON m.id = p.id_matricula
                     LEFT JOIN alumnos a ON a.numero_documento = m.numero_documento
@@ -453,13 +471,15 @@ def resumen():
                     WHERE p.concepto <> 'Abono histórico previo'{filtro_pago_todos}
                     UNION ALL
                     SELECT 'ingreso', i.numero_recibo, i.fecha_ingreso, i.concepto,
-                           'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion, 1
+                           'Efectivo', i.categoria, i.valor, u.nombre, i.anulado, i.motivo_anulacion, 1,
+                           (SELECT c.estado FROM cajas c WHERE c.id = i.caja_id), i.es_traslado
                     FROM ingresos_caja i
                     LEFT JOIN usuarios u ON u.id = i.usuario_id
                     WHERE 1 = 1{filtro_ingreso_todos}
                     UNION ALL
                     SELECT 'salida', s.numero_recibo, s.fecha_salida, s.concepto,
-                           'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion, 1
+                           'Efectivo', s.categoria, s.valor, u.nombre, s.anulado, s.motivo_anulacion, 1,
+                           (SELECT c.estado FROM cajas c WHERE c.id = s.caja_id), s.es_traslado
                     FROM salidas_caja s
                     LEFT JOIN usuarios u ON u.id = s.usuario_id
                     WHERE 1 = 1{filtro_salida_todos}
@@ -476,6 +496,9 @@ def resumen():
                 "cajero": fila["cajero"] or "—", "anulado": bool(fila["anulado"]),
                 "confirmado": bool(fila["confirmado"]),
                 "motivo_anulacion": fila["motivo_anulacion"],
+                "caja_cerrada": (fila["caja_estado"] == "CERRADA" if fila["tipo"] == "pago"
+                                 else fila["caja_estado"] != "ABIERTA"),
+                "es_traslado": bool(fila["es_traslado"]),
             } for fila in filas_historial[:50]]
         except Exception:
             current_app.logger.exception("No se pudo consultar el historial completo de caja")
@@ -804,3 +827,118 @@ def registrar_movimiento(tipo):
     flash(f"{etiqueta}{' en banco' if en_banco else ''} registrada. Recibo {recibo}.", "ok")
     # Los movimientos de banco no tienen comprobante térmico; los de caja sí.
     return redirect(url_for("caja.resumen") if en_banco else url_for("caja.resumen", recibo_nuevo=recibo))
+
+
+_MOVIMIENTOS_MANUALES = {"ingreso": ("ingresos_caja", "fecha_ingreso", "INGRESO_CAJA", "ING"),
+                         "salida": ("salidas_caja", "fecha_salida", "SALIDA_CAJA", "EGR")}
+
+
+def _movimiento_para_cambiar(cur, tipo, numero):
+    """Bloquea el movimiento manual y valida que se pueda tocar. Devuelve (fila, cerrada) o (None, mensaje)."""
+    tabla = _MOVIMIENTOS_MANUALES[tipo][0]
+    mov = cur.execute(
+        f"SELECT id, numero_recibo, concepto, valor, categoria, anulado, caja_id, es_traslado "
+        f"FROM {tabla} WHERE numero_recibo = %s FOR UPDATE", (numero,)).fetchone()
+    if not mov:
+        return None, "No se encontró el movimiento."
+    if mov["anulado"]:
+        return None, "Este movimiento ya está anulado."
+    if mov["es_traslado"]:
+        return None, "Es un traslado con un banco. Anúlalo desde Bancos para que el saldo del banco quede igual."
+    cerrada = caja_cerrada(cur, mov["caja_id"])
+    if cerrada and "editar_cierres" not in permisos_actuales():
+        return None, ("Este movimiento es de una caja ya cerrada. Necesitas el permiso "
+                      "«Anulación y edición de cierres anteriores».")
+    return (mov, cerrada), None
+
+
+@bp.route("/caja/movimientos/<tipo>/<numero>/anular", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_caja")
+def anular_movimiento(tipo, numero):
+    if tipo not in _MOVIMIENTOS_MANUALES or not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
+        return "Movimiento no válido.", 404
+    motivo = " ".join(request.form.get("motivo", "").split())
+    if not motivo or len(motivo) > 500:
+        flash("El motivo de anulación es obligatorio y admite hasta 500 caracteres.", "error")
+        return redirect(url_for("caja.resumen"))
+    tabla, _, entidad, _ = _MOVIMIENTOS_MANUALES[tipo]
+    recalculado = False
+    try:
+        with db.transaccion() as cur:
+            resultado, error = _movimiento_para_cambiar(cur, tipo, numero)
+            if error:
+                flash(error, "error")
+                return redirect(url_for("caja.resumen"))
+            mov, cerrada = resultado
+            cur.execute(
+                f"UPDATE {tabla} SET anulado = 1, motivo_anulacion = %s, anulado_por = %s, "
+                f"fecha_anulacion = CURRENT_TIMESTAMP WHERE id = %s AND anulado = 0",
+                (motivo, session["uid"], mov["id"]))
+            registrar_auditoria(cur, entidad, mov["id"], "ANULACION", session["uid"],
+                                dict(mov), {**mov, "anulado": 1, "motivo_anulacion": motivo}, motivo)
+            if cerrada:
+                recalculado = bool(recalcular_cierre(cur, mov["caja_id"], session["uid"],
+                                                     f"Anulación de {numero}: {motivo}"[:500]))
+    except Exception:
+        current_app.logger.exception("Error anulando movimiento %s", numero)
+        flash("No se pudo anular el movimiento. Intenta de nuevo.", "error")
+        return redirect(url_for("caja.resumen"))
+    flash(f"Movimiento {numero} anulado." + (" El cierre de esa caja se recalculó." if recalculado else ""), "ok")
+    return redirect(url_for("caja.resumen", historial="todos"))
+
+
+@bp.route("/caja/movimientos/<tipo>/<numero>/editar", methods=["POST"])
+@login_required
+@permiso_requerido("gestionar_caja")
+def editar_movimiento(tipo, numero):
+    if tipo not in _MOVIMIENTOS_MANUALES or not re.fullmatch(r"[A-Za-z0-9-]{6,50}", numero):
+        return "Movimiento no válido.", 404
+    motivo = " ".join(request.form.get("motivo", "").split())
+    concepto = " ".join(request.form.get("concepto", "").split())
+    categoria = " ".join(request.form.get("categoria", "").upper().split()) or None
+    valor = _entero_form("valor")
+    destino = url_for("caja.resumen", historial="todos")
+    if not motivo or len(motivo) > 500:
+        flash("El motivo de la corrección es obligatorio y admite hasta 500 caracteres.", "error")
+        return redirect(destino)
+    if not concepto or len(concepto) > 200:
+        flash("El concepto es obligatorio y admite hasta 200 caracteres.", "error")
+        return redirect(destino)
+    if valor is None or valor <= 0 or valor > 100_000_000:
+        flash("El valor debe estar entre $1 y $100.000.000.", "error")
+        return redirect(destino)
+    if categoria and not re.fullmatch(r"[A-Z0-9][A-Z0-9 .-]{0,44}", categoria):
+        flash("La categoría de caja no es válida.", "error")
+        return redirect(destino)
+    tabla, _, entidad, _ = _MOVIMIENTOS_MANUALES[tipo]
+    recalculado = False
+    try:
+        with db.transaccion() as cur:
+            if categoria and not cur.execute(
+                    "SELECT categoria FROM categorias_caja WHERE categoria = %s AND activo = 1",
+                    (categoria,)).fetchone():
+                flash("Selecciona una categoría activa o deja el campo sin categoría.", "error")
+                return redirect(destino)
+            resultado, error = _movimiento_para_cambiar(cur, tipo, numero)
+            if error:
+                flash(error, "error")
+                return redirect(destino)
+            mov, cerrada = resultado
+            if (mov["concepto"], int(mov["valor"]), mov["categoria"]) == (concepto, valor, categoria):
+                flash("No cambiaste nada en el movimiento.", "error")
+                return redirect(destino)
+            cur.execute(f"UPDATE {tabla} SET concepto = %s, valor = %s, categoria = %s WHERE id = %s",
+                        (concepto, valor, categoria, mov["id"]))
+            registrar_auditoria(cur, entidad, mov["id"], "EDICION", session["uid"],
+                                {"concepto": mov["concepto"], "valor": mov["valor"], "categoria": mov["categoria"]},
+                                {"concepto": concepto, "valor": valor, "categoria": categoria}, motivo)
+            if cerrada:
+                recalculado = bool(recalcular_cierre(cur, mov["caja_id"], session["uid"],
+                                                     f"Corrección de {numero}: {motivo}"[:500]))
+    except Exception:
+        current_app.logger.exception("Error editando movimiento %s", numero)
+        flash("No se pudo editar el movimiento. Intenta de nuevo.", "error")
+        return redirect(destino)
+    flash(f"Movimiento {numero} corregido." + (" El cierre de esa caja se recalculó." if recalculado else ""), "ok")
+    return redirect(destino)
