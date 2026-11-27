@@ -1,9 +1,10 @@
 -- Ejecutar una sola vez conectado como propietario CEA_APP, después de 001-017.
 -- Crea los consecutivos de recibos por tipo:
---   ING-001  todo lo que entra: pagos de alumnos (incluye abonos históricos), ingresos de caja y de banco.
+--   ING-001  todo lo que entra: pagos nuevos de alumnos, ingresos de caja y de banco.
+--   HIS-001  abonos históricos previos a KAMINO (su secuencia SEQ_HISTORICOS la crea correccion_consecutivos_ING_HIS.sql).
 --   EGR-001  todo lo que sale: egresos de caja y de banco.
 --   TRA-001  traslados entre bancos.
--- Los recibos que ya existen (CEA-000123, HIST-205...) NO se renumeran y siguen funcionando igual.
+-- Esta migración no renumera nada; la 019 renumera los recibos existentes (CEA-000123, HIST-205...).
 -- SEQ_RECIBOS se conserva sin uso para no romper nada; la app deja de usarla.
 
 SET DEFINE OFF
