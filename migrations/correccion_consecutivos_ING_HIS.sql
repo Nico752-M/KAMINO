@@ -9,7 +9,7 @@ DECLARE
     v_count NUMBER;
 BEGIN
     IF SYS_CONTEXT('USERENV', 'SESSION_USER') <> 'CEA_APP' THEN
-        RAISE_APPLICATION_ERROR(-21001, 'Conectate como CEA_APP para ejecutar esta correccion.');
+        RAISE_APPLICATION_ERROR(-20931, 'Conectate como CEA_APP para ejecutar esta correccion.');
     END IF;
 
     -- Comprobar que los cinco registros siguen exactamente como fueron revisados.
@@ -21,7 +21,7 @@ BEGIN
         OR (id = 224 AND numero_recibo = 'ING-004')
         OR (id = 225 AND numero_recibo = 'ING-005');
     IF v_count <> 5 THEN
-        RAISE_APPLICATION_ERROR(-21002, 'Los pagos ya no coinciden con la revision. No se modifico nada.');
+        RAISE_APPLICATION_ERROR(-20932, 'Los pagos ya no coinciden con la revision. No se modifico nada.');
     END IF;
 
     SELECT COUNT(*) INTO v_count FROM user_sequences WHERE sequence_name = 'SEQ_HISTORICOS';
@@ -29,7 +29,7 @@ BEGIN
         EXECUTE IMMEDIATE 'CREATE SEQUENCE seq_historicos START WITH 4 INCREMENT BY 1 NOCYCLE NOCACHE';
         EXECUTE IMMEDIATE 'GRANT SELECT ON seq_historicos TO CEA_WEB';
     ELSE
-        RAISE_APPLICATION_ERROR(-21003, 'SEQ_HISTORICOS ya existe. Revisa antes de ejecutar este script otra vez.');
+        RAISE_APPLICATION_ERROR(-20933, 'SEQ_HISTORICOS ya existe. Revisa antes de ejecutar este script otra vez.');
     END IF;
 
     -- Primero se pasan los tres historicos a HIS, liberando ING-001/002/003.
@@ -49,10 +49,13 @@ BEGIN
     UPDATE reimpresiones_recibos SET numero_recibo = 'ING-002' WHERE numero_recibo = 'ING-005' AND tipo = 'PAGO';
 
     -- Actualizar la tabla de equivalencias creada por la migracion 019.
-    UPDATE recibos_renumerados SET numero_nuevo = 'HIS-001' WHERE numero_anterior = 'HIST-206';
-    UPDATE recibos_renumerados SET numero_nuevo = 'HIS-002' WHERE numero_anterior = 'HIST-207';
-    UPDATE recibos_renumerados SET numero_nuevo = 'HIS-003' WHERE numero_anterior = 'HIST-205';
-    UPDATE recibos_renumerados SET numero_nuevo = 'ING-001' WHERE numero_anterior = 'CEA-000221';
+    -- Se busca por numero_nuevo (el ING-00x que dejo la 019) y en el mismo orden que arriba,
+    -- para cubrir los cinco pagos sin depender de los numeros viejos (HIST-xxx / CEA-xxxxxx).
+    UPDATE recibos_renumerados SET numero_nuevo = 'HIS-001' WHERE numero_nuevo = 'ING-001';
+    UPDATE recibos_renumerados SET numero_nuevo = 'HIS-002' WHERE numero_nuevo = 'ING-002';
+    UPDATE recibos_renumerados SET numero_nuevo = 'HIS-003' WHERE numero_nuevo = 'ING-003';
+    UPDATE recibos_renumerados SET numero_nuevo = 'ING-001' WHERE numero_nuevo = 'ING-004';
+    UPDATE recibos_renumerados SET numero_nuevo = 'ING-002' WHERE numero_nuevo = 'ING-005';
 
     COMMIT;
 
