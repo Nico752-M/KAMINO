@@ -116,7 +116,9 @@
         <td><strong>{{ c.efectivo_calculado|cop }}</strong></td>
         <td>{{ c.contado_calculado|cop if c.estado == 'CERRADA' else '—' }}</td>
         <td>{{ c.diferencia_calculada|cop if c.estado == 'CERRADA' else '—' }}</td>
-        <td><span class="badge-status {{ 'active' if c.estado == 'CERRADA' else 'pending' }}">{{ c.estado|capitalize }}</span></td>
+        <td><span class="badge-status {{ 'active' if c.estado == 'CERRADA' else 'pending' }}">{{ c.estado|capitalize }}</span>
+          {% if c.modificada_despues %}<br><span class="badge-status urgent" title="Esperado original: {{ c.efectivo_esperado_original|cop }}">Modificado después del cierre</span>
+          <br><small>{{ c.fecha_ultima_modificacion.strftime('%d/%m/%Y %H:%M') }}</small>{% endif %}</td>
         <td>{% if c.estado == 'CERRADA' %}
           <a class="btn-action sm" href="{{ url_for('caja.exportar_cierre_pdf', caja_id=c.id) }}">PDF</a>
           <a class="btn-action sm" href="{{ url_for('caja.exportar_cierre_excel', caja_id=c.id) }}">Excel</a>
@@ -261,7 +263,7 @@
 
   {% if movs %}
   <div class="table-wrap"><table class="table-clean">
-    <thead><tr>{% if historial_modo == 'todos' %}<th>Fecha</th>{% endif %}<th>Hora</th><th>Tipo</th><th>Detalle</th>{% if admin %}<th>Cajero</th>{% endif %}<th>Medio</th><th>Valor</th>{% if 'ver_recibos' in permisos %}<th></th>{% endif %}</tr></thead>
+    <thead><tr>{% if historial_modo == 'todos' %}<th>Fecha</th>{% endif %}<th>Hora</th><th>Tipo</th><th>Detalle</th>{% if admin %}<th>Cajero</th>{% endif %}<th>Medio</th><th>Valor</th><th></th></tr></thead>
     <tbody>{% for m in movs %}
       <tr>
         {% if historial_modo == 'todos' %}<td>{{ m.momento.strftime('%d/%m/%Y') }}</td>{% endif %}
@@ -278,8 +280,36 @@
         {% if admin %}<td>{{ m.cajero or '—' }}</td>{% endif %}
         <td>{{ m.metodo }}</td>
         <td><strong style="color:{{ 'var(--text-muted)' if m.anulado else 'var(--accent-red)' if m.valor < 0 else 'var(--accent-green)' }}">{{ m.valor|cop }}</strong></td>
-        {% if 'ver_recibos' in permisos %}<td><a class="btn-action sm" target="_blank" rel="noopener"
-             href="{{ url_for('pagos.recibo', numero=m.recibo, copia=1) }}"><i class="ri-printer-line"></i> Reimprimir</a></td>{% endif %}
+        <td>
+          {% if 'ver_recibos' in permisos %}<a class="btn-action sm" target="_blank" rel="noopener"
+             href="{{ url_for('pagos.recibo', numero=m.recibo, copia=1) }}"><i class="ri-printer-line"></i> Reimprimir</a>{% endif %}
+          {% set puede_tocar = (not m.caja_cerrada) or ('editar_cierres' in permisos) %}
+          {% if not m.anulado and puede_tocar %}
+            {% if m.tipo == 'pago' and 'anular_pagos' in permisos %}
+            <form method="post" action="{{ url_for('alumnos.anular_pago', numero=m.recibo) }}" style="display:inline"
+                  data-reason-confirm
+                  data-reason-prompt="Escribe el motivo obligatorio para anular este pago."
+                  data-confirm-message="¿Anular este pago?{% if m.caja_cerrada %} Es de una caja ya cerrada: el cierre se recalculará y quedará marcado como modificado.{% endif %}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="motivo" maxlength="500">
+              <button class="btn-action red sm" type="submit"><i class="ri-close-circle-line"></i> Anular</button>
+            </form>
+            {% elif m.tipo != 'pago' and not m.es_traslado and 'gestionar_caja' in permisos %}
+            <button class="btn-action sm" type="button" data-editar-mov
+                    data-tipo="{{ m.tipo }}" data-numero="{{ m.recibo }}" data-concepto="{{ m.detalle }}"
+                    data-valor="{{ m.valor|abs|int }}" data-categoria="{{ m.categoria or '' }}"
+                    data-cerrada="{{ 1 if m.caja_cerrada else 0 }}"><i class="ri-edit-line"></i> Editar</button>
+            <form method="post" action="{{ url_for('caja.anular_movimiento', tipo=m.tipo, numero=m.recibo) }}" style="display:inline"
+                  data-reason-confirm
+                  data-reason-prompt="Escribe el motivo obligatorio para anular este movimiento."
+                  data-confirm-message="¿Anular este movimiento?{% if m.caja_cerrada %} Es de una caja ya cerrada: el cierre se recalculará y quedará marcado como modificado.{% endif %}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="motivo" maxlength="500">
+              <button class="btn-action red sm" type="submit"><i class="ri-close-circle-line"></i> Anular</button>
+            </form>
+            {% endif %}
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}</tbody>
   </table></div>
@@ -386,6 +416,36 @@
       <div class="modal-footer">
         <button class="btn-action" type="button" data-close-modal>Cancelar</button>
         <button class="btn-action green" id="guardarMovimientoCaja" type="submit"><i class="ri-save-line"></i> Guardar entrada</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if 'gestionar_caja' in permisos %}
+<div class="modal-overlay cash-modal-overlay" id="editarMovModal" aria-hidden="true">
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="editarMovTitulo">
+    <div class="modal-header">
+      <div><span class="eyebrow">CORREGIR</span><h3 class="modal-title" id="editarMovTitulo">Editar movimiento</h3>
+        <p class="hint" id="editarMovAviso"></p></div>
+      <button class="modal-close-btn" type="button" data-close-modal aria-label="Cerrar">&times;</button>
+    </div>
+    <form method="post" id="editarMovForm" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field"><label class="lbl" for="editarMovConcepto">Concepto <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editarMovConcepto" name="concepto" maxlength="200" required></div>
+      <div class="field"><label class="lbl" for="editarMovValor">Valor (COP) <span class="required-mark">*</span></label>
+        <input class="input-clean" id="editarMovValor" name="valor" type="text" inputmode="numeric" data-money-input required></div>
+      <div class="field"><label class="lbl" for="editarMovCategoria">Categoría (opcional)</label>
+        <select class="input-clean" id="editarMovCategoria" name="categoria">
+          <option value="">Sin categoría</option>
+          {% for categoria in categorias_caja %}<option value="{{ categoria.categoria }}">{{ categoria.categoria }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label class="lbl" for="editarMovMotivo">Motivo de la corrección <span class="required-mark">*</span></label>
+        <textarea class="input-clean cash-textarea" id="editarMovMotivo" name="motivo" maxlength="500" required></textarea></div>
+      <div class="modal-footer">
+        <button class="btn-action" type="button" data-close-modal>Cancelar</button>
+        <button class="btn-action green" type="submit"><i class="ri-save-line"></i> Guardar corrección</button>
       </div>
     </form>
   </div>
