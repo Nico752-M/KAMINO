@@ -1,7 +1,8 @@
--- Ejecutar una sola vez conectado como propietario CEA_APP, DESPUÉS de la 018.
+-- Ejecutar una sola vez conectado como propietario CEA_APP, DESPUÉS de la 018 y ANTES de correccion_consecutivos_ING_HIS.sql.
 -- Renumera los recibos que ya existen (CEA-000221, HIST-205...) al formato nuevo,
 -- en orden cronológico (por fecha del movimiento):
---   ING-001...  pagos de alumnos (incluye abonos históricos), ingresos de caja e ingresos de banco
+--   ING-001...  pagos de alumnos, ingresos de caja e ingresos de banco (los abonos históricos pasan
+--               luego a HIS-xxx con correccion_consecutivos_ING_HIS.sql))
 --   EGR-001...  egresos de caja y de banco
 --   TRA-001...  traslados entre bancos
 -- Actualiza en el mismo paso: pagos, ingresos_caja, salidas_caja, reimpresiones_recibos y
