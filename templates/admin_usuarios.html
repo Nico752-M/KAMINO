@@ -114,14 +114,14 @@
   <div id="admin-configuracion" class="subtab-content">
     <section class="card-bento">
       <div class="grupo-titulo"><i class="ri-price-tag-3-line"></i> Tarifas por categoría</div>
-      <p class="hint">Define precios para cursos completos y renovaciones. El precio propuesto sigue siendo editable al matricular.</p>
+      <p class="hint">Define precios para cursos completos, renovaciones y recategorizaciones. El precio propuesto sigue siendo editable al matricular.</p>
       <form method="post" action="{{ url_for('usuarios.crear_tarifa') }}" class="tariff-create-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field"><label class="lbl" for="nuevaCategoria">Categoría</label>
           <input class="input-clean" id="nuevaCategoria" name="categoria" maxlength="45" placeholder="Ej. B1" required></div>
         <div class="field"><label class="lbl" for="nuevoTipoTarifa">Tipo</label>
           <select class="input-clean" id="nuevoTipoTarifa" name="tipo" required>
-            <option value="CURSO">Curso completo</option><option value="RENOVACION">Renovación</option>
+            <option value="CURSO">Curso completo</option><option value="RENOVACION">Renovación</option><option value="RECAT">Recategorización</option>
           </select></div>
         <div class="field"><label class="lbl" for="nuevoPrecioCategoria">Precio base (COP)</label>
           <input class="input-clean" id="nuevoPrecioCategoria" name="precio_base" type="text" inputmode="numeric" data-money-input required></div>
@@ -133,7 +133,7 @@
         <tbody>{% for tarifa in tarifas %}
         <tr>
           <td><strong>{{ tarifa.categoria }}</strong></td>
-          <td>{{ 'Renovación' if tarifa.tipo == 'RENOVACION' else 'Curso completo' }}</td>
+          <td>{{ 'Renovación' if tarifa.tipo == 'RENOVACION' else 'Recategorización' if tarifa.tipo == 'RECAT' else 'Curso completo' }}</td>
           <td colspan="3">
             <form method="post" action="{{ url_for('usuarios.actualizar_tarifa', tipo=tarifa.tipo, categoria=tarifa.categoria) }}" class="tariff-row-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
