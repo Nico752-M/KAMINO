@@ -20,9 +20,36 @@ Aplicación web Flask con Oracle Autonomous Database, permisos individuales y PW
 9. Después de `004`, ejecuta una vez `migrations/005_tarifas_categoria.sql` como `CEA_APP` y antes de desplegar la versión que configura tarifas.
 10. Después de `005`, ejecuta una vez `migrations/006_seguridad_y_categorias_caja.sql` como `CEA_APP` y antes de desplegar seguridad persistente y categorías de movimientos.
 11. Después de `006`, ejecuta `migrations/007_permisos_cierres_y_tarifas.sql` como `CEA_APP` y antes de desplegar la versión que usa permisos ampliados, tarifas por tipo y conteo de cierre.
-12. Si la base todavía no tiene un administrador, crea el primero:
-   `python crear_usuario.py admin --nombre "Administrador" --rol admin`
-13. Ejecuta `flask --app app run --debug`.
+12. Después de `007`, ejecuta en orden, una sola vez cada una y como `CEA_APP` (cada archivo indica de cuál depende):
+    - `008_indices_rendimiento.sql`: índices de rendimiento.
+    - `009_cuentas_cea.sql`: Mis cuentas (cuentas fijas de cada mes) y su permiso.
+    - `010_permisos_tienda.sql`: permisos finos de la tienda.
+    - `011_gastos_vehiculos.sql`: gastos de vehículos.
+    - `012_confirmacion_pagos.sql`: confirmación de pagos por el administrador.
+    - `013_bancos.sql`: bancos, bolsillos y libro de movimientos.
+    - `014_bancos_borrar.sql`, `015_bancos_borrar_movimientos.sql`, `016_usuarios_borrar.sql` y `017_tarifas_borrar.sql`: permisos para borrar bancos, movimientos, usuarios y tarifas.
+    - `018_consecutivos_ing_egr_tra.sql`: crea los consecutivos `ING`, `EGR` y `TRA`.
+    - `019_renumerar_recibos_existentes.sql`: renumera los recibos que ya existían y crea `RECIBOS_RENUMERADOS`.
+    - `correccion_consecutivos_ING_HIS.sql`: separa los abonos históricos (`HIS`) de los pagos nuevos (`ING`) y crea `SEQ_HISTORICOS`. Es una corrección puntual de los pagos 221 a 225 de la base de producción: en una base nueva no se ejecuta y la app debe tener `SEQ_HISTORICOS` creada de otra forma.
+13. Si la base todavía no tiene un administrador, crea el primero:
+   `python crear_usuario.py admin --nombre \"Administrador\" --rol admin`
+14. Ejecuta `flask --app app run --debug`.
+
+## Consecutivos de recibos
+
+Cada tipo de movimiento tiene su propia secuencia en Oracle:
+
+| Prefijo | Secuencia | Se usa en |
+|---|---|---|
+| `ING` | `SEQ_INGRESOS` | Pagos nuevos de alumnos, ingresos de caja y de banco, y traslados de un banco hacia la caja. |
+| `EGR` | `SEQ_EGRESOS` | Egresos de caja y de banco, y traslados de la caja hacia un banco. |
+| `HIS` | `SEQ_HISTORICOS` | Abonos históricos previos a KAMINO, al matricular a un alumno en curso. |
+| `TRA` | `SEQ_TRASLADOS` | Traslados de un banco a otro. |
+
+`SEQ_RECIBOS` se conserva sin uso. Las equivalencias entre los números viejos
+(`CEA-000221`, `HIST-205`…) y los nuevos quedan en `RECIBOS_RENUMERADOS`.
+Importante: la app pide `SEQ_HISTORICOS` al registrar un abono histórico, así que
+`correccion_consecutivos_ING_HIS.sql` debe estar aplicada antes de desplegar ese código.
 
 ## Oracle
 
